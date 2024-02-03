@@ -35,7 +35,7 @@ pub const Server = struct {
             .http = http,
             .thread = try std.Thread.spawn(.{}, run, .{self}),
             .handler = trampoline(switch (comptime @typeInfo(@TypeOf(handler))) {
-                .Struct => @import("router.zig").router(handler),
+                .Type => @import("router.zig").router(handler),
                 .Fn => handler,
                 else => @compileError("handler must be a function or a struct"),
             }),
