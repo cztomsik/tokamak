@@ -33,7 +33,7 @@ framework will try to provide them for you.
 Notable types you can inject are:
 
 - `std.mem.Allocator` (request-scoped arena allocator)
-- `tk.Responder` (wrapper around req + res, provides a few convenience methods)
+- `*tk.Responder` (wrapper around req + res, provides a few convenience methods)
 - `*tk.Request` (current `std.http.Server.Request`)
 - `*tk.Response` (current `std.http.Server.Response`)
 - `tk.Injector` (the injector itself, see below)
@@ -58,7 +58,7 @@ fn hello() !HelloRes {
 ```
 
 If you need a more fine-grained control over the response, you can inject a
-`tk.Responder` or even a `*tk.Response` and write to it directly.
+`*tk.Responder` or even a `*tk.Response` and write to it directly.
 
 But this will of course make your code tightly coupled to respective types.
 
@@ -76,22 +76,24 @@ up to 16 basic path params, and `*` wildcard.
 ```zig
 const tk = @import("tokamak");
 
-pub fn main() !void {
-    var server = tk.Server.start(allocator, struct {
-        // Path params need to be in the order they appear in the path
-        // Dependencies go always first
-        pub fn @"GET /:name"(allocator: std.mem.Allocator, name: []const u8) ![]const u8 {
-            return std.fmt.allocPrint(allocator, "Hello, {s}", .{name});
-        }
+const api = struct {
+    // Path params need to be in the order they appear in the path
+    // Dependencies go always first
+    pub fn @"GET /:name"(allocator: std.mem.Allocator, name: []const u8) ![]const u8 {
+        return std.fmt.allocPrint(allocator, "Hello, {s}", .{name});
+    }
 
-        // In case of POST/PUT there's also a body
-        // The body is deserialized from JSON
-        pub fn @"POST /:id"(allocator: std.mem.Allocator, id: u32, data: struct {}) ![]const u8 {
-            ...
-        }
-
+    // In case of POST/PUT there's also a body
+    // The body is deserialized from JSON
+    pub fn @"POST /:id"(allocator: std.mem.Allocator, id: u32, data: struct {}) ![]const u8 {
         ...
-    }, .{ .port = 8080 });
+    }
+
+    ...
+}
+
+pub fn main() !void {
+    var server = tk.Server.start(allocator, api, .{ .port = 8080 });
     try server.thread.join();
 }
 ```
@@ -140,7 +142,7 @@ JSON and send it to the client.
 
 ```zig
 fn hello() !void {
-    // This will send 500 and {"error": "TODO"} 
+    // This will send 500 and {"error": "TODO"}
     return error.TODO;
 }
 ```
