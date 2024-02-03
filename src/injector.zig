@@ -1,9 +1,13 @@
 const std = @import("std");
 
+/// Type-based dependency injection context. There is a small vtable overhead
+/// but other than that it should very fast because all it does is a simple
+/// inline for over the fields of the context struct.
 pub const Injector = struct {
     ctx: *anyopaque,
     resolver: *const fn (*anyopaque, TypeId) ?*anyopaque,
 
+    /// Create a new injector from a context ptr.
     pub fn from(ctx: anytype) Injector {
         if (@typeInfo(@TypeOf(ctx)) != .Pointer) @compileError("Expected pointer to a context");
 
@@ -13,6 +17,8 @@ pub const Injector = struct {
         };
     }
 
+    /// Get a dependency from the context. In case of pointer types, the
+    /// resolver will look both for `T` and `*T` types.
     pub fn get(self: Injector, comptime T: type) !T {
         if (T == Injector) return self;
 
@@ -30,6 +36,8 @@ pub const Injector = struct {
         return @as(*T, @ptrCast(@alignCast(ptr))).*;
     }
 
+    /// Call a function with dependencies. The `extra_args` tuple is used to
+    /// pass additional arguments to the function.
     pub fn call(self: Injector, comptime fun: anytype, extra_args: anytype) CallRes(@TypeOf(fun)) {
         if (@typeInfo(@TypeOf(extra_args)) != .Struct) @compileError("Expected a tuple of arguments");
 

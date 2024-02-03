@@ -1,6 +1,6 @@
 const builtin = @import("builtin");
 const std = @import("std");
-const mime = @import("mime.zig");
+const mime = @import("mime.zig").mime;
 
 pub const Responder = struct {
     res: *std.http.Server.Response,
@@ -76,7 +76,7 @@ pub const Responder = struct {
         try self.sendChunk(if (comptime builtin.mode != .Debug) @embedFile("../" ++ path) else blk: {
             var f = try std.fs.cwd().openFile(path, .{});
             defer f.close();
-            break :blk try f.readToEndAlloc(self.arena, std.math.maxInt(usize));
+            break :blk try f.readToEndAlloc(self.res.allocator, std.math.maxInt(usize));
         });
     }
 

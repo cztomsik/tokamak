@@ -16,6 +16,7 @@ pub const mime_types = if (@hasDecl(root, "mime_types")) root.mime_types else st
     .{ ".md", "text/markdown" },
 });
 
-fn mime(comptime ext: []const u8) []const u8 {
+/// Get the MIME type for a given file extension.
+pub fn mime(comptime ext: []const u8) []const u8 {
     return mime_types.get(ext) orelse "application/octet-stream";
 }

@@ -8,6 +8,7 @@ pub const Options = struct {
     port: u16,
 };
 
+/// A simple HTTP server with dependency injection.
 pub const Server = struct {
     allocator: std.mem.Allocator,
     http: std.http.Server,
@@ -15,6 +16,7 @@ pub const Server = struct {
     status: std.atomic.Value(enum(u8) { starting, started, stopping, stopped }) = .{ .raw = .starting },
     handler: *const fn (*ThreadContext) anyerror!void,
 
+    /// Start a new server.
     pub fn start(allocator: std.mem.Allocator, handler: anytype, options: Options) !*Server {
         const self = try allocator.create(Server);
         errdefer allocator.destroy(self);

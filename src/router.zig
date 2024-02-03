@@ -50,7 +50,7 @@ pub const Params = struct {
     matches: [16][]const u8 = undefined,
     len: usize = 0,
 
-    fn match(pattern: []const u8, path: []const u8) ?Params {
+    pub fn match(pattern: []const u8, path: []const u8) ?Params {
         var res = Params{};
         var pattern_parts = std.mem.tokenizeScalar(u8, pattern, '/');
         var path_parts = std.mem.tokenizeScalar(u8, path, '/');
@@ -78,7 +78,7 @@ pub const Params = struct {
         }
     }
 
-    fn get(self: *const Params, index: usize, comptime T: type) !T {
+    pub fn get(self: *const Params, index: usize, comptime T: type) !T {
         const s = if (index < self.len) self.matches[index] else return error.NoMatch;
 
         return switch (@typeInfo(T)) {
