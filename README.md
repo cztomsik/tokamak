@@ -168,10 +168,17 @@ fn hello() !void {
 
 ## Static files
 
-The responder has a method to serve static files. It will use `@embedFile`
-automatically for release builds, and `file.readToEndAlloc()` for debug builds.
+The responder has a method to serve static files. It will call `root.embedFile()`
+automatically in release builds, and `file.readToEndAlloc()` in debug builds.
+
+We can't call `@embedFile()` directly, because it's module-scoped and it can't
+read files from other modules. So there's this workaround:
 
 ```zig
+pub fn embedFile(path: []const u8) []const u8 {
+    return @embedFile(path);
+}
+
 fn hello(responder: *tk.Responder) !void {
     try responder.sendResource("static/index.html");
 }

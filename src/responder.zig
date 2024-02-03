@@ -1,4 +1,5 @@
 const builtin = @import("builtin");
+const root = @import("root");
 const std = @import("std");
 const mime = @import("mime.zig").mime;
 
@@ -73,7 +74,7 @@ pub const Responder = struct {
         try self.res.headers.append("Content-Type", comptime mime(std.fs.path.extension(path)) ++ "; charset=utf-8");
         try self.noCache();
 
-        try self.sendChunk(if (comptime builtin.mode != .Debug) @embedFile("../" ++ path) else blk: {
+        try self.sendChunk(if (comptime builtin.mode != .Debug) root.embedFile(path) else blk: {
             var f = try std.fs.cwd().openFile(path, .{});
             defer f.close();
             break :blk try f.readToEndAlloc(self.res.allocator, std.math.maxInt(usize));
