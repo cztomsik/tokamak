@@ -4,6 +4,7 @@ const Injector = @import("injector.zig").Injector;
 const Responder = @import("responder.zig").Responder;
 
 pub const Options = struct {
+    injector: Injector = Injector.empty(),
     hostname: []const u8 = "127.0.0.1",
     port: u16,
 };
@@ -11,6 +12,7 @@ pub const Options = struct {
 /// A simple HTTP server with dependency injection.
 pub const Server = struct {
     allocator: std.mem.Allocator,
+    injector: Injector,
     http: std.http.Server,
     thread: std.Thread,
     status: std.atomic.Value(enum(u8) { starting, started, stopping, stopped }) = .{ .raw = .starting },
@@ -29,6 +31,7 @@ pub const Server = struct {
 
         self.* = .{
             .allocator = allocator,
+            .injector = options.injector,
             .http = http,
             .thread = try std.Thread.spawn(.{}, run, .{self}),
             .handler = trampoline(switch (comptime @typeInfo(@TypeOf(handler))) {
@@ -62,34 +65,39 @@ pub const Server = struct {
 
         while (self.status.load(.Acquire) == .started) {
             // TODO: thread pool
-            const ctx = try ThreadContext.init(self.allocator);
+            const ctx = try ThreadContext.init(self);
 
-            try ctx.accept(&self.http);
+            try ctx.accept();
 
             // Sent from Server.deinit() to awake the thread
             if (self.status.load(.Acquire) == .stopping) return;
 
-            var thread = try std.Thread.spawn(.{}, ThreadContext.callHandler, .{ ctx, self.handler });
+            var thread = try std.Thread.spawn(.{}, ThreadContext.callHandler, .{ctx});
             thread.detach();
         }
     }
 };
 
 const ThreadContext = struct {
+    server: *Server,
     arena: std.heap.ArenaAllocator,
     res: std.http.Server.Response = undefined,
     responder: Responder = undefined,
 
-    fn init(allocator: std.mem.Allocator) !*ThreadContext {
-        const self = try allocator.create(ThreadContext);
-        errdefer allocator.destroy(self);
+    fn init(server: *Server) !*ThreadContext {
+        const self = try server.allocator.create(ThreadContext);
+        errdefer server.allocator.destroy(self);
 
-        self.* = .{ .arena = std.heap.ArenaAllocator.init(allocator) };
+        self.* = .{
+            .server = server,
+            .arena = std.heap.ArenaAllocator.init(server.allocator),
+        };
+
         return self;
     }
 
-    fn accept(self: *ThreadContext, http: *std.http.Server) !void {
-        self.res = try http.accept(.{
+    fn accept(self: *ThreadContext) !void {
+        self.res = try self.server.http.accept(.{
             .allocator = self.arena.allocator(),
             .header_strategy = .{ .dynamic = 10_000 },
         });
@@ -99,7 +107,7 @@ const ThreadContext = struct {
         };
     }
 
-    fn callHandler(self: *ThreadContext, handler: *const fn (*ThreadContext) anyerror!void) !void {
+    fn callHandler(self: *ThreadContext) !void {
         defer self.deinit();
 
         // Keep it simple
@@ -114,7 +122,7 @@ const ThreadContext = struct {
             log.debug("{s} {s} {}", .{ @tagName(self.res.request.method), self.res.request.target, @intFromEnum(self.res.status) });
         }
 
-        try handler(self);
+        try self.server.handler(self);
     }
 
     fn deinit(self: *ThreadContext) void {
@@ -137,7 +145,7 @@ fn trampoline(handler: anytype) fn (*ThreadContext) anyerror!void {
                 .uri = try std.Uri.parseWithoutScheme(ctx.res.request.target),
             };
 
-            const injector = Injector.from(&scope);
+            const injector = Injector.multi(&.{ Injector.from(&scope), ctx.server.injector });
 
             ctx.responder.send(injector.call(handler, .{})) catch |e| {
                 log.debug("handleRequest: {}", .{e});

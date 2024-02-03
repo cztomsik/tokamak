@@ -7,6 +7,11 @@ pub const Injector = struct {
     ctx: *anyopaque,
     resolver: *const fn (*anyopaque, TypeId) ?*anyopaque,
 
+    /// Create empty injector.
+    pub fn empty() Injector {
+        return .{ .ctx = undefined, .resolver = &resolver(struct {}) };
+    }
+
     /// Create a new injector from a context ptr.
     pub fn from(ctx: anytype) Injector {
         if (@typeInfo(@TypeOf(ctx)) != .Pointer) @compileError("Expected pointer to a context");
@@ -14,6 +19,17 @@ pub const Injector = struct {
         return .{
             .ctx = @ptrCast(ctx),
             .resolver = &resolver(@TypeOf(ctx.*)),
+        };
+    }
+
+    /// Create a new injector from a pointer to a tuple of injectors.
+    pub fn multi(injectors: anytype) Injector {
+        if (@typeInfo(@TypeOf(injectors)) != .Pointer) @compileError("Expected pointer to a tuple of injectors");
+
+        return .{
+            // note we never modify the tuple, so it's safe to cast away const
+            .ctx = @constCast(@ptrCast(injectors)),
+            .resolver = &multiResolver(@TypeOf(injectors.*)),
         };
     }
 
@@ -73,6 +89,22 @@ fn resolver(comptime T: type) fn (*anyopaque, TypeId) ?*anyopaque {
                 if (TypeId.from(f.type).id == type_id.id) {
                     return @ptrCast(&@field(ctx, f.name));
                 }
+            }
+
+            return null;
+        }
+    };
+
+    return H.resolve;
+}
+
+fn multiResolver(comptime T: type) fn (*anyopaque, TypeId) ?*anyopaque {
+    const H = struct {
+        fn resolve(ptr: *anyopaque, type_id: TypeId) ?*anyopaque {
+            const ctx: *T = @ptrCast(@alignCast(ptr));
+
+            inline for (ctx) |injector| {
+                if (injector.resolver(injector.ctx, type_id)) |p| return p;
             }
 
             return null;

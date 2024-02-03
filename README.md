@@ -15,8 +15,8 @@ Simple things should be easy to do.
 const tk = @import("tokamak");
 
 pub fn main() !void {
-    var server = tk.Server.start(allocator, hello, .{ .port = 8080 });
-    try server.thread.join();
+    var server = try tk.Server.start(allocator, hello, .{ .port = 8080 });
+    server.thread.join();
 }
 
 fn hello() ![]const u8 {
@@ -93,8 +93,8 @@ const api = struct {
 }
 
 pub fn main() !void {
-    var server = tk.Server.start(allocator, api, .{ .port = 8080 });
-    try server.thread.join();
+    var server = try tk.Server.start(allocator, api, .{ .port = 8080 });
+    server.thread.join();
 }
 ```
 
@@ -116,8 +116,8 @@ const api = struct {
 };
 
 pub fn main() !void {
-    var server = tk.Server.start(allocator, handleRequest, .{ .port = 8080 });
-    try server.thread.join();
+    var server = try tk.Server.start(allocator, handleRequest, .{ .port = 8080 });
+    server.thread.join();
 }
 
 fn handleRequest(injector: tk.Injector, req: *tk.Request, responder: *tk.Responder) !void {
@@ -127,6 +127,25 @@ fn handleRequest(injector: tk.Injector, req: *tk.Request, responder: *tk.Respond
     }
 
     try responder.send(injector.call(tk.router(api), .{}));
+}
+```
+
+## Custom dependencies
+
+You can also provide your own dependencies:
+
+```zig
+pub fn main() !void {
+    var globals = .{
+        .db = try sqlite.open("db.sqlite3"),
+    };
+
+    var server = try tk.Server.start(allocator, hello, .{
+        .injector = tk.Injector.from(&globals),
+        .port = 8080
+    });
+
+    server.thread.join();
 }
 ```
 
