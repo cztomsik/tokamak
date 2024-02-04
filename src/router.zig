@@ -8,7 +8,8 @@ pub fn router(comptime routes: type) fn (Injector, std.Uri, *std.http.Server.Res
             inline for (@typeInfo(routes).Struct.decls) |d| {
                 const method = comptime d.name[0 .. std.mem.indexOfScalar(u8, d.name, ' ') orelse @compileError("route must contain a space")];
                 const pattern = d.name[method.len + 1 ..];
-                const param_count = comptime std.mem.count(u8, pattern, ":");
+                const has_body: u1 = comptime if (std.mem.eql(u8, method, "POST") or std.mem.eql(u8, method, "PUT")) 1 else 0;
+                const param_count = comptime std.mem.count(u8, pattern, ":") + has_body;
 
                 if (res.request.method == @field(std.http.Method, method)) {
                     if (Params.match(pattern, uri.path)) |params| {
