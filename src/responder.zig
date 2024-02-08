@@ -6,6 +6,11 @@ const mime = @import("mime.zig").mime;
 pub const Responder = struct {
     res: *std.http.Server.Response,
 
+    /// Shorthand for `res.headers.append()`.
+    pub fn setHeader(self: *Responder, key: []const u8, value: []const u8) !void {
+        try self.res.headers.append(key, value);
+    }
+
     /// Sends a response depending on the type of the value.
     pub fn send(self: *Responder, res: anytype) !void {
         if (comptime @TypeOf(res) == []const u8) return self.sendChunk(res);
