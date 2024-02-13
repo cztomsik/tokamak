@@ -16,12 +16,15 @@ pub fn router(comptime routes: type) fn (Injector, std.Uri, *std.http.Server.Res
                         const route_handler = comptime @field(routes, d.name);
 
                         var args: std.meta.ArgsTuple(@TypeOf(route_handler)) = undefined;
-                        inline for (0..args.len - param_count) |i| {
+                        const mid = args.len - param_count;
+
+                        inline for (0..mid) |i| {
                             args[i] = try injector.get(@TypeOf(args[i]));
                         }
-                        inline for (args.len - param_count..args.len) |i| {
+
+                        inline for (mid..args.len) |i| {
                             const V = @TypeOf(args[i]);
-                            args[i] = try if (comptime @typeInfo(V) == .Struct) readJson(res, V) else params.get(i - 1, V);
+                            args[i] = try if (comptime @typeInfo(V) == .Struct) readJson(res, V) else params.get(i - mid, V);
                         }
 
                         return responder.send(@call(.auto, route_handler, args));

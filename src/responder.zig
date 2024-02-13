@@ -86,6 +86,12 @@ pub const Responder = struct {
         });
     }
 
+    /// Sends a 404 response.
+    pub fn notFound(self: *Responder) !void {
+        self.res.status = .not_found;
+        try self.res.send();
+    }
+
     /// Sends an empty response.
     pub fn noContent(self: *Responder) !void {
         self.res.status = .no_content;
