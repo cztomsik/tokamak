@@ -16,7 +16,7 @@ pub const Responder = struct {
         if (comptime @TypeOf(res) == []const u8) return self.sendChunk(res);
 
         return switch (comptime @typeInfo(@TypeOf(res))) {
-            .Void => {},
+            .Void => if (self.res.state != .responded) self.noContent(),
             .ErrorUnion => if (res) |r| self.send(r) else |e| self.sendError(e),
             else => self.sendJson(res),
         };
