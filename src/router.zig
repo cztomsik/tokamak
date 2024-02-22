@@ -6,6 +6,8 @@ pub fn router(comptime routes: type) fn (Injector, std.Uri, *std.http.Server.Res
     const H = struct {
         fn handler(injector: Injector, uri: std.Uri, res: *std.http.Server.Response, responder: *Responder) anyerror!void {
             inline for (@typeInfo(routes).Struct.decls) |d| {
+                if (comptime @typeInfo(@TypeOf(@field(routes, d.name))) != .Fn) continue;
+
                 const method = comptime d.name[0 .. std.mem.indexOfScalar(u8, d.name, ' ') orelse @compileError("route must contain a space")];
                 const pattern = d.name[method.len + 1 ..];
                 const has_body: u1 = comptime if (std.mem.eql(u8, method, "POST") or std.mem.eql(u8, method, "PUT")) 1 else 0;
