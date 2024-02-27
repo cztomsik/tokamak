@@ -7,6 +7,10 @@ which has been using it for a few months already, and I'm using it in one other
 project which is going to production soon, so it's not just a toy, it actually
 works.
 
+That said, it is **not designed to be used alone**, but with a reverse proxy in
+front of it, like Nginx or Cloudfront, which will handle SSL, caching,
+sanitization, etc.
+
 ## Getting started
 
 Simple things should be easy to do.
@@ -33,9 +37,8 @@ framework will try to provide them for you.
 Notable types you can inject are:
 
 - `std.mem.Allocator` (request-scoped arena allocator)
-- `*tk.Responder` (wrapper around req + res, provides a few convenience methods)
-- `*tk.Request` (current `std.http.Server.Request`)
-- `*tk.Response` (current `std.http.Server.Response`)
+- `*tk.Request` (current request, including headers, body reader, etc.)
+- `*tk.Response` (current response, with methods to send data, set headers, etc.)
 - `tk.Injector` (the injector itself, see below)
 - and everything you provide yourself
 
@@ -58,15 +61,17 @@ fn hello() !HelloRes {
 ```
 
 If you need a more fine-grained control over the response, you can inject a
-`*tk.Responder` or even a `*tk.Response` and write to it directly.
+`*tk.Response` and use its methods directly.
+
+````zig
 
 But this will of course make your code tightly coupled to respective types.
 
 ```zig
-fn hello(responder: *tk.Responder) !void {
-    try responder.sendJson(.{ .message = "Hello" });
+fn hello(res: *tk.Response) !void {
+    try res.sendJson(.{ .message = "Hello" });
 }
-```
+````
 
 ## Routing
 
@@ -120,13 +125,13 @@ pub fn main() !void {
     server.thread.join();
 }
 
-fn handleRequest(injector: tk.Injector, req: *tk.Request, responder: *tk.Responder) !void {
+fn handleRequest(injector: tk.Injector, req: *tk.Request, res: *tk.Response) !void {
     // Check for authentication, etc.
     if (req.headers...) {
         ...
     }
 
-    try responder.send(injector.call(tk.router(api), .{}));
+    try res.send(injector.call(tk.router(api), .{}));
 }
 ```
 
@@ -168,7 +173,7 @@ fn hello() !void {
 
 ## Static files
 
-The responder has a method to serve static files. It will call `root.embedFile()`
+The response has a method to serve static files. It will call `root.embedFile()`
 automatically in release builds, and `file.readToEndAlloc()` in debug builds.
 
 We can't call `@embedFile()` directly, because it's module-scoped and it can't
@@ -179,8 +184,8 @@ pub fn embedFile(path: []const u8) []const u8 {
     return @embedFile(path);
 }
 
-fn hello(responder: *tk.Responder) !void {
-    try responder.sendResource("static/index.html");
+fn hello(res: *tk.Response) !void {
+    try res.sendResource("static/index.html");
 }
 ```
 

@@ -17,11 +17,11 @@ pub fn main() !void {
 //     return std.fmt.allocPrint(allocator, "Hello {}", .{std.time.timestamp()});
 // }
 
-fn example(injector: tk.Injector, req: *tk.Request, responder: *tk.Responder) !void {
+fn example(injector: tk.Injector, req: *tk.Request, res: *tk.Response) !void {
     // Here we could do authentication, logging, etc.
-    std.log.debug("{}", .{req.headers});
+    std.log.debug("{}", .{req.url});
 
-    return responder.send(injector.call(tk.router(api), .{}));
+    return res.send(injector.call(tk.router(api), .{}));
 }
 
 const api = struct {
