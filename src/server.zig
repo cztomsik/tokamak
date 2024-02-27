@@ -44,6 +44,7 @@ pub const Server = struct {
         return self;
     }
 
+    /// Stop and deinitialize the server.
     pub fn deinit(self: *Server) void {
         self.status.store(.stopping, .Release);
 
@@ -84,19 +85,8 @@ pub const Server = struct {
 
         var buf: [1024]u8 = undefined;
         var http = std.http.Server.init(conn, &buf);
-        var raw = try http.receiveHead();
-
-        var req = Request{
-            .allocator = arena.allocator(),
-            .raw = &raw,
-            .method = raw.head.method,
-            .url = try std.Uri.parseWithoutScheme(raw.head.target),
-        };
-
-        var res = Response{
-            .req = &req,
-            .headers = std.ArrayList(std.http.Header).init(req.allocator),
-        };
+        var req = Request.init(arena.allocator(), try http.receiveHead());
+        var res = Response.init(&req);
 
         var ctx = ThreadContext{
             .allocator = req.allocator,

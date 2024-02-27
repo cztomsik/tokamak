@@ -12,6 +12,13 @@ pub const Response = struct {
     out: ?std.http.Server.Response = null,
     buf: [1024]u8 = undefined,
 
+    pub fn init(req: *Request) Response {
+        return .{
+            .req = req,
+            .headers = std.ArrayList(std.http.Header).init(req.allocator),
+        };
+    }
+
     /// Sets a header. If the response has already been sent, this function
     /// returns an error.
     pub fn setHeader(self: *Response, comptime name: []const u8, value: []const u8) !void {

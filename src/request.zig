@@ -2,9 +2,18 @@ const std = @import("std");
 
 pub const Request = struct {
     allocator: std.mem.Allocator,
-    raw: *std.http.Server.Request,
+    raw: std.http.Server.Request,
     method: std.http.Method,
     url: std.Uri,
+
+    pub fn init(allocator: std.mem.Allocator, raw: std.http.Server.Request) Request {
+        return .{
+            .allocator = allocator,
+            .raw = raw,
+            .method = raw.head.method,
+            .url = try std.Uri.parseWithoutScheme(raw.head.target),
+        };
+    }
 
     /// Returns the value of the given header or null if it doesn't exist.
     pub fn getHeader(self: *Request, name: []const u8) ?[]const u8 {
