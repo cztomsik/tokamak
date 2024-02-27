@@ -6,7 +6,7 @@ pub const Request = struct {
     method: std.http.Method,
     url: std.Uri,
 
-    pub fn init(allocator: std.mem.Allocator, raw: std.http.Server.Request) Request {
+    pub fn init(allocator: std.mem.Allocator, raw: std.http.Server.Request) !Request {
         return .{
             .allocator = allocator,
             .raw = raw,

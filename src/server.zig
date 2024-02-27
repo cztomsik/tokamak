@@ -85,7 +85,7 @@ pub const Server = struct {
 
         var buf: [1024]u8 = undefined;
         var http = std.http.Server.init(conn, &buf);
-        var req = Request.init(arena.allocator(), try http.receiveHead());
+        var req = try Request.init(arena.allocator(), try http.receiveHead());
         var res = Response.init(&req);
 
         var ctx = ThreadContext{
