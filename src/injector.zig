@@ -1,7 +1,7 @@
 const std = @import("std");
 
 /// Type-based dependency injection context. There is a small vtable overhead
-/// but other than that it should very fast because all it does is a simple
+/// but other than that it should be very fast because all it does is a simple
 /// inline for over the fields of the context struct.
 pub const Injector = struct {
     ctx: *anyopaque,
