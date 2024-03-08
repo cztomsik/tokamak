@@ -8,6 +8,7 @@ pub const Options = struct {
     injector: Injector = Injector.empty(),
     hostname: []const u8 = "127.0.0.1",
     port: u16,
+    n_threads: usize = 8,
 };
 
 /// A simple HTTP server with dependency injection.
@@ -15,8 +16,9 @@ pub const Server = struct {
     allocator: std.mem.Allocator,
     injector: Injector,
     net: std.net.Server,
-    thread: std.Thread,
-    status: std.atomic.Value(enum(u8) { starting, started, stopping, stopped }) = .{ .raw = .starting },
+    threads: []std.Thread,
+    stopping: std.Thread.ResetEvent = .{},
+    stopped: std.Thread.ResetEvent = .{},
     handler: *const fn (*ThreadContext) anyerror!void,
 
     /// Start a new server.
@@ -29,11 +31,14 @@ pub const Server = struct {
         var net = try address.listen(.{ .reuse_address = true });
         errdefer net.deinit();
 
+        const threads = try allocator.alloc(std.Thread, options.n_threads);
+        errdefer allocator.free(threads);
+
         self.* = .{
             .allocator = allocator,
             .injector = options.injector,
             .net = net,
-            .thread = try std.Thread.spawn(.{}, run, .{self}),
+            .threads = threads,
             .handler = trampoline(switch (comptime @typeInfo(@TypeOf(handler))) {
                 .Type => @import("router.zig").router(handler),
                 .Fn => handler,
@@ -41,67 +46,66 @@ pub const Server = struct {
             }),
         };
 
+        for (threads) |*t| {
+            t.* = std.Thread.spawn(.{}, loop, .{self}) catch @panic("thread spawn");
+        }
+
         return self;
+    }
+
+    /// Wait for the server to stop.
+    pub fn wait(self: *Server) void {
+        self.stopped.wait();
     }
 
     /// Stop and deinitialize the server.
     pub fn deinit(self: *Server) void {
-        self.status.store(.stopping, .Release);
+        self.stopping.set();
+        defer self.stopped.set();
 
-        if (std.net.tcpConnectToAddress(self.net.listen_address)) |conn| {
-            conn.close();
-        } else |e| log.err("stop err: {}", .{e});
-
-        while (self.status.load(.Acquire) == .stopping) {
-            std.time.sleep(100_000_000);
-        }
+        for (self.threads) |_| (std.net.tcpConnectToAddress(self.net.listen_address) catch continue).close();
+        for (self.threads) |t| t.join();
 
         self.net.deinit();
         self.allocator.destroy(self);
     }
 
-    fn run(self: *Server) !void {
-        self.status.store(.started, .Release);
-        defer self.status.store(.stopped, .Release);
-
-        while (self.status.load(.Acquire) == .started) {
-            const conn = try self.net.accept();
-            errdefer conn.stream.close();
-
-            // Sent from Server.deinit() to awake the thread
-            if (self.status.load(.Acquire) == .stopping) return conn.stream.close();
-
-            // TODO: thread pool
-            var thread = try std.Thread.spawn(.{}, handle, .{ self, conn });
-            thread.detach();
-        }
-    }
-
-    fn handle(self: *Server, conn: std.net.Server.Connection) !void {
-        defer conn.stream.close();
-
+    fn loop(self: *Server) !void {
         var arena = std.heap.ArenaAllocator.init(self.allocator);
         defer arena.deinit();
 
-        var buf: [1024]u8 = undefined;
-        var http = std.http.Server.init(conn, &buf);
-        var req = try Request.init(arena.allocator(), try http.receiveHead());
-        var res = Response.init(&req);
+        accept: while (!self.stopping.isSet()) {
+            const conn = try self.net.accept();
+            defer conn.stream.close();
 
-        var ctx = ThreadContext{
-            .allocator = req.allocator,
-            .server = self,
-            .req = &req,
-            .res = &res,
-        };
+            var buf: [10 * 1024]u8 = undefined;
+            var http = std.http.Server.init(conn, &buf);
 
-        defer {
-            if (!res.responded) res.noContent() catch {};
-            res.out.?.end() catch {};
-            log.debug("{s} {s} {}", .{ @tagName(req.method), req.raw.head.target, @intFromEnum(res.status) });
+            while (http.state == .ready) {
+                _ = arena.reset(.{ .retain_with_limit = 8 * 1024 * 1024 });
+
+                var req = try Request.init(arena.allocator(), http.receiveHead() catch |e| {
+                    if (e != error.HttpConnectionClosing) log.err("receiveHead: {}", .{e});
+                    continue :accept;
+                });
+                var res = Response.init(&req);
+
+                var ctx = ThreadContext{
+                    .allocator = req.allocator,
+                    .server = self,
+                    .req = &req,
+                    .res = &res,
+                };
+
+                defer {
+                    if (!res.responded) res.noContent() catch {};
+                    res.out.?.end() catch {};
+                    log.debug("{s} {s} {}", .{ @tagName(req.method), req.raw.head.target, @intFromEnum(res.status) });
+                }
+
+                try self.handler(&ctx);
+            }
         }
-
-        try self.handler(&ctx);
     }
 };
 

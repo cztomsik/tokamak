@@ -6,7 +6,7 @@ pub fn main() !void {
     defer _ = gpa.deinit();
 
     var server = try tk.Server.start(gpa.allocator(), example, .{ .port = 8080 });
-    server.thread.join();
+    server.wait();
 }
 
 // fn example() []const u8 {
