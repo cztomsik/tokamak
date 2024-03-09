@@ -99,7 +99,7 @@ const api = struct {
 
 pub fn main() !void {
     var server = try tk.Server.start(allocator, api, .{ .port = 8080 });
-    server.thread.join();
+    server.wait();
 }
 ```
 
@@ -150,7 +150,7 @@ pub fn main() !void {
         .port = 8080
     });
 
-    server.thread.join();
+    server.wait();
 }
 ```
 
