@@ -7,6 +7,7 @@ const Request = @import("request.zig").Request;
 pub const Response = struct {
     req: *Request,
     responded: bool = false,
+    keep_alive: bool = true,
     status: std.http.Status = .ok,
     headers: std.ArrayList(std.http.Header),
     out: ?std.http.Server.Response = null,
@@ -147,6 +148,7 @@ pub const Response = struct {
             .send_buffer = &self.buf,
             .respond_options = .{
                 .status = self.status,
+                .keep_alive = self.keep_alive,
                 .extra_headers = self.headers.items,
             },
         });

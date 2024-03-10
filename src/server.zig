@@ -9,6 +9,7 @@ pub const Options = struct {
     hostname: []const u8 = "127.0.0.1",
     port: u16,
     n_threads: usize = 8,
+    keep_alive: bool = true,
 };
 
 /// A simple HTTP server with dependency injection.
@@ -21,6 +22,7 @@ pub const Server = struct {
     stopping: std.Thread.ResetEvent = .{},
     stopped: std.Thread.ResetEvent = .{},
     handler: *const fn (*Response, Injector) anyerror!void,
+    keep_alive: bool,
 
     /// Start a new server.
     pub fn start(allocator: std.mem.Allocator, handler: anytype, options: Options) !*Server {
@@ -45,6 +47,7 @@ pub const Server = struct {
                 .Fn => handler,
                 else => @compileError("handler must be a function or a struct"),
             }),
+            .keep_alive = options.keep_alive,
         };
 
         for (threads) |*t| {
@@ -119,6 +122,7 @@ pub const Server = struct {
                 };
 
                 var res = Response.init(&req);
+                res.keep_alive = server.keep_alive;
 
                 var ctx = .{
                     .allocator = req.allocator,
