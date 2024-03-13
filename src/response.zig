@@ -1,7 +1,4 @@
-const builtin = @import("builtin");
-const root = @import("root");
 const std = @import("std");
-const mime = @import("mime.zig").mime;
 const Request = @import("request.zig").Request;
 
 pub const Response = struct {
@@ -21,14 +18,12 @@ pub const Response = struct {
     }
 
     /// Sets a header. If the response has already been sent, this function
-    /// returns an error.
-    pub fn setHeader(self: *Response, comptime name: []const u8, value: []const u8) !void {
+    /// returns an error. Both `name` and `value` must be valid for the entire
+    /// lifetime of the response.
+    pub fn setHeader(self: *Response, name: []const u8, value: []const u8) !void {
         if (self.responded) return error.HeadersAlreadySent;
 
-        const v = try self.req.allocator.dupe(u8, value);
-        errdefer self.req.allocator.free(v);
-
-        try self.headers.append(.{ .name = name, .value = v });
+        try self.headers.append(.{ .name = name, .value = value });
     }
 
     /// Returns a writer for the response body. If the response has already been
@@ -44,6 +39,7 @@ pub const Response = struct {
 
         return switch (comptime @typeInfo(@TypeOf(res))) {
             .Void => if (!self.responded) self.noContent(),
+            .ErrorSet => self.sendError(res),
             .ErrorUnion => if (res) |r| self.send(r) else |e| self.sendError(e),
             else => self.sendJson(res),
         };
@@ -106,18 +102,6 @@ pub const Response = struct {
         while (try copy.next()) |item| {
             try self.sendJson(item);
         }
-    }
-
-    /// Sends a static resource. The resource is embedded in release builds.
-    pub fn sendResource(self: *Response, comptime path: []const u8) !void {
-        try self.setHeader("Content-Type", comptime mime(std.fs.path.extension(path)) ++ "; charset=utf-8");
-        try self.noCache();
-
-        try self.sendChunk(if (comptime builtin.mode != .Debug) root.embedFile(path) else blk: {
-            var f = try std.fs.cwd().openFile(path, .{});
-            defer f.close();
-            break :blk try f.readToEndAlloc(self.req.allocator, std.math.maxInt(usize));
-        });
     }
 
     /// Sends a 404 response.

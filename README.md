@@ -1,5 +1,10 @@
 # tokamak
 
+> I am doing some breaking changes, so maybe check one of the
+> [previous versions](https://github.com/cztomsik/tokamak/tree/629dfd45bd95f310646d61f635604ec393253990)
+> if you want to use it right now. The most up-to-date example is in the
+> [Ava PLS](https://github.com/cztomsik/ava) repository.
+
 Server-side framework for Zig, relying heavily on dependency injection.
 
 The code has been extracted from [Ava PLS](https://github.com/cztomsik/ava)
@@ -142,7 +147,7 @@ You can also provide your own dependencies:
 ```zig
 pub fn main() !void {
     var globals = .{
-        .db = try sqlite.open("db.sqlite3"),
+        .db = try sqlite.open("my.db"),
     };
 
     var server = try tk.Server.start(allocator, hello, .{

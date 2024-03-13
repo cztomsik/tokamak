@@ -12,6 +12,34 @@ pub const Options = struct {
     keep_alive: bool = true,
 };
 
+pub const Handler = fn (*Context) anyerror!void;
+
+pub const Context = struct {
+    self: *Context, // TODO: remove
+    allocator: std.mem.Allocator, // TODO: remove
+    req: *Request,
+    res: *Response,
+    injector: Injector, // TODO: should be ptr too
+    stack: std.BoundedArray(*const fn (*Context) anyerror!void, 64) = .{},
+
+    pub fn next(self: *Context) !void {
+        if (self.stack.popOrNull()) |f| {
+            return f(self);
+        }
+    }
+
+    pub fn wrap(fun: anytype) Handler {
+        if (@TypeOf(fun) == Handler) return fun;
+
+        const H = struct {
+            fn handle(ctx: *Context) anyerror!void {
+                return ctx.res.send(ctx.injector.call(fun, .{}));
+            }
+        };
+        return H.handle;
+    }
+};
+
 /// A simple HTTP server with dependency injection.
 pub const Server = struct {
     allocator: std.mem.Allocator,
@@ -21,7 +49,7 @@ pub const Server = struct {
     mutex: std.Thread.Mutex = .{},
     stopping: std.Thread.ResetEvent = .{},
     stopped: std.Thread.ResetEvent = .{},
-    handler: *const fn (*Response, Injector) anyerror!void,
+    handler: *const Handler,
     keep_alive: bool,
 
     /// Start a new server.
@@ -42,7 +70,7 @@ pub const Server = struct {
             .injector = options.injector,
             .net = net,
             .threads = threads,
-            .handler = trampoline(switch (comptime @typeInfo(@TypeOf(handler))) {
+            .handler = Context.wrap(switch (comptime @typeInfo(@TypeOf(handler))) {
                 .Type => @import("router.zig").router(handler),
                 .Fn => handler,
                 else => @compileError("handler must be a function or a struct"),
@@ -82,13 +110,22 @@ pub const Server = struct {
 
         if (self.stopping.isSet()) return null;
 
-        return self.net.accept() catch |e| {
+        const conn = self.net.accept() catch |e| {
             if (self.stopping.isSet()) return null;
 
             // TODO: not sure what we can do here
             //       but we should not just throw because that would crash the thread silently
             std.debug.panic("accept: {}", .{e});
         };
+
+        const timeout = std.os.timeval{
+            .tv_sec = @as(i32, 5),
+            .tv_usec = @as(i32, 0),
+        };
+
+        std.os.setsockopt(conn.stream.handle, std.os.SOL.SOCKET, std.os.SO.RCVTIMEO, std.mem.asBytes(&timeout)) catch {};
+
+        return conn;
     }
 
     fn loop(server: *Server) void {
@@ -97,13 +134,6 @@ pub const Server = struct {
 
         accept: while (server.accept()) |conn| {
             defer conn.stream.close();
-
-            const timeout = std.os.timeval{
-                .tv_sec = @as(i32, 5),
-                .tv_usec = @as(i32, 0),
-            };
-
-            std.os.setsockopt(conn.stream.handle, std.os.SOL.SOCKET, std.os.SO.RCVTIMEO, std.mem.asBytes(&timeout)) catch {};
 
             var buf: [10 * 1024]u8 = undefined;
             var http = std.http.Server.init(conn, &buf);
@@ -124,31 +154,24 @@ pub const Server = struct {
                 var res = Response.init(&req);
                 res.keep_alive = server.keep_alive;
 
-                var ctx = .{
+                var ctx: Context = .{
                     .allocator = req.allocator,
-                    .server = server,
                     .req = &req,
                     .res = &res,
+                    .injector = undefined,
+                    .self = undefined,
                 };
+                ctx.self = &ctx;
+                ctx.injector = Injector.multi(&.{ Injector.from(&ctx), server.injector });
 
-                server.handler(&res, Injector.multi(&.{ Injector.from(&ctx), ctx.server.injector })) catch |e| {
-                    log.err("failed to send: {}", .{e});
+                server.handler(&ctx) catch |e| {
+                    res.sendError(e) catch {};
                     continue :accept;
                 };
 
                 if (!res.responded) res.noContent() catch {};
                 res.out.?.end() catch {};
-                log.debug("{s} {s} {}", .{ @tagName(req.method), req.raw.head.target, @intFromEnum(res.status) });
             }
         }
     }
 };
-
-fn trampoline(handler: anytype) fn (*Response, Injector) anyerror!void {
-    const H = struct {
-        fn handle(res: *Response, injector: Injector) !void {
-            return res.send(injector.call(handler, .{}));
-        }
-    };
-    return H.handle;
-}

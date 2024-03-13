@@ -72,6 +72,52 @@ pub const Injector = struct {
     }
 };
 
+// /// A set of dependencies to be created and destroyed together.
+// /// Dependencies are created in the order they are defined, using both the
+// /// parent injector and the context itself. The deinit methods are called in
+// /// reverse order.
+// pub fn Scope(comptime factories: anytype) type {
+//     const T = comptime brk: {
+//         var types: [factories.len]type = undefined;
+
+//         for (factories, 0..) |f, i| {
+//             types[i] = @typeInfo(CallRes(f)).payload;
+//         }
+
+//         break :brk std.meta.Tuple(&types);
+//     };
+
+//     return struct {
+//         instances: T,
+
+//         /// Initialize the context by calling the factories.
+//         pub fn init(self: *T, parent: Injector) void {
+//             const inj = Injector.multi(.{ self.injector(), parent });
+
+//             inline for (std.meta.fields(T), 0..) |f, i| {
+//                 @field(self, f.name) = try inj.call(factories[i], .{});
+//             }
+//         }
+
+//         /// Deinitialize the context by calling the deinit methods (if any).
+//         pub fn deinit(self: *@This()) void {
+//             const fields = std.meta.fields(T);
+
+//             inline for (0..fields.len) |i| {
+//                 const f = fields[fields.len - i - 1];
+//                 if (@hasDecl(f.type, "deinit")) {
+//                     @field(self.instances, f.name).deinit();
+//                 }
+//             }
+//         }
+
+//         /// Create a new injector from the context.
+//         pub fn injector(self: *@This()) Injector {
+//             return Injector.from(self.instances);
+//         }
+//     };
+// }
+
 const TypeId = struct {
     id: [*:0]const u8,
 

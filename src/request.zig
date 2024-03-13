@@ -86,3 +86,17 @@ pub const Params = struct {
         };
     }
 };
+
+fn expectMatch(pattern: []const u8, path: []const u8, len: usize) !void {
+    if (Params.match(pattern, path)) |m| {
+        try std.testing.expectEqual(m.len, len);
+    } else return error.ExpectedMatch;
+}
+
+test "Params matching" {
+    try expectMatch("/*", "/foo", 0);
+    try expectMatch("/*.js", "/foo.js", 0);
+    try expectMatch("/foo", "/foo", 0);
+    try expectMatch("/:foo", "/foo", 1);
+    try expectMatch("/:foo/bar", "/foo/bar", 1);
+}
