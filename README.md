@@ -44,7 +44,7 @@ Notable types you can inject are:
 - `std.mem.Allocator` (request-scoped arena allocator)
 - `*tk.Request` (current request, including headers, body reader, etc.)
 - `*tk.Response` (current response, with methods to send data, set headers, etc.)
-- `tk.Injector` (the injector itself, see below)
+- `*tk.Injector` (the injector itself, see below)
 - and everything you provide yourself
 
 For example, you can you easily write a handler function which will create a
@@ -68,15 +68,93 @@ fn hello() !HelloRes {
 If you need a more fine-grained control over the response, you can inject a
 `*tk.Response` and use its methods directly.
 
-````zig
-
-But this will of course make your code tightly coupled to respective types.
+> But this will of course make your code tightly coupled to respective types
+> and it should be avoided if possible.
 
 ```zig
 fn hello(res: *tk.Response) !void {
     try res.sendJson(.{ .message = "Hello" });
 }
-````
+```
+
+## Custom dependencies
+
+You can also provide your own (global) dependencies by passing your own
+`tk.Injector` to the server.
+
+```zig
+pub fn main() !void {
+    var db = try sqlite.open("my.db");
+
+    var server = try tk.Server.start(allocator, hello, .{
+        .injector = tk.Injector.from(.{ &db }),
+        .port = 8080
+    });
+
+    server.wait();
+}
+```
+
+## Middlewares
+
+The framework supports special functions, called middlewares, which can alter
+the flow of the request by either responding directly or calling the next
+middleware.
+
+For example, here's a simple logger middleware:
+
+```zig
+fn handleLogger(ctx: *Context) anyerror!void {
+    log.debug("{s} {s}", .{ @tagName(ctx.req.method), ctx.req.url });
+
+    return ctx.next();
+}
+```
+
+As you can see, the middleware takes a `*Context` and returns `anyerror!void`.
+It can do some pre-processing, logging, etc., and then call `ctx.next()` to
+continue with the next middleware or the handler function.
+
+There are few built-in middlewares, like `tk.chain()`, or `tk.send()`, and they
+work similarly to Express.js except that we don't have closures in Zig, so some
+things are a bit more verbose and/or need custom-scoping (see below).
+
+```
+var server = try tk.Server.start(gpa.allocator(), handler, .{ .port = 8080 });
+server.wait();
+
+const handler = tk.chain(.{
+    // Log every request
+    tk.logger(.{}),
+
+    // Send "Hello" for GET requests to "/"
+    tk.get("/", tk.send("Hello")),
+
+    // Send 404 for anything else
+    tk.send(error.NotFound),
+});
+```
+
+## Custom-scoping
+
+Zig doesn't have closures, so we can't just capture variables from the outer
+scope. But what we can do is to use our dependency injection context to provide
+some dependencies to any middleware or handler function further in the chain.
+
+> Middlewares do not support the shorthand syntax for dependency injection,
+> so you need to use `ctx.injector.get(T)` to get your dependencies manually.
+
+```zig
+fn auth(ctx: *Context) anyerror!void {
+    const db = ctx.injector.get(*Db);
+    const token = try jwt.parse(ctx.req.getHeader("Authorization"));
+    const user = db.find(User, token.id) catch null;
+
+    ctx.injector.push(&user);
+
+    return ctx.next();
+}
+```
 
 ## Routing
 
@@ -108,61 +186,31 @@ pub fn main() !void {
 }
 ```
 
-This works because the `Server.start()` function accepts `anytype`, so if it's
-a function, it will use it as a handler for all requests and if it's a struct,
-it will first call `tk.router()` on it to get a handler function, which is then
-used.
-
-You can call `tk.router()` yourself, if you want to do some pre-processing before
-the router is called. For example, you can check for authentication, etc.
+For the convenience, you can pass the api struct directly to the server, but
+under the hood it's just another middleware, which you can compose to a
+more complex hierarchy.
 
 ```zig
-const tk = @import("tokamak");
+var server = try tk.Server.start(gpa.allocator(), handler, .{ .port = 8080 });
+server.wait();
+
+const handler = tk.chain(.{
+    tk.logger(.{}),
+    tk.get("/", tk.send("Hello")), // this is classic, express-style routing
+    tk.group("/api", tk.router(api)), // and this is our shorthand
+    tk.send(error.NotFound),
+});
 
 const api = struct {
-    pub fn @"GET /:name" ...
-
-    ...
-};
-
-pub fn main() !void {
-    var server = try tk.Server.start(allocator, handleRequest, .{ .port = 8080 });
-    server.thread.join();
-}
-
-fn handleRequest(injector: tk.Injector, req: *tk.Request, res: *tk.Response) !void {
-    // Check for authentication, etc.
-    if (req.headers...) {
-        ...
+    pub fn @"GET /"() []const u8 {
+        return "Hello";
     }
 
-    try res.send(injector.call(tk.router(api), .{}));
-}
+    pub fn @"GET /:name"(allocator: std.mem.Allocator, name: []const u8) ![]const u8 {
+        return std.fmt.allocPrint(allocator, "Hello {s}", .{name});
+    }
+};
 ```
-
-## Custom dependencies
-
-You can also provide your own dependencies:
-
-```zig
-pub fn main() !void {
-    var globals = .{
-        .db = try sqlite.open("my.db"),
-    };
-
-    var server = try tk.Server.start(allocator, hello, .{
-        .injector = tk.Injector.from(&globals),
-        .port = 8080
-    });
-
-    server.wait();
-}
-```
-
-## Middleware
-
-There is no support for middleware yet, but you can usually get away with
-the pattern above.
 
 ## Error handling
 
@@ -177,6 +225,9 @@ fn hello() !void {
 ```
 
 ## Static files
+
+> This is outdated, you can use `tk.sendStatic()` middleware but it
+> is likely not final solution either.
 
 The response has a method to serve static files. It will call `root.embedFile()`
 automatically in release builds, and `file.readToEndAlloc()` in debug builds.
