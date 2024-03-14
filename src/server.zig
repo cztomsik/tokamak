@@ -5,7 +5,7 @@ const Request = @import("request.zig").Request;
 const Response = @import("response.zig").Response;
 
 pub const Options = struct {
-    injector: Injector = Injector.empty(),
+    injector: Injector,
     hostname: []const u8 = "127.0.0.1",
     port: u16,
     n_threads: usize = 8,
@@ -15,14 +15,32 @@ pub const Options = struct {
 pub const Handler = fn (*Context) anyerror!void;
 
 pub const Context = struct {
-    self: *Context, // TODO: remove
-    allocator: std.mem.Allocator, // TODO: remove
-    req: *Request,
-    res: *Response,
-    injector: Injector, // TODO: should be ptr too
+    allocator: std.mem.Allocator,
+    req: Request,
+    res: Response,
+    injector: Injector,
     stack: std.BoundedArray(*const fn (*Context) anyerror!void, 64) = .{},
 
-    pub fn next(self: *Context) !void {
+    fn init(self: *Context, allocator: std.mem.Allocator, server: *Server, http: *std.http.Server) !void {
+        const raw = try http.receiveHead();
+
+        self.* = .{
+            .allocator = allocator,
+            .req = try Request.init(allocator, raw),
+            .res = .{ .req = &self.req },
+            .injector = .{ .parent = &server.injector },
+        };
+
+        self.res.keep_alive = server.keep_alive;
+
+        try self.injector.push(&self.allocator);
+        try self.injector.push(&self.req);
+        try self.injector.push(&self.res);
+        try self.injector.push(self);
+    }
+
+    /// Run the next middleware or handler.
+    pub inline fn next(self: *Context) !void {
         if (self.stack.popOrNull()) |f| {
             return f(self);
         }
@@ -141,36 +159,19 @@ pub const Server = struct {
             while (http.state == .ready) {
                 defer _ = arena.reset(.{ .retain_with_limit = 8 * 1024 * 1024 });
 
-                const raw = http.receiveHead() catch |e| {
-                    if (e != error.HttpConnectionClosing) log.err("receiveHead: {}", .{e});
+                var ctx: Context = undefined;
+                ctx.init(arena.allocator(), server, &http) catch |e| {
+                    log.err("context: {}", .{e});
                     continue :accept;
                 };
-
-                var req = Request.init(arena.allocator(), raw) catch {
-                    log.err("invalid uri {s}", .{raw.head.target});
-                    continue :accept;
-                };
-
-                var res = Response.init(&req);
-                res.keep_alive = server.keep_alive;
-
-                var ctx: Context = .{
-                    .allocator = req.allocator,
-                    .req = &req,
-                    .res = &res,
-                    .injector = undefined,
-                    .self = undefined,
-                };
-                ctx.self = &ctx;
-                ctx.injector = Injector.multi(&.{ Injector.from(&ctx), server.injector });
 
                 server.handler(&ctx) catch |e| {
-                    res.sendError(e) catch {};
+                    ctx.res.sendError(e) catch {};
                     continue :accept;
                 };
 
-                if (!res.responded) res.noContent() catch {};
-                res.out.?.end() catch {};
+                if (!ctx.res.responded) ctx.res.noContent() catch {};
+                ctx.res.out.?.end() catch {};
             }
         }
     }

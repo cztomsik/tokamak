@@ -31,11 +31,7 @@ pub fn group(comptime prefix: []const u8, handler: anytype) Handler {
                 ctx.req.url.path = ctx.req.url.path[prefix.len..];
                 defer ctx.req.url.path = orig;
 
-                try Context.wrap(handler)(ctx);
-
-                if (ctx.res.responded) {
-                    return;
-                }
+                return Context.wrap(handler)(ctx);
             }
 
             return ctx.next();

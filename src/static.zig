@@ -5,7 +5,10 @@ const mime = @import("mime.zig").mime;
 const Context = @import("server.zig").Context;
 const Handler = @import("server.zig").Handler;
 
-// TODO: serveStatic()
+// TODO: serveStatic() and come up with a different solution for embedding.
+//       maybe we should by default pretend to serve static files from a directory
+//       and then have a way to override that with a custom handler.
+//       or maybe we can pass some glob patterns to the library build options?
 
 // TODO: both should delegate to a overridable function that can do embedding.
 

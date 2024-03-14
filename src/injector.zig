@@ -1,60 +1,77 @@
 const std = @import("std");
 
-/// Type-based dependency injection context. There is a small vtable overhead
-/// but other than that it should be very fast because all it does is a simple
-/// inline for over the fields of the context struct.
+/// Hierarchical, stack-based dependency injection context implemented as a
+/// fixed-size array of (TypeId, *anyopaque) pairs.
+///
+/// The stack structure is well-suited for middleware-based applications, as it
+/// allows for easy addition and removal of dependencies whenever the scope
+/// starts or ends.
+///
+/// When a dependency is requested, the context is searched from top to bottom.
+/// If the dependency is not found, the parent context is searched. If the
+/// dependency is still not found, an error is returned.
 pub const Injector = struct {
-    ctx: *anyopaque,
-    resolver: *const fn (*anyopaque, TypeId) ?*anyopaque,
+    registry: std.BoundedArray(struct { TypeId, *anyopaque }, 32) = .{},
+    parent: ?*const Injector = null,
 
-    /// Create empty injector.
-    pub fn empty() Injector {
-        return .{ .ctx = undefined, .resolver = &resolver(struct {}) };
-    }
+    /// Create a new injector from a tuple of pointers.
+    pub fn from(refs: anytype) !Injector {
+        const T = @TypeOf(refs);
 
-    /// Create a new injector from a context ptr.
-    pub fn from(ctx: anytype) Injector {
-        if (@typeInfo(@TypeOf(ctx)) != .Pointer) @compileError("Expected pointer to a context");
-
-        return .{
-            .ctx = @ptrCast(ctx),
-            .resolver = &resolver(@TypeOf(ctx.*)),
+        comptime if (@typeInfo(T) != .Struct or !@typeInfo(T).Struct.is_tuple) {
+            @compileError("Expected tuple of pointers");
         };
+
+        var res = Injector{};
+
+        inline for (std.meta.fields(T)) |f| {
+            try res.push(@field(refs, f.name));
+        }
+
+        return res;
     }
 
-    /// Create a new injector from a pointer to a tuple of injectors.
-    pub fn multi(injectors: anytype) Injector {
-        if (@typeInfo(@TypeOf(injectors)) != .Pointer) @compileError("Expected pointer to a tuple of injectors");
+    /// Add a dependency to the context.
+    pub fn push(self: *Injector, ref: anytype) !void {
+        const T = @TypeOf(ref);
 
-        return .{
-            // note we never modify the tuple, so it's safe to cast away const
-            .ctx = @constCast(@ptrCast(injectors)),
-            .resolver = &multiResolver(@TypeOf(injectors.*)),
+        comptime if (@typeInfo(T) != .Pointer) {
+            @compileError("Expected a pointer");
         };
+
+        try self.registry.append(.{ TypeId.from(T), ref });
     }
 
-    /// Get a dependency from the context. In case of pointer types, the
-    /// resolver will look both for `T` and `*T` types.
-    pub fn get(self: Injector, comptime T: type) !T {
-        if (T == Injector) return self;
+    /// Remove the last dependency from the context.
+    pub fn pop(self: *Injector) void {
+        _ = self.registry.pop();
+    }
 
-        if (comptime @typeInfo(T) == .Pointer) {
-            if (self.resolver(self.ctx, TypeId.from(@typeInfo(T).Pointer.child))) |ptr| {
-                return @ptrCast(@alignCast(ptr));
+    /// Get a dependency from the context.
+    pub fn get(self: *const Injector, comptime T: type) !T {
+        if (T == *const Injector) return self;
+
+        if (comptime @typeInfo(T) != .Pointer) {
+            return (try self.get(*T)).*;
+        }
+
+        for (self.registry.constSlice()) |node| {
+            if (TypeId.from(T).id == node[0].id) {
+                return @ptrCast(@alignCast(node[1]));
             }
         }
 
-        const ptr = self.resolver(self.ctx, TypeId.from(T)) orelse {
+        if (self.parent) |parent| {
+            return parent.get(T);
+        } else {
             std.log.debug("Missing dependency: {s}", .{@typeName(T)});
             return error.MissingDependency;
-        };
-
-        return @as(*T, @ptrCast(@alignCast(ptr))).*;
+        }
     }
 
     /// Call a function with dependencies. The `extra_args` tuple is used to
     /// pass additional arguments to the function.
-    pub fn call(self: Injector, comptime fun: anytype, extra_args: anytype) CallRes(@TypeOf(fun)) {
+    pub fn call(self: *Injector, comptime fun: anytype, extra_args: anytype) CallRes(@TypeOf(fun)) {
         if (@typeInfo(@TypeOf(extra_args)) != .Struct) @compileError("Expected a tuple of arguments");
 
         var args: std.meta.ArgsTuple(@TypeOf(fun)) = undefined;
@@ -72,52 +89,6 @@ pub const Injector = struct {
     }
 };
 
-// /// A set of dependencies to be created and destroyed together.
-// /// Dependencies are created in the order they are defined, using both the
-// /// parent injector and the context itself. The deinit methods are called in
-// /// reverse order.
-// pub fn Scope(comptime factories: anytype) type {
-//     const T = comptime brk: {
-//         var types: [factories.len]type = undefined;
-
-//         for (factories, 0..) |f, i| {
-//             types[i] = @typeInfo(CallRes(f)).payload;
-//         }
-
-//         break :brk std.meta.Tuple(&types);
-//     };
-
-//     return struct {
-//         instances: T,
-
-//         /// Initialize the context by calling the factories.
-//         pub fn init(self: *T, parent: Injector) void {
-//             const inj = Injector.multi(.{ self.injector(), parent });
-
-//             inline for (std.meta.fields(T), 0..) |f, i| {
-//                 @field(self, f.name) = try inj.call(factories[i], .{});
-//             }
-//         }
-
-//         /// Deinitialize the context by calling the deinit methods (if any).
-//         pub fn deinit(self: *@This()) void {
-//             const fields = std.meta.fields(T);
-
-//             inline for (0..fields.len) |i| {
-//                 const f = fields[fields.len - i - 1];
-//                 if (@hasDecl(f.type, "deinit")) {
-//                     @field(self.instances, f.name).deinit();
-//                 }
-//             }
-//         }
-
-//         /// Create a new injector from the context.
-//         pub fn injector(self: *@This()) Injector {
-//             return Injector.from(self.instances);
-//         }
-//     };
-// }
-
 const TypeId = struct {
     id: [*:0]const u8,
 
@@ -125,40 +96,6 @@ const TypeId = struct {
         return .{ .id = @typeName(T) };
     }
 };
-
-fn resolver(comptime T: type) fn (*anyopaque, TypeId) ?*anyopaque {
-    const H = struct {
-        fn resolve(ptr: *anyopaque, type_id: TypeId) ?*anyopaque {
-            var ctx: *T = @ptrCast(@alignCast(ptr));
-
-            inline for (std.meta.fields(T)) |f| {
-                if (TypeId.from(f.type).id == type_id.id) {
-                    return @ptrCast(&@field(ctx, f.name));
-                }
-            }
-
-            return null;
-        }
-    };
-
-    return H.resolve;
-}
-
-fn multiResolver(comptime T: type) fn (*anyopaque, TypeId) ?*anyopaque {
-    const H = struct {
-        fn resolve(ptr: *anyopaque, type_id: TypeId) ?*anyopaque {
-            const ctx: *T = @ptrCast(@alignCast(ptr));
-
-            inline for (ctx) |injector| {
-                if (injector.resolver(injector.ctx, type_id)) |p| return p;
-            }
-
-            return null;
-        }
-    };
-
-    return H.resolve;
-}
 
 fn CallRes(comptime F: type) type {
     switch (@typeInfo(F)) {

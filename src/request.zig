@@ -11,7 +11,7 @@ pub const Request = struct {
             .allocator = allocator,
             .raw = raw,
             .method = raw.head.method,
-            .url = try std.Uri.parseWithoutScheme(raw.head.target),
+            .url = std.Uri.parseWithoutScheme(raw.head.target) catch return error.InvalidUrl,
         };
     }
 
@@ -94,6 +94,9 @@ fn expectMatch(pattern: []const u8, path: []const u8, len: usize) !void {
 }
 
 test "Params matching" {
+    try expectMatch("/", "/", 0);
+    // TODO: fix this, but we need more tests first
+    // try expectMatch("/*", "/", 0);
     try expectMatch("/*", "/foo", 0);
     try expectMatch("/*.js", "/foo.js", 0);
     try expectMatch("/foo", "/foo", 0);
