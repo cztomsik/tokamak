@@ -19,7 +19,8 @@ pub const Context = struct {
     req: Request,
     res: Response,
     injector: Injector,
-    stack: std.BoundedArray(*const fn (*Context) anyerror!void, 64) = .{},
+    chain: []const *const fn (*Context) anyerror!void = &.{},
+    drained: bool = false,
 
     fn init(self: *Context, allocator: std.mem.Allocator, server: *Server, http: *std.http.Server) !void {
         const raw = try http.receiveHead();
@@ -39,10 +40,34 @@ pub const Context = struct {
         try self.injector.push(self);
     }
 
-    /// Run the next middleware or handler.
+    /// Run a handler in a scoped context. This means `next` will only run the
+    /// remaining handlers in the provided chain and the injector will be reset
+    /// to its previous state after the handler has been run. If all the
+    /// handlers have been run, it will return `true`, otherwise `false`.
+    pub fn runScoped(self: *Context, handler: *const Handler, chain: []const *const Handler) !bool {
+        const n_deps = self.injector.registry.len;
+        const prev = self.chain;
+        defer {
+            self.injector.registry.len = n_deps;
+            self.chain = prev;
+            self.drained = false;
+        }
+
+        self.chain = chain;
+        self.drained = false;
+
+        try handler(self);
+        return self.drained;
+    }
+
+    /// Run the next middleware or handler in the chain.
     pub inline fn next(self: *Context) !void {
-        if (self.stack.popOrNull()) |f| {
-            return f(self);
+        if (self.chain.len > 0) {
+            const handler = self.chain[0];
+            self.chain = self.chain[1..];
+            return handler(self);
+        } else {
+            self.drained = true;
         }
     }
 

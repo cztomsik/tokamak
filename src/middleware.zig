@@ -5,14 +5,19 @@ const Handler = @import("server.zig").Handler;
 /// Returns a middleware that executes given steps as a chain. Every step should
 /// either respond or call the next step in the chain.
 pub fn chain(comptime steps: anytype) Handler {
+    const handlers = comptime brk: {
+        var res: [steps.len]*const Handler = undefined;
+        for (steps, 0..) |m, i| res[i] = &Context.wrap(m);
+        break :brk &res;
+    };
+
     const H = struct {
         fn handleChain(ctx: *Context) anyerror!void {
-            try ctx.stack.appendSlice(comptime brk: {
-                var res: [steps.len]*const Handler = undefined;
-                for (steps, 0..) |m, i| res[steps.len - i - 1] = Context.wrap(m);
-                break :brk &res;
-            });
+            if (!try ctx.runScoped(handlers[0], handlers[1..])) {
+                return;
+            }
 
+            // TODO: tail-call?
             return ctx.next();
         }
     };
@@ -31,9 +36,10 @@ pub fn group(comptime prefix: []const u8, handler: anytype) Handler {
                 ctx.req.url.path = ctx.req.url.path[prefix.len..];
                 defer ctx.req.url.path = orig;
 
-                return Context.wrap(handler)(ctx);
+                if (!try ctx.runScoped(&Context.wrap(handler), &.{})) return;
             }
 
+            // TODO: tail-call?
             return ctx.next();
         }
     };
