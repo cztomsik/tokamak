@@ -1,9 +1,12 @@
 # tokamak
 
-> I am doing some breaking changes, so maybe check one of the
-> [previous versions](https://github.com/cztomsik/tokamak/tree/629dfd45bd95f310646d61f635604ec393253990)
-> if you want to use it right now. The most up-to-date example is/might be in the
-> [Ava PLS](https://github.com/cztomsik/ava) repository.
+> I wrote a short blog post about the **[motivation and the design of the
+> framework](https://tomsik.cz/posts/tokamak/)**
+>
+> I am doing some breaking changes, so maybe check one of the [previous
+> versions](https://github.com/cztomsik/tokamak/tree/629dfd45bd95f310646d61f635604ec393253990)
+> if you want to use it right now. The most up-to-date example is/might be in
+> the [Ava PLS](https://github.com/cztomsik/ava) repository.
 
 Server-side framework for Zig, relying heavily on dependency injection.
 
