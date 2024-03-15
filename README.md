@@ -25,7 +25,7 @@ const tk = @import("tokamak");
 
 pub fn main() !void {
     var server = try tk.Server.start(allocator, hello, .{ .port = 8080 });
-    server.thread.join();
+    server.wait();
 }
 
 fn hello() ![]const u8 {
