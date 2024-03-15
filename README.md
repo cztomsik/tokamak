@@ -119,7 +119,7 @@ There are few built-in middlewares, like `tk.chain()`, or `tk.send()`, and they
 work similarly to Express.js except that we don't have closures in Zig, so some
 things are a bit more verbose and/or need custom-scoping (see below).
 
-```
+```zig
 var server = try tk.Server.start(gpa.allocator(), handler, .{ .port = 8080 });
 server.wait();
 
