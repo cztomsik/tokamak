@@ -46,6 +46,21 @@ pub fn group(comptime prefix: []const u8, handler: anytype) Handler {
     return H.handleGroup;
 }
 
+/// Returns a middleware for providing a dependency to the rest of the current
+/// scope. Accepts a factory that returns the dependency. The factory can
+/// use the current scope to resolve its own dependencies.
+pub fn provide(comptime factory: anytype) Handler {
+    const H = struct {
+        fn handleProvide(ctx: *Context) anyerror!void {
+            var dep = try ctx.injector.call(factory, .{});
+            try ctx.injector.push(&dep);
+
+            return ctx.next();
+        }
+    };
+    return H.handleProvide;
+}
+
 /// Returns a handler that sends the given, comptime response.
 pub fn send(comptime res: anytype) Handler {
     const H = struct {

@@ -9,6 +9,7 @@ pub const Response = @import("response.zig").Response;
 
 pub const chain = @import("middleware.zig").chain;
 pub const group = @import("middleware.zig").group;
+pub const provide = @import("middleware.zig").provide;
 pub const send = @import("middleware.zig").send;
 pub const logger = @import("middleware.zig").logger;
 
