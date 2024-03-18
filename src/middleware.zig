@@ -48,14 +48,26 @@ pub fn group(comptime prefix: []const u8, handler: anytype) Handler {
 
 /// Returns a middleware for providing a dependency to the rest of the current
 /// scope. Accepts a factory that returns the dependency. The factory can
-/// use the current scope to resolve its own dependencies.
+/// use the current scope to resolve its own dependencies. If the resulting
+/// type has a `deinit` method, it will be called at the end of the scope.
 pub fn provide(comptime factory: anytype) Handler {
     const H = struct {
         fn handleProvide(ctx: *Context) anyerror!void {
             var dep = try ctx.injector.call(factory, .{});
             try ctx.injector.push(&dep);
 
+            defer if (comptime hasDeinit(@TypeOf(dep))) {
+                dep.deinit();
+            };
+
             return ctx.next();
+        }
+
+        fn hasDeinit(comptime T: type) bool {
+            return switch (@typeInfo(T)) {
+                .Pointer => |ptr| hasDeinit(ptr.child),
+                else => @hasDecl(T, "deinit"),
+            };
         }
     };
     return H.handleProvide;
