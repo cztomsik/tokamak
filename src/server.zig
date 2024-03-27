@@ -161,12 +161,12 @@ pub const Server = struct {
             std.debug.panic("accept: {}", .{e});
         };
 
-        const timeout = std.os.timeval{
+        const timeout = std.posix.timeval{
             .tv_sec = @as(i32, 5),
             .tv_usec = @as(i32, 0),
         };
 
-        std.os.setsockopt(conn.stream.handle, std.os.SOL.SOCKET, std.os.SO.RCVTIMEO, std.mem.asBytes(&timeout)) catch {};
+        std.posix.setsockopt(conn.stream.handle, std.posix.SOL.SOCKET, std.posix.SO.RCVTIMEO, std.mem.asBytes(&timeout)) catch {};
 
         return conn;
     }
