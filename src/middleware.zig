@@ -6,8 +6,9 @@ const Handler = @import("server.zig").Handler;
 /// either respond or call the next step in the chain.
 pub fn chain(comptime steps: anytype) Handler {
     const handlers = comptime brk: {
-        var res: [steps.len]*const Handler = undefined;
-        for (steps, 0..) |m, i| res[i] = &Context.wrap(m);
+        var tmp: [steps.len]*const Handler = undefined;
+        for (steps, 0..) |m, i| tmp[i] = &Context.wrap(m);
+        const res = tmp;
         break :brk &res;
     };
 
