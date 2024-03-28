@@ -46,7 +46,7 @@ pub fn router(comptime routes: type) Handler {
                 }
             }
 
-            return error.NotFound;
+            return ctx.next();
         }
     };
     return H.handleRoutes;
