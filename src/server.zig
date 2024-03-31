@@ -23,7 +23,10 @@ pub const Context = struct {
     drained: bool = false,
 
     fn init(self: *Context, allocator: std.mem.Allocator, server: *Server, http: *std.http.Server) !void {
-        const raw = try http.receiveHead();
+        const raw = http.receiveHead() catch |e| {
+            if (e == error.HttpHeadersUnreadable) return error.HttpConnectionClosing;
+            return e;
+        };
 
         self.* = .{
             .allocator = allocator,
@@ -186,7 +189,7 @@ pub const Server = struct {
 
                 var ctx: Context = undefined;
                 ctx.init(arena.allocator(), server, &http) catch |e| {
-                    log.err("context: {}", .{e});
+                    if (e != error.HttpConnectionClosing) log.err("context: {}", .{e});
                     continue :accept;
                 };
 
