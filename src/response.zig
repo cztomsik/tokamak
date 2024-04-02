@@ -42,7 +42,10 @@ pub const Response = struct {
     pub fn sendError(self: *Response, err: anyerror) !void {
         self.status = switch (err) {
             error.NotFound => .not_found,
+
             // inline std.json.ParseFromValueError => .bad_request,
+            error.InvalidCharacter, error.UnexpectedToken, error.InvalidNumber, error.Overflow, error.InvalidEnumTag, error.DuplicateField, error.UnknownField, error.MissingField, error.LengthMismatch => .bad_request,
+
             else => .internal_server_error,
         };
 
