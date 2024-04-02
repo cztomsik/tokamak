@@ -193,13 +193,16 @@ pub const Server = struct {
                     continue :accept;
                 };
 
+                defer {
+                    if (!ctx.res.responded) ctx.res.noContent() catch {};
+                    ctx.res.out.?.end() catch {};
+                }
+
                 server.handler(&ctx) catch |e| {
+                    log.err("handler: {}", .{e});
                     ctx.res.sendError(e) catch {};
                     continue :accept;
                 };
-
-                if (!ctx.res.responded) ctx.res.noContent() catch {};
-                ctx.res.out.?.end() catch {};
             }
         }
     }
