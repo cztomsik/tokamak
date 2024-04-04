@@ -103,3 +103,23 @@ pub fn logger(options: struct { scope: @TypeOf(.EnumLiteral) = .server }) Handle
     };
     return H.handleLogger;
 }
+
+/// Returns a middleware that sets the CORS headers for the request.
+pub fn cors() Handler {
+    const H = struct {
+        fn handleCors(ctx: *Context) anyerror!void {
+            try ctx.res.setHeader("Access-Control-Allow-Origin", ctx.req.getHeader("Origin") orelse "*");
+
+            if (ctx.req.method == .OPTIONS) {
+                try ctx.res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+                try ctx.res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+                try ctx.res.setHeader("Access-Control-Allow-Private-Network", "true");
+                try ctx.res.noContent();
+                return;
+            }
+
+            return ctx.next();
+        }
+    };
+    return H.handleCors;
+}

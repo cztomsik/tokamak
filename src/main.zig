@@ -13,6 +13,7 @@ pub const group = @import("middleware.zig").group;
 pub const provide = @import("middleware.zig").provide;
 pub const send = @import("middleware.zig").send;
 pub const logger = @import("middleware.zig").logger;
+pub const cors = @import("middleware.zig").cors;
 
 pub const sendStatic = @import("static.zig").sendStatic;
 
