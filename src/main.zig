@@ -1,5 +1,6 @@
 const std = @import("std");
 
+pub const config = @import("config.zig");
 pub const monitor = @import("monitor.zig").monitor;
 
 pub const Injector = @import("injector.zig").Injector;

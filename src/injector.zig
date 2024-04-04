@@ -87,6 +87,12 @@ pub const Injector = struct {
 
         return @call(.auto, fun, args);
     }
+
+    // TODO: This is a hack which allows embedding ServerOptions in the
+    //       configuration file but maybe there's a better way...
+    pub fn jsonParse(_: std.mem.Allocator, _: anytype, _: std.json.ParseOptions) !Injector {
+        return .{};
+    }
 };
 
 const TypeId = struct {
