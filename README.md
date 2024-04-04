@@ -259,6 +259,27 @@ pub const mime_types = tk.mime_types ++ .{
 };
 ```
 
+## Monitor
+
+The `tk.monitor(procs)` allows you to execute multiple processes in parallel and
+restart them automatically if they exit. It takes a tuple of `{ name, fn_ptr,
+args_tuple }` triples as input. It will only work on systems with `fork()`.
+
+What this means is that you can easily create a self-contained binary which will
+stay up and running, even if something crashes unexpectedly.
+
+> The function takes over the main thread, forks, and it might lead to
+> unexpected behavior if you're not careful. Only use it if you know what you're
+> doing.
+
+```zig
+monitor(.{
+    .{ "server", &runServer, .{ 8080 } },
+    .{ "worker", &runWorker, .{} },
+    ...
+});
+```
+
 ## License
 
 MIT
