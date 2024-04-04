@@ -31,6 +31,13 @@ pub const Injector = struct {
         return res;
     }
 
+    /// Create a new injector from a parent context and a tuple of pointers.
+    pub fn fromParent(parent: *const Injector, refs: anytype) !Injector {
+        var res = try Injector.from(refs);
+        res.parent = parent;
+        return res;
+    }
+
     /// Add a dependency to the context.
     pub fn push(self: *Injector, ref: anytype) !void {
         const T = @TypeOf(ref);
@@ -72,7 +79,7 @@ pub const Injector = struct {
 
     /// Call a function with dependencies. The `extra_args` tuple is used to
     /// pass additional arguments to the function.
-    pub fn call(self: *Injector, comptime fun: anytype, extra_args: anytype) CallRes(@TypeOf(fun)) {
+    pub fn call(self: *const Injector, comptime fun: anytype, extra_args: anytype) CallRes(@TypeOf(fun)) {
         if (@typeInfo(@TypeOf(extra_args)) != .Struct) @compileError("Expected a tuple of arguments");
 
         var args: std.meta.ArgsTuple(@TypeOf(fun)) = undefined;
