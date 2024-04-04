@@ -49,7 +49,7 @@ pub const Injector = struct {
 
     /// Get a dependency from the context.
     pub fn get(self: *const Injector, comptime T: type) !T {
-        if (T == *const Injector) return self;
+        if (comptime T == *const Injector) return self;
 
         if (comptime @typeInfo(T) != .Pointer) {
             return (try self.get(*T)).*;
