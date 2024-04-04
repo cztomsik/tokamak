@@ -39,7 +39,8 @@ pub const Injector = struct {
             @compileError("Expected a pointer");
         };
 
-        try self.registry.append(.{ TypeId.from(T), ref });
+        // This should be safe because we always check TypeId first.
+        try self.registry.append(.{ TypeId.from(T), @constCast(ref) });
     }
 
     /// Remove the last dependency from the context.
