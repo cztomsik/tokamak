@@ -98,6 +98,14 @@ pub const Server = struct {
     handler: *const Handler,
     keep_alive: bool,
 
+    /// Run the server, blocking the current thread.
+    pub fn run(allocator: std.mem.Allocator, handler: anytype, options: Options) !void {
+        var server = try start(allocator, handler, options);
+        defer server.deinit();
+
+        server.wait();
+    }
+
     /// Start a new server.
     pub fn start(allocator: std.mem.Allocator, handler: anytype, options: Options) !*Server {
         const self = try allocator.create(Server);
