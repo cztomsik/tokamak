@@ -60,7 +60,7 @@ pub const Injector = struct {
         if (comptime T == *const Injector) return self;
 
         if (comptime @typeInfo(T) != .Pointer) {
-            return (try self.get(*T)).*;
+            return (try self.get(*const T)).*;
         }
 
         for (self.registry.constSlice()) |node| {
