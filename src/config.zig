@@ -1,4 +1,5 @@
 const std = @import("std");
+const log = std.log.scoped(.config);
 
 const DEFAULT_PATH = "config.json";
 
@@ -19,6 +20,8 @@ pub fn read(comptime T: type, allocator: std.mem.Allocator, options: ReadOptions
 
     var reader = std.json.reader(allocator, file.reader());
     defer reader.deinit();
+
+    errdefer log.debug("Failed to parse config: {s}", .{reader.scanner.input[reader.scanner.cursor..]});
 
     return try std.json.parseFromTokenSource(T, allocator, &reader, options.parse);
 }
