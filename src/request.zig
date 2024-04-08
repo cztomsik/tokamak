@@ -20,7 +20,7 @@ pub const Request = struct {
         var it = self.raw.iterateHeaders();
 
         while (it.next()) |header| {
-            if (std.mem.eql(u8, header.name, name)) return header.value;
+            if (std.ascii.eqlIgnoreCase(header.name, name)) return header.value;
         }
 
         return null;
