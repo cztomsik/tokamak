@@ -259,6 +259,25 @@ pub const mime_types = tk.mime_types ++ .{
 };
 ```
 
+## Config
+
+For a simple configuration, you can use the `tk.config.read(T, opts)` function,
+which will read the configuration from a JSON file. The `opts` parameter is
+optional and can be used to specify the path to the config file and parsing
+options.
+
+```zig
+const Cfg = struct {
+    foo: u32,
+    bar: []const u8,
+};
+
+const cfg = try tk.config.read(Cfg, .{ .path = "config.json" });
+```
+
+There's also experimental `tk.config.write(T, opts)` function, which will write
+the configuration back to the file.
+
 ## Monitor
 
 The `tk.monitor(procs)` allows you to execute multiple processes in parallel and
