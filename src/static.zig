@@ -1,29 +1,33 @@
 const builtin = @import("builtin");
-const root = @import("root");
+const embed = @import("embed");
 const std = @import("std");
 const mime = @import("mime.zig").mime;
 const Context = @import("server.zig").Context;
 const Handler = @import("server.zig").Handler;
 
-// TODO: serveStatic() and come up with a different solution for embedding.
-//       maybe we should by default pretend to serve static files from a directory
-//       and then have a way to override that with a custom handler.
-//       or maybe we can pass some glob patterns to the library build options?
+const E = std.ComptimeStringMap([]const u8, kvs: {
+    var res: [embed.files.len]struct { []const u8, []const u8 } = undefined;
+    for (embed.files, embed.contents, 0..) |f, c, i| res[i] = .{ f, c };
+    break :kvs &res;
+});
 
-// TODO: both should delegate to a overridable function that can do embedding.
+// TODO: serveStatic(dir)
 
-/// Sends a static resource. The resource is embedded in release builds.
+/// Sends a static resource.
 pub fn sendStatic(comptime path: []const u8) Handler {
     const H = struct {
         pub fn handleStatic(ctx: *Context) anyerror!void {
+            // TODO: charset should only be set for text files.
             try ctx.res.setHeader("Content-Type", comptime mime(std.fs.path.extension(path)) ++ "; charset=utf-8");
             try ctx.res.noCache();
 
-            try ctx.res.sendChunk(if (comptime builtin.mode != .Debug) root.embedFile(path) else blk: {
-                var f = try std.fs.cwd().openFile(path, .{});
-                defer f.close();
-                break :blk try f.readToEndAlloc(ctx.allocator, std.math.maxInt(usize));
-            });
+            const body = E.get(path);
+
+            if (body == null or comptime builtin.mode == .Debug) {
+                body = try std.fs.cwd().readFileAlloc(ctx.allocator, path, std.math.maxInt(usize));
+            }
+
+            try ctx.res.sendChunk(body.?);
         }
     };
     return H.handleStatic;

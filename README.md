@@ -229,24 +229,32 @@ fn hello() !void {
 
 ## Static files
 
-> This is outdated, you can use `tk.sendStatic()` middleware but it
-> is likely not final solution either.
+> TODO: It is not possible to serve whole directories yet.
 
-The response has a method to serve static files. It will call `root.embedFile()`
-automatically in release builds, and `file.readToEndAlloc()` in debug builds.
-
-We can't call `@embedFile()` directly, because it's module-scoped and it can't
-read files from other modules. So there's this workaround:
+To send a static file, you can use the `tk.sendStatic(path)` middleware.
 
 ```zig
-pub fn embedFile(path: []const u8) []const u8 {
-    return @embedFile(path);
-}
-
-fn hello(res: *tk.Response) !void {
-    try res.sendResource("static/index.html");
-}
+const handler = tk.chain(.{
+    tk.logger(.{}),
+    tk.get("/", tk.sendStatic("static/index.html")),
+    tk.send(error.NotFound),
+});
 ```
+
+If you want to embed some files into the binary, you can specify such paths to
+the `tokamak` module in your `build.zig` file.
+
+```zig
+const embed: []const []const u8 = &.{
+    "src/index.html",
+};
+
+const tokamak = b.dependency("tokamak", .{ .embed = embed });
+exe.root_module.addImport("tokamak", tokamak.module("tokamak"));
+```
+
+In this case, only the files listed in the `embed` array will be embedded into
+the binary and any other files will be served from the filesystem.
 
 ## MIME types
 
