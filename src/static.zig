@@ -21,7 +21,7 @@ pub fn sendStatic(comptime path: []const u8) Handler {
             try ctx.res.setHeader("Content-Type", comptime mime(std.fs.path.extension(path)) ++ "; charset=utf-8");
             try ctx.res.noCache();
 
-            const body = E.get(path);
+            var body = E.get(path);
 
             if (body == null or comptime builtin.mode == .Debug) {
                 body = try std.fs.cwd().readFileAlloc(ctx.allocator, path, std.math.maxInt(usize));
