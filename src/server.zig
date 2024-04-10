@@ -37,7 +37,7 @@ pub const Context = struct {
 
         self.res.keep_alive = server.keep_alive;
 
-        try self.injector.push(&allocator);
+        try self.injector.push(&self.allocator);
         try self.injector.push(&self.req);
         try self.injector.push(&self.res);
         try self.injector.push(self);
