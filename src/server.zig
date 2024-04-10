@@ -202,7 +202,7 @@ pub const Server = struct {
                 };
 
                 defer {
-                    if (!ctx.res.responded) ctx.res.noContent() catch {};
+                    if (!ctx.res.responded) ctx.res.sendStatus(.no_content) catch {};
                     ctx.res.out.?.end() catch {};
                 }
 

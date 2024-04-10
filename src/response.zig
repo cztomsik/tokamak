@@ -19,6 +19,39 @@ pub const Response = struct {
         try self.headers.append(.{ .name = name, .value = value });
     }
 
+    /// Sets a cookie. If the response has already been sent, this function
+    /// returns an error.
+    pub fn setCookie(self: *Response, name: []const u8, value: []const u8, options: CookieOptions) !void {
+        if (self.responded) return error.HeadersAlreadySent;
+
+        // TODO: start with current header?
+        var buf = std.ArrayList(u8).init(self.req.allocator);
+
+        try buf.appendSlice(name);
+        try buf.append('=');
+        try buf.appendSlice(value);
+
+        if (options.max_age) |age| {
+            try buf.appendSlice("; Max-Age=");
+            try buf.appendSlice(age);
+        }
+
+        if (options.domain) |d| {
+            try buf.appendSlice("; Domain=");
+            try buf.appendSlice(d);
+        }
+
+        if (options.http_only) {
+            try buf.appendSlice("; HttpOnly");
+        }
+
+        if (options.secure) {
+            try buf.appendSlice("; Secure");
+        }
+
+        try self.headers.append(.{ .name = "Set-Cookie", .value = buf.items });
+    }
+
     /// Returns a writer for the response body. If the response has already been
     /// sent, this function returns an error.
     pub fn writer(self: *Response) !std.io.AnyWriter {
@@ -31,21 +64,26 @@ pub const Response = struct {
         if (comptime @TypeOf(res) == []const u8) return self.sendChunk(res);
 
         return switch (comptime @typeInfo(@TypeOf(res))) {
-            .Void => if (!self.responded) self.noContent(),
+            .Void => if (!self.responded) self.sendStatus(.no_content),
             .ErrorSet => self.sendError(res),
             .ErrorUnion => if (res) |r| self.send(r) else |e| self.sendError(e),
             else => self.sendJson(res),
         };
     }
 
+    /// Sends a status code.
+    pub fn sendStatus(self: *Response, status: std.http.Status) !void {
+        self.status = status;
+        try self.respond();
+    }
+
     /// Sends an error response.
     pub fn sendError(self: *Response, err: anyerror) !void {
         self.status = switch (err) {
-            error.NotFound => .not_found,
-
-            // inline std.json.ParseFromValueError => .bad_request,
             error.InvalidCharacter, error.UnexpectedToken, error.InvalidNumber, error.Overflow, error.InvalidEnumTag, error.DuplicateField, error.UnknownField, error.MissingField, error.LengthMismatch => .bad_request,
-
+            error.Unauthorized => .unauthorized,
+            error.NotFound => .not_found,
+            error.Forbidden => .forbidden,
             else => .internal_server_error,
         };
 
@@ -100,16 +138,10 @@ pub const Response = struct {
         }
     }
 
-    /// Sends a 404 response.
-    pub fn notFound(self: *Response) !void {
-        self.status = .not_found;
-        try self.respond();
-    }
-
-    /// Sends an empty response.
-    pub fn noContent(self: *Response) !void {
-        self.status = .no_content;
-        try self.respond();
+    /// Redirects the response to a different URL.
+    pub fn redirect(self: *Response, url: []const u8, options: struct { status: std.http.Status = .found }) !void {
+        try self.setHeader("Location", url);
+        try self.sendStatus(options.status);
     }
 
     /// Adds no-cache headers to the response.
@@ -133,4 +165,11 @@ pub const Response = struct {
             },
         });
     }
+};
+
+pub const CookieOptions = struct {
+    domain: ?[]const u8 = null,
+    max_age: ?u32 = null,
+    http_only: bool = false,
+    secure: bool = false,
 };

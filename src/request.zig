@@ -26,6 +26,23 @@ pub const Request = struct {
         return null;
     }
 
+    /// Returns the value of the given cookie or null if it doesn't exist.
+    pub fn getCookie(self: *Request, name: []const u8) ?[]const u8 {
+        const header = self.getHeader("cookie") orelse return null;
+
+        var it = std.mem.splitSequence(u8, header, "; ");
+
+        while (it.next()) |part| {
+            const i = std.mem.indexOfScalar(u8, part, '=') orelse continue;
+            const key = part[0..i];
+            const value = part[i + 1 ..];
+
+            if (std.mem.eql(u8, key, name)) return value;
+        }
+
+        return null;
+    }
+
     /// Tries to match the request path against the given pattern and returns
     /// the parsed parameters.
     pub fn match(self: *Request, pattern: []const u8) ?Params {
@@ -86,6 +103,27 @@ pub const Params = struct {
         };
     }
 };
+
+test "req.getCookie()" {
+    var bytes = "GET /test HTTP/1.0\r\nCookie: foo=bar; baz=qux\r\n\r\n".*;
+
+    var server: std.http.Server = undefined;
+    server.read_buffer = &bytes;
+
+    var req = try Request.init(
+        undefined,
+        std.http.Server.Request{
+            .server = &server,
+            .head = try std.http.Server.Request.Head.parse(&bytes),
+            .head_end = bytes.len,
+            .reader_state = undefined,
+        },
+    );
+
+    try std.testing.expectEqualStrings("bar", req.getCookie("foo").?);
+    try std.testing.expectEqualStrings("qux", req.getCookie("baz").?);
+    try std.testing.expectEqual(null, req.getCookie("missing"));
+}
 
 fn expectMatch(pattern: []const u8, path: []const u8, len: usize) !void {
     if (Params.match(pattern, path)) |m| {
