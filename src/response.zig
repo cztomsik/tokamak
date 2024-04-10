@@ -33,7 +33,7 @@ pub const Response = struct {
 
         if (options.max_age) |age| {
             try buf.appendSlice("; Max-Age=");
-            try buf.appendSlice(age);
+            try buf.writer().print("{d}", .{age});
         }
 
         if (options.domain) |d| {
@@ -49,7 +49,7 @@ pub const Response = struct {
             try buf.appendSlice("; Secure");
         }
 
-        try self.headers.append(.{ .name = "Set-Cookie", .value = buf.items });
+        try self.setHeader("Set-Cookie", buf.items);
     }
 
     /// Returns a writer for the response body. If the response has already been
