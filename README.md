@@ -246,7 +246,7 @@ the `tokamak` module in your `build.zig` file.
 
 ```zig
 const embed: []const []const u8 = &.{
-    "src/index.html",
+    "static/index.html",
 };
 
 const tokamak = b.dependency("tokamak", .{ .embed = embed });
