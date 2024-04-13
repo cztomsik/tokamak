@@ -11,7 +11,7 @@ pub const Request = struct {
             .allocator = allocator,
             .raw = raw,
             .method = raw.head.method,
-            .url = std.Uri.parseWithoutScheme(raw.head.target) catch return error.InvalidUrl,
+            .url = std.Uri.parseAfterScheme("", raw.head.target) catch return error.InvalidUrl,
         };
     }
 
@@ -46,7 +46,7 @@ pub const Request = struct {
     /// Tries to match the request path against the given pattern and returns
     /// the parsed parameters.
     pub fn match(self: *Request, pattern: []const u8) ?Params {
-        return Params.match(pattern, self.url.path);
+        return Params.match(pattern, self.url.path.percent_encoded);
     }
 
     /// Reads the request body as JSON.
