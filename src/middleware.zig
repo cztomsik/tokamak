@@ -32,10 +32,10 @@ pub fn chain(comptime steps: anytype) Handler {
 pub fn group(comptime prefix: []const u8, handler: anytype) Handler {
     const H = struct {
         fn handleGroup(ctx: *Context) anyerror!void {
-            if (std.mem.startsWith(u8, ctx.req.url.path.percent_encoded, prefix)) {
-                const orig = ctx.req.url.path;
-                ctx.req.url.path = .{ .percent_encoded = ctx.req.url.path.percent_encoded[prefix.len..] };
-                defer ctx.req.url.path = orig;
+            if (std.mem.startsWith(u8, ctx.req.path, prefix)) {
+                const orig = ctx.req.path;
+                ctx.req.path = ctx.req.path[prefix.len..];
+                defer ctx.req.path = orig;
 
                 if (!try ctx.runScoped(&Context.wrap(handler), &.{})) return;
             }

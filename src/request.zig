@@ -4,15 +4,38 @@ pub const Request = struct {
     allocator: std.mem.Allocator,
     raw: std.http.Server.Request,
     method: std.http.Method,
-    url: std.Uri,
+    path: []const u8,
+    query: ?[]const u8,
 
     pub fn init(allocator: std.mem.Allocator, raw: std.http.Server.Request) !Request {
+        const target: []u8 = std.Uri.percentDecodeInPlace(@constCast(raw.head.target));
+        std.mem.replaceScalar(u8, target, '+', ' ');
+
+        const i = std.mem.indexOfScalar(u8, target, '?');
+
         return .{
             .allocator = allocator,
             .raw = raw,
             .method = raw.head.method,
-            .url = std.Uri.parseAfterScheme("", raw.head.target) catch return error.InvalidUrl,
+            .path = target[0 .. i orelse target.len],
+            .query = if (i) |n| target[n + 1 ..] else null,
         };
+    }
+
+    /// Returns the value of the given query parameter or null if it doesn't
+    /// exist.
+    pub fn getQueryParam(self: *Request, name: []const u8) ?[]const u8 {
+        var it = std.mem.splitScalar(u8, self.query orelse return null, '&');
+
+        while (it.next()) |part| {
+            const i = std.mem.indexOfScalar(u8, part, '=') orelse continue;
+            const key = part[0..i];
+            const value = part[i + 1 ..];
+
+            if (std.mem.eql(u8, key, name)) return value;
+        }
+
+        return null;
     }
 
     /// Returns the value of the given header or null if it doesn't exist.
@@ -46,7 +69,7 @@ pub const Request = struct {
     /// Tries to match the request path against the given pattern and returns
     /// the parsed parameters.
     pub fn match(self: *Request, pattern: []const u8) ?Params {
-        return Params.match(pattern, self.url.path.percent_encoded);
+        return Params.match(pattern, self.path);
     }
 
     /// Reads the request body as JSON.
