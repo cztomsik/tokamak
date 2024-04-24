@@ -64,21 +64,29 @@ fn route(comptime method: std.http.Method, comptime pattern: []const u8, comptim
 }
 
 fn matchRoute(ctx: *Context, comptime method: std.http.Method, comptime pattern: []const u8, comptime handler: anytype) anyerror!bool {
-    const has_body: u1 = comptime if (method == .POST or method == .PUT or method == .PATCH) 1 else 0;
-    const param_count = comptime std.mem.count(u8, pattern, ":") + has_body;
+    const has_body = comptime method == .POST or method == .PUT or method == .PATCH;
+    const has_query = comptime std.mem.endsWith(u8, pattern, "?");
+    const n_params = comptime std.mem.count(u8, pattern, ":");
 
     if (ctx.req.method == method) {
-        if (ctx.req.match(pattern)) |params| {
+        if (ctx.req.match(comptime pattern[0 .. pattern.len - @intFromBool(has_query)])) |params| {
             var args: std.meta.ArgsTuple(@TypeOf(handler)) = undefined;
-            const mid = args.len - param_count;
+            const mid = args.len - n_params - @intFromBool(has_query) - @intFromBool(has_body);
 
             inline for (0..mid) |i| {
                 args[i] = try ctx.injector.get(@TypeOf(args[i]));
             }
 
-            inline for (mid..args.len) |i| {
-                const V = @TypeOf(args[i]);
-                args[i] = try if (comptime @typeInfo(V) == .Struct) ctx.req.readJson(V) else params.get(i - mid, V);
+            inline for (0..n_params, mid..) |j, i| {
+                args[i] = try params.get(j, @TypeOf(args[i]));
+            }
+
+            if (comptime has_query) {
+                args[mid + n_params] = try ctx.req.readQuery(@TypeOf(args[mid + n_params]));
+            }
+
+            if (comptime has_body) {
+                args[args.len - 1] = try ctx.req.readJson(@TypeOf(args[args.len - 1]));
             }
 
             try ctx.res.send(@call(.auto, handler, args));
