@@ -71,6 +71,25 @@ pub const Request = struct {
         return Params.match(pattern, self.path);
     }
 
+    /// Reads the query parameters into a struct.
+    pub fn readQuery(self: *const Request, comptime T: type) !T {
+        var res: T = undefined;
+
+        inline for (@typeInfo(T).Struct.fields) |f| {
+            const V = switch (@typeInfo(f.type)) {
+                .Optional => |o| o.child,
+                else => f.type,
+            };
+
+            @field(res, f.name) = switch (@typeInfo(f.type)) {
+                .Optional => if (self.getQueryParam(f.name)) |s| try parse(V, s) else null,
+                else => try parse(V, self.getQueryParam(f.name) orelse return error.MissingField),
+            };
+        }
+
+        return res;
+    }
+
     /// Reads the request body as JSON.
     pub fn readJson(self: *Request, comptime T: type) !T {
         var reader = std.json.reader(self.allocator, try self.raw.reader());
@@ -167,6 +186,17 @@ test "req.getCookie()" {
     try std.testing.expectEqual(null, req.getCookie("missing"));
 }
 
+test "req.readQuery()" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var req = try fakeReq(&arena, "GET /test?foo=bar&baz=qux HTTP/1.0\r\n\r\n");
+    const query = try req.readQuery(struct { foo: []const u8, baz: []const u8 });
+
+    try std.testing.expectEqualStrings("bar", query.foo);
+    try std.testing.expectEqualStrings("qux", query.baz);
+}
+
 pub const Params = struct {
     matches: [16][]const u8 = undefined,
     len: usize = 0,
@@ -200,14 +230,18 @@ pub const Params = struct {
     }
 
     pub fn get(self: *const Params, index: usize, comptime T: type) !T {
-        const s = if (index < self.len) self.matches[index] else return error.NoMatch;
+        if (index >= self.len) return error.NoMatch;
 
-        return switch (@typeInfo(T)) {
-            .Int => std.fmt.parseInt(T, s, 10),
-            else => s,
-        };
+        return parse(T, self.matches[index]);
     }
 };
+
+fn parse(comptime T: type, s: []const u8) !T {
+    return switch (@typeInfo(T)) {
+        .Int => std.fmt.parseInt(T, s, 10),
+        else => s,
+    };
+}
 
 fn expectMatch(pattern: []const u8, path: []const u8, len: usize) !void {
     if (Params.match(pattern, path)) |m| {
