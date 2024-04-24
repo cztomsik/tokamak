@@ -82,7 +82,7 @@ pub const Request = struct {
             };
 
             @field(res, f.name) = switch (@typeInfo(f.type)) {
-                .Optional => if (self.getQueryParam(f.name)) |s| try parse(V, s) else null,
+                .Optional => if (self.getQueryParam(f.name)) |s| if (std.mem.eql(u8, s, "null")) null else try parse(V, s) else null,
                 else => try parse(V, self.getQueryParam(f.name) orelse return error.MissingField),
             };
         }
@@ -107,13 +107,14 @@ pub const Request = struct {
         var i: usize = 0;
 
         for (res) |*p| {
-            const end = std.mem.indexOfScalarPos(u8, query, i, '&') orelse query.len;
-            const mid = std.mem.indexOfScalarPos(u8, query, i, '=');
+            const part = query[i .. std.mem.indexOfScalarPos(u8, query, i, '&') orelse query.len];
+            const eq = std.mem.indexOfScalar(u8, part, '=');
 
-            p.name = decodeInplace(query[i .. mid orelse end]);
-            p.value = if (mid) |m| decodeInplace(query[m + 1 .. end]) else "";
+            p.name = decodeInplace(part[0 .. eq orelse part.len]);
+            p.value = if (eq) |j| decodeInplace(part[j + 1 ..]) else "";
 
-            i += end + 1;
+            i += part.len;
+            if (i < query.len) i += 1;
         }
 
         return res;
@@ -149,7 +150,7 @@ test "request parsing" {
     const req1 = try fakeReq(&arena, "GET /test HTTP/1.0\r\n\r\n");
     const req2 = try fakeReq(&arena, "POST /foo%20bar HTTP/1.0\r\n\r\n");
     const req3 = try fakeReq(&arena, "PUT /foo%3Abar+baz HTTP/1.0\r\n\r\n");
-    const req4 = try fakeReq(&arena, "DELETE /test?foo=hello%20world&bar=baz%3Aqux HTTP/1.0\r\n\r\n");
+    const req4 = try fakeReq(&arena, "DELETE /test?foo=hello%20world&bar=baz%3Aqux&opt=null HTTP/1.0\r\n\r\n");
 
     try std.testing.expectEqual(std.http.Method.GET, req1.method);
     try std.testing.expectEqual(std.http.Method.POST, req2.method);
@@ -159,9 +160,11 @@ test "request parsing" {
     try std.testing.expectEqualStrings("/test", req1.path);
     try std.testing.expectEqualStrings("/foo bar", req2.path);
     try std.testing.expectEqualStrings("/foo:bar baz", req3.path);
+    try std.testing.expectEqualStrings("/test", req4.path);
 
     try std.testing.expectEqualStrings("hello world", req4.getQueryParam("foo").?);
     try std.testing.expectEqualStrings("baz:qux", req4.getQueryParam("bar").?);
+    try std.testing.expectEqualStrings("null", req4.getQueryParam("opt").?);
     try std.testing.expectEqual(null, req4.getQueryParam("missing"));
 }
 
@@ -190,11 +193,16 @@ test "req.readQuery()" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
 
-    var req = try fakeReq(&arena, "GET /test?foo=bar&baz=qux HTTP/1.0\r\n\r\n");
-    const query = try req.readQuery(struct { foo: []const u8, baz: []const u8 });
+    var req = try fakeReq(&arena, "GET /test?str=foo&num=123&opt=null HTTP/1.0\r\n\r\n");
 
-    try std.testing.expectEqualStrings("bar", query.foo);
-    try std.testing.expectEqualStrings("qux", query.baz);
+    const q1 = try req.readQuery(struct { str: []const u8, num: u32, opt: ?u32 });
+    try std.testing.expectEqualStrings("foo", q1.str);
+    try std.testing.expectEqual(123, q1.num);
+    try std.testing.expectEqual(null, q1.opt);
+
+    const q2 = try req.readQuery(struct { missing: ?u32 = null, opt: ?u32 });
+    try std.testing.expectEqual(null, q2.missing);
+    try std.testing.expectEqual(null, q2.opt);
 }
 
 pub const Params = struct {
