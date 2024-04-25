@@ -5,6 +5,7 @@ pub const Response = struct {
     req: *Request,
     responded: bool = false,
     keep_alive: bool = true,
+    sse: bool = false,
     status: std.http.Status = .ok,
     headers: std.ArrayList(std.http.Header),
     out: ?std.http.Server.Response = null,
@@ -97,7 +98,8 @@ pub const Response = struct {
         try self.out.?.flush();
     }
 
-    /// Sends a chunk of JSON. The chunk always ends with a newline.
+    /// Sends a chunk of JSON. The chunk is always either single line, or in
+    /// case of SSE, it's a valid message ending with \n\n.
     /// Supports values, slices and iterators.
     pub fn sendJson(self: *Response, body: anytype) !void {
         if (!self.responded) {
@@ -105,6 +107,10 @@ pub const Response = struct {
         }
 
         var w = try self.writer();
+
+        if (self.sse) {
+            try w.writeAll("data: ");
+        }
 
         if (comptime std.meta.hasFn(@TypeOf(body), "next")) {
             var copy = body;
@@ -120,7 +126,7 @@ pub const Response = struct {
             try std.json.stringify(body, .{}, w);
         }
 
-        try w.writeAll("\r\n");
+        try w.writeAll(if (self.sse) "\n\n" else "\r\n");
         try self.out.?.flush();
     }
 
@@ -136,6 +142,16 @@ pub const Response = struct {
         while (try copy.next()) |item| {
             try self.sendJson(item);
         }
+    }
+
+    /// Starts an SSE stream.
+    pub fn startSse(self: *Response) !void {
+        try self.setHeader("Content-Type", "text/event-stream");
+        try self.setHeader("Cache-Control", "no-cache");
+        try self.setHeader("Connection", "keep-alive");
+
+        self.sse = true;
+        try self.respond();
     }
 
     /// Redirects the response to a different URL.
