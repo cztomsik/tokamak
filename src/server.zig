@@ -31,7 +31,7 @@ pub const Context = struct {
         self.* = .{
             .allocator = allocator,
             .req = try Request.init(allocator, raw),
-            .res = .{ .req = &self.req },
+            .res = .{ .req = &self.req, .headers = std.ArrayList(std.http.Header).init(allocator) },
             .injector = .{ .parent = &server.injector },
         };
 

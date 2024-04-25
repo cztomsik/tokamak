@@ -6,7 +6,7 @@ pub const Response = struct {
     responded: bool = false,
     keep_alive: bool = true,
     status: std.http.Status = .ok,
-    headers: std.BoundedArray(std.http.Header, 32) = .{},
+    headers: std.ArrayList(std.http.Header),
     out: ?std.http.Server.Response = null,
     buf: [1024]u8 = undefined,
 
@@ -161,7 +161,7 @@ pub const Response = struct {
             .respond_options = .{
                 .status = self.status,
                 .keep_alive = self.keep_alive,
-                .extra_headers = self.headers.constSlice(),
+                .extra_headers = self.headers.items,
             },
         });
     }
