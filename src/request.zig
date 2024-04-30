@@ -247,6 +247,7 @@ pub const Params = struct {
 fn parse(comptime T: type, s: []const u8) !T {
     return switch (@typeInfo(T)) {
         .Int => std.fmt.parseInt(T, s, 10),
+        .Enum => std.meta.stringToEnum(T, s) orelse error.InvalidEnumTag,
         else => s,
     };
 }
