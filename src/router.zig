@@ -61,8 +61,14 @@ pub fn router(comptime routes: type) Handler {
 }
 
 fn route(comptime method: std.http.Method, comptime pattern: []const u8, comptime has_body: bool, comptime handler: anytype) Handler {
-    const has_query = comptime std.mem.endsWith(u8, pattern, "?");
-    const n_params = comptime std.mem.count(u8, pattern, ":");
+    const has_query = comptime pattern[pattern.len - 1] == '?';
+    const n_params = comptime brk: {
+        var n: usize = 0;
+        for (pattern) |c| {
+            if (c == ':') n += 1;
+        }
+        break :brk n;
+    };
 
     const H = struct {
         fn handleRoute(ctx: *Context) anyerror!void {
