@@ -21,7 +21,7 @@ pub const Request = struct {
             .raw = raw,
             .method = raw.head.method,
             .path = decodeInplace(target[0..i]),
-            .query_params = if (i < target.len) try parseQuery(allocator, target[i + 1 ..]) else &.{},
+            .query_params = if (i < target.len) try parseQueryParams(allocator, target[i + 1 ..]) else &.{},
         };
     }
 
@@ -76,15 +76,13 @@ pub const Request = struct {
         var res: T = undefined;
 
         inline for (@typeInfo(T).Struct.fields) |f| {
-            const V = switch (@typeInfo(f.type)) {
-                .Optional => |o| o.child,
-                else => f.type,
-            };
-
-            @field(res, f.name) = switch (@typeInfo(f.type)) {
-                .Optional => if (self.getQueryParam(f.name)) |s| if (std.mem.eql(u8, s, "null")) null else try parse(V, s) else null,
-                else => try parse(V, self.getQueryParam(f.name) orelse return error.MissingField),
-            };
+            if (self.getQueryParam(f.name)) |param| {
+                @field(res, f.name) = try parse(f.type, param);
+            } else if (f.default_value) |ptr| {
+                @field(res, f.name) = @as(*const f.type, @ptrCast(@alignCast(ptr))).*;
+            } else {
+                return error.MissingField;
+            }
         }
 
         return res;
@@ -102,7 +100,7 @@ pub const Request = struct {
         );
     }
 
-    fn parseQuery(allocator: std.mem.Allocator, query: []u8) ![]const QueryParam {
+    fn parseQueryParams(allocator: std.mem.Allocator, query: []u8) ![]const QueryParam {
         const res = try allocator.alloc(QueryParam, std.mem.count(u8, query, "&") + 1);
         var i: usize = 0;
 
@@ -203,6 +201,10 @@ test "req.readQuery()" {
     const q2 = try req.readQuery(struct { missing: ?u32 = null, opt: ?u32 });
     try std.testing.expectEqual(null, q2.missing);
     try std.testing.expectEqual(null, q2.opt);
+
+    const q3 = try req.readQuery(struct { num: u32 = 0, missing: u32 = 123 });
+    try std.testing.expectEqual(123, q3.num);
+    try std.testing.expectEqual(123, q3.missing);
 }
 
 pub const Params = struct {
@@ -246,6 +248,7 @@ pub const Params = struct {
 
 fn parse(comptime T: type, s: []const u8) !T {
     return switch (@typeInfo(T)) {
+        .Optional => |o| if (std.mem.eql(u8, s, "null")) null else try parse(o.child, s),
         .Int => std.fmt.parseInt(T, s, 10),
         .Enum => std.meta.stringToEnum(T, s) orelse error.InvalidEnumTag,
         else => s,
