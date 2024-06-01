@@ -1,70 +1,100 @@
 const std = @import("std");
 const Context = @import("server.zig").Context;
 const Handler = @import("server.zig").Handler;
-const chain = @import("middleware.zig").chain;
+const Request = @import("request.zig").Request;
+const Params = @import("request.zig").Params;
 
-/// Returns GET handler which can be used as middleware.
-pub fn get(comptime pattern: []const u8, comptime handler: anytype) Handler {
-    return route(.GET, pattern, false, handler);
+pub const Route = struct {
+    method: ?std.http.Method = null,
+    prefix: ?[]const u8 = null,
+    path: ?[]const u8 = null,
+    handler: ?*const Handler = null,
+    children: []const Route = &.{},
+
+    pub fn match(self: *const Route, req: *const Request) ?Params {
+        if (self.method) |m| {
+            if (m != req.method) return null;
+        }
+
+        if (self.path) |p| {
+            return req.match(p);
+        }
+
+        return Params{};
+    }
+};
+
+/// Group multiple routes under a common prefix.
+pub fn group(comptime prefix: []const u8, children: []const Route) Route {
+    return .{ .prefix = prefix, .children = children };
 }
 
-/// Returns POST handler which can be used as middleware.
-pub fn post(comptime pattern: []const u8, comptime handler: anytype) Handler {
-    return route(.POST, pattern, true, handler);
+/// Creates a GET route with the given path and handler.
+pub fn get(comptime path: []const u8, comptime handler: anytype) Route {
+    return route(.GET, path, false, handler);
 }
 
-/// Like `post` but without a body.
-pub fn post0(comptime pattern: []const u8, comptime handler: anytype) Handler {
-    return route(.POST, pattern, false, handler);
+/// Creates a POST route with the given path and handler. The handler will
+/// receive the request body in the last argument.
+pub fn post(comptime path: []const u8, comptime handler: anytype) Route {
+    return route(.POST, path, true, handler);
 }
 
-/// Returns PUT handler which can be used as middleware.
-pub fn put(comptime pattern: []const u8, comptime handler: anytype) Handler {
-    return route(.PUT, pattern, true, handler);
+/// Creates a POST route with the given path and handler but without a body.
+pub fn post0(comptime path: []const u8, comptime handler: anytype) Route {
+    return route(.POST, path, false, handler);
 }
 
-/// Like `put` but without a body.
-pub fn put0(comptime pattern: []const u8, comptime handler: anytype) Handler {
-    return route(.PUT, pattern, false, handler);
+/// Creates a PUT route with the given path and handler. The handler will
+/// receive the request body in the last argument.
+pub fn put(comptime path: []const u8, comptime handler: anytype) Route {
+    return route(.PUT, path, true, handler);
 }
 
-/// Returns PATCH handler which can be used as middleware.
-pub fn patch(comptime pattern: []const u8, comptime handler: anytype) Handler {
-    return route(.PATCH, pattern, true, handler);
+/// Creates a PUT route with the given path and handler but without a body.
+pub fn put0(comptime path: []const u8, comptime handler: anytype) Route {
+    return route(.PUT, path, false, handler);
 }
 
-/// Like `patch` but without a body.
-pub fn patch0(comptime pattern: []const u8, comptime handler: anytype) Handler {
-    return route(.PATCH, pattern, false, handler);
+/// Creates a PATCH route with the given path and handler. The handler will
+/// receive the request body in the last argument.
+pub fn patch(comptime path: []const u8, comptime handler: anytype) Route {
+    return route(.PATCH, path, true, handler);
 }
 
-/// Returns DELETE handler which can be used as middleware.
-pub fn delete(comptime pattern: []const u8, comptime handler: anytype) Handler {
-    return route(.DELETE, pattern, false, handler);
+/// Creates a PATCH route with the given path and handler but without a body.
+pub fn patch0(comptime path: []const u8, comptime handler: anytype) Route {
+    return route(.PATCH, path, false, handler);
 }
 
-/// Returns middleware which tries to match any of the provided routes.
-/// Expects a struct with fn declarations named after the HTTP methods and the
-/// route pattern.
-pub fn router(comptime routes: type) Handler {
-    const decls = @typeInfo(routes).Struct.decls;
-    var handlers: [decls.len]Handler = undefined;
+/// Creates a DELETE route with the given path and handler.
+pub fn delete(comptime path: []const u8, comptime handler: anytype) Route {
+    return route(.DELETE, path, false, handler);
+}
 
-    for (decls, 0..) |d, i| {
+/// Creates a group of routes from a struct type. Each pub fn will be equivalent
+/// to calling the corresponding route function with the method and path.
+pub fn router(comptime T: type) Route {
+    const decls = @typeInfo(T).Struct.decls;
+    var children: []const Route = &.{};
+
+    for (decls) |d| {
         const j = std.mem.indexOfScalar(u8, d.name, ' ') orelse @compileError("route must contain a space");
         var buf: [j]u8 = undefined;
         const method = std.ascii.lowerString(&buf, d.name[0..j]);
-        handlers[i] = @field(@This(), method)(d.name[j + 1 ..], @field(routes, d.name));
+        children = children ++ .{@field(@This(), method)(d.name[j + 1 ..], @field(T, d.name))};
     }
 
-    return chain(handlers);
+    return .{
+        .children = children,
+    };
 }
 
-fn route(comptime method: std.http.Method, comptime pattern: []const u8, comptime has_body: bool, comptime handler: anytype) Handler {
-    const has_query = comptime pattern[pattern.len - 1] == '?';
+fn route(comptime method: std.http.Method, comptime path: []const u8, comptime has_body: bool, comptime handler: anytype) Route {
+    const has_query = comptime path[path.len - 1] == '?';
     const n_params = comptime brk: {
         var n: usize = 0;
-        for (pattern) |c| {
+        for (path) |c| {
             if (c == ':') n += 1;
         }
         break :brk n;
@@ -72,34 +102,33 @@ fn route(comptime method: std.http.Method, comptime pattern: []const u8, comptim
 
     const H = struct {
         fn handleRoute(ctx: *Context) anyerror!void {
-            if (ctx.req.method == method) {
-                if (ctx.req.match(comptime pattern[0 .. pattern.len - @intFromBool(has_query)])) |params| {
-                    var args: std.meta.ArgsTuple(@TypeOf(handler)) = undefined;
-                    const mid = args.len - n_params - @intFromBool(has_query) - @intFromBool(has_body);
+            var args: std.meta.ArgsTuple(@TypeOf(handler)) = undefined;
+            const mid = args.len - n_params - @intFromBool(has_query) - @intFromBool(has_body);
 
-                    inline for (0..mid) |i| {
-                        args[i] = try ctx.injector.get(@TypeOf(args[i]));
-                    }
-
-                    inline for (0..n_params, mid..) |j, i| {
-                        args[i] = try params.get(j, @TypeOf(args[i]));
-                    }
-
-                    if (comptime has_query) {
-                        args[mid + n_params] = try ctx.req.readQuery(@TypeOf(args[mid + n_params]));
-                    }
-
-                    if (comptime has_body) {
-                        args[args.len - 1] = try ctx.req.readJson(@TypeOf(args[args.len - 1]));
-                    }
-
-                    try ctx.res.send(@call(.auto, handler, args));
-                    return;
-                }
+            inline for (0..mid) |i| {
+                args[i] = try ctx.injector.get(@TypeOf(args[i]));
             }
 
-            return ctx.next();
+            inline for (0..n_params, mid..) |j, i| {
+                args[i] = try ctx.match.params.get(j, @TypeOf(args[i]));
+            }
+
+            if (comptime has_query) {
+                args[mid + n_params] = try ctx.req.readQuery(@TypeOf(args[mid + n_params]));
+            }
+
+            if (comptime has_body) {
+                args[args.len - 1] = try ctx.req.readJson(@TypeOf(args[args.len - 1]));
+            }
+
+            try ctx.res.send(@call(.auto, handler, args));
+            return;
         }
     };
-    return H.handleRoute;
+
+    return .{
+        .method = method,
+        .path = path[0 .. path.len - @intFromBool(has_query)],
+        .handler = H.handleRoute,
+    };
 }

@@ -90,25 +90,25 @@ pub const Context = struct {
 /// A simple HTTP server with dependency injection.
 pub const Server = struct {
     allocator: std.mem.Allocator,
-    injector: Injector,
+    routes: []const Route,
+    options: Options,
+
     net: std.net.Server,
     threads: []std.Thread,
     mutex: std.Thread.Mutex = .{},
     stopping: std.Thread.ResetEvent = .{},
     stopped: std.Thread.ResetEvent = .{},
-    handler: *const Handler,
-    keep_alive: bool,
 
     /// Run the server, blocking the current thread.
-    pub fn run(allocator: std.mem.Allocator, handler: anytype, options: Options) !void {
-        var server = try start(allocator, handler, options);
+    pub fn run(allocator: std.mem.Allocator, routes: []const Route, options: Options) !void {
+        var server = try start(allocator, routes, options);
         defer server.deinit();
 
         server.wait();
     }
 
     /// Start a new server.
-    pub fn start(allocator: std.mem.Allocator, handler: anytype, options: Options) !*Server {
+    pub fn start(allocator: std.mem.Allocator, routes: []const Route, options: Options) !*Server {
         const self = try allocator.create(Server);
         errdefer allocator.destroy(self);
 
@@ -122,15 +122,11 @@ pub const Server = struct {
 
         self.* = .{
             .allocator = allocator,
-            .injector = options.injector,
+            .routes = routes,
+            .options = options,
+
             .net = net,
             .threads = threads,
-            .handler = Context.wrap(switch (comptime @typeInfo(@TypeOf(handler))) {
-                .Type => @import("router.zig").router(handler),
-                .Fn => handler,
-                else => @compileError("handler must be a function or a struct"),
-            }),
-            .keep_alive = options.keep_alive,
         };
 
         for (threads) |*t| {

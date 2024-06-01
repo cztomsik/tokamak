@@ -266,6 +266,7 @@ test "Params matching" {
     // TODO: fix this, but we need more tests first
     // try expectMatch("/*", "/", 0);
     try expectMatch("/*", "/foo", 0);
+    try expectMatch("/*", "/foo/bar", 0);
     try expectMatch("/*.js", "/foo.js", 0);
     try expectMatch("/foo", "/foo", 0);
     try expectMatch("/:foo", "/foo", 1);
