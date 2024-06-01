@@ -1,77 +1,59 @@
 const std = @import("std");
+const Injector = @import("injector.zig").Injector;
 const Context = @import("server.zig").Context;
 const Handler = @import("server.zig").Handler;
+const Route = @import("router.zig").Route;
 
-/// Returns a middleware that executes given steps as a chain. Every step should
-/// either respond or call the next step in the chain.
-pub fn chain(comptime steps: anytype) Handler {
-    const handlers = comptime brk: {
-        var tmp: [steps.len]*const Handler = undefined;
-        for (steps, 0..) |m, i| tmp[i] = &Context.wrap(m);
-        const res = tmp;
-        break :brk &res;
-    };
-
-    const H = struct {
-        fn handleChain(ctx: *Context) anyerror!void {
-            if (!try ctx.runScoped(handlers[0], handlers[1..])) {
-                return;
-            }
-
-            // TODO: tail-call?
-            return ctx.next();
-        }
-    };
-    return H.handleChain;
-}
-
-/// Returns a middleware that matches the request path prefix and calls the
-/// given handler/middleware. If the prefix matches, the request path is
-/// modified to remove the prefix. If the handler/middleware responds, the
-/// chain is stopped.
-pub fn group(comptime prefix: []const u8, handler: anytype) Handler {
+/// Groups the given routes under a common prefix. The prefix is removed
+/// from the request path before the children are called.
+pub fn group(prefix: []const u8, children: []const Route) Route {
     const H = struct {
         fn handleGroup(ctx: *Context) anyerror!void {
-            if (std.mem.startsWith(u8, ctx.req.path, prefix)) {
-                const orig = ctx.req.path;
-                ctx.req.path = ctx.req.path[prefix.len..];
-                defer ctx.req.path = orig;
+            const orig = ctx.req.path;
+            ctx.req.path = ctx.req.path[ctx.current.prefix.?.len..];
+            defer ctx.req.path = orig;
 
-                if (!try ctx.runScoped(&Context.wrap(handler), &.{})) return;
-            }
-
-            // TODO: tail-call?
-            return ctx.next();
+            try ctx.recur();
         }
     };
-    return H.handleGroup;
+
+    return .{
+        .prefix = prefix,
+        .handler = H.handleGroup,
+        .children = children,
+    };
 }
 
-/// Returns a middleware for providing a dependency to the rest of the current
-/// scope. Accepts a factory that returns the dependency. The factory can
+/// Call the factory and provide result to all children. The factory can
 /// use the current scope to resolve its own dependencies. If the resulting
 /// type has a `deinit` method, it will be called at the end of the scope.
-pub fn provide(comptime factory: anytype) Handler {
+pub fn provide(comptime factory: anytype, children: []const Route) Route {
     const H = struct {
         fn handleProvide(ctx: *Context) anyerror!void {
             var dep = try ctx.injector.call(factory, .{});
-            try ctx.injector.push(&dep);
-
-            defer if (comptime hasDeinit(@TypeOf(dep))) {
+            defer if (comptime @hasDecl(DerefType(@TypeOf(dep)), "deinit")) {
                 dep.deinit();
             };
 
-            return ctx.next();
+            const prev = ctx.injector;
+            defer ctx.injector = prev;
+            ctx.injector = Injector.fromParent(&prev, &.{&dep});
+
+            try ctx.recur();
         }
 
-        fn hasDeinit(comptime T: type) bool {
+        fn DerefType(comptime T: type) type {
             return switch (@typeInfo(T)) {
-                .Pointer => |ptr| hasDeinit(ptr.child),
-                else => @hasDecl(T, "deinit"),
+                .Pointer => |p| p.child,
+                else => T,
             };
         }
     };
-    return H.handleProvide;
+
+    return .{
+        .handler = H.handleProvide,
+        .children = children,
+    };
 }
 
 /// Returns a handler that sends the given, comptime response.
@@ -84,42 +66,47 @@ pub fn send(comptime res: anytype) Handler {
     return H.handleSend;
 }
 
-/// Returns a middleware for logging all requests going through it.
-pub fn logger(options: struct { scope: @TypeOf(.EnumLiteral) = .server }) Handler {
+/// Returns a wrapper for logging all requests going through it.
+pub fn logger(options: struct { scope: @TypeOf(.EnumLiteral) = .server }, children: []const Route) Route {
     const log = std.log.scoped(options.scope);
 
     const H = struct {
         fn handleLogger(ctx: *Context) anyerror!void {
             const start = std.time.milliTimestamp();
-            defer log.debug("{s} {s} {} [{}ms]", .{
+            defer if (ctx.res.responded) log.debug("{s} {s} {} [{}ms]", .{
                 @tagName(ctx.req.method),
                 ctx.req.raw.head.target,
                 @intFromEnum(ctx.res.status),
                 std.time.milliTimestamp() - start,
             });
 
-            return ctx.next();
+            try ctx.recur();
         }
     };
-    return H.handleLogger;
+
+    return .{
+        .handler = H.handleLogger,
+        .children = children,
+    };
 }
 
-/// Returns a middleware that sets the CORS headers for the request.
-pub fn cors() Handler {
+/// Adds CORS headers and handles preflight requests. Note that headers cannot
+/// be removed so this should always wrapped in a group.
+pub fn cors() Route {
     const H = struct {
         fn handleCors(ctx: *Context) anyerror!void {
             try ctx.res.setHeader("Access-Control-Allow-Origin", ctx.req.getHeader("Origin") orelse "*");
 
-            if (ctx.req.method == .OPTIONS) {
+            if (ctx.req.method == .OPTIONS and ctx.req.getHeader("Access-Control-Request-Headers") != null) {
                 try ctx.res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
                 try ctx.res.setHeader("Access-Control-Allow-Headers", "Content-Type");
                 try ctx.res.setHeader("Access-Control-Allow-Private-Network", "true");
-                try ctx.res.sendStatus(.no_content);
-                return;
+                return ctx.res.sendStatus(.no_content);
             }
-
-            return ctx.next();
         }
     };
-    return H.handleCors;
+
+    return .{
+        .handler = H.handleCors,
+    };
 }
