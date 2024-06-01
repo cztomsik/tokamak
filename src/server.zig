@@ -1,11 +1,12 @@
 const std = @import("std");
 const log = std.log.scoped(.server);
 const Injector = @import("injector.zig").Injector;
+const Route = @import("router.zig").Route;
 const Request = @import("request.zig").Request;
+const Params = @import("request.zig").Params;
 const Response = @import("response.zig").Response;
 
 pub const Options = struct {
-    injector: Injector = .{},
     public_url: ?[]const u8 = null,
     hostname: []const u8 = "127.0.0.1",
     port: u16,
@@ -16,12 +17,13 @@ pub const Options = struct {
 pub const Handler = fn (*Context) anyerror!void;
 
 pub const Context = struct {
+    server: *Server,
     allocator: std.mem.Allocator,
     req: Request,
     res: Response,
+    current: Route,
+    params: Params,
     injector: Injector,
-    chain: []const *const fn (*Context) anyerror!void = &.{},
-    drained: bool = false,
 
     fn init(self: *Context, allocator: std.mem.Allocator, server: *Server, http: *std.http.Server) !void {
         const raw = http.receiveHead() catch |e| {
@@ -30,60 +32,33 @@ pub const Context = struct {
         };
 
         self.* = .{
+            .server = server,
             .allocator = allocator,
             .req = try Request.init(allocator, raw),
             .res = .{ .req = &self.req, .headers = std.ArrayList(std.http.Header).init(allocator) },
-            .injector = .{ .parent = &server.injector },
+            .current = .{ .children = server.routes },
+            .params = .{},
+            .injector = Injector.from(self),
         };
 
-        self.res.keep_alive = server.keep_alive;
-
-        try self.injector.push(@as(*const std.mem.Allocator, &self.allocator));
-        try self.injector.push(&self.req);
-        try self.injector.push(&self.res);
-        try self.injector.push(self);
+        self.res.keep_alive = server.options.keep_alive;
     }
 
-    /// Run a handler in a scoped context. This means `next` will only run the
-    /// remaining handlers in the provided chain and the injector will be reset
-    /// to its previous state after the handler has been run. If all the
-    /// handlers have been run, it will return `true`, otherwise `false`.
-    pub fn runScoped(self: *Context, handler: *const Handler, chain: []const *const Handler) !bool {
-        const n_deps = self.injector.registry.len;
-        const prev = self.chain;
-        defer {
-            self.injector.registry.len = n_deps;
-            self.chain = prev;
-            self.drained = false;
-        }
+    pub fn recur(self: *Context) !void {
+        for (self.current.children) |route| {
+            if (route.match(&self.req)) |params| {
+                self.current = route;
+                self.params = params;
 
-        self.chain = chain;
-        self.drained = false;
-
-        try handler(self);
-        return self.drained;
-    }
-
-    /// Run the next middleware or handler in the chain.
-    pub inline fn next(self: *Context) !void {
-        if (self.chain.len > 0) {
-            const handler = self.chain[0];
-            self.chain = self.chain[1..];
-            return handler(self);
-        } else {
-            self.drained = true;
-        }
-    }
-
-    pub fn wrap(fun: anytype) Handler {
-        if (@TypeOf(fun) == Handler) return fun;
-
-        const H = struct {
-            fn handle(ctx: *Context) anyerror!void {
-                return ctx.res.send(ctx.injector.call(fun, .{}));
+                if (route.handler) |handler| {
+                    try handler(self);
+                } else {
+                    try self.recur();
+                }
             }
-        };
-        return H.handle;
+
+            if (self.res.responded) return;
+        }
     }
 };
 
@@ -203,8 +178,8 @@ pub const Server = struct {
                     ctx.res.out.?.end() catch {};
                 }
 
-                server.handler(&ctx) catch |e| {
-                    log.err("handler: {}", .{e});
+                ctx.recur() catch |e| {
+                    log.err("err: {}", .{e});
                     ctx.res.sendError(e) catch {};
                     continue :accept;
                 };

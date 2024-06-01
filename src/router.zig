@@ -12,6 +12,10 @@ pub const Route = struct {
     children: []const Route = &.{},
 
     pub fn match(self: *const Route, req: *const Request) ?Params {
+        if (self.prefix) |prefix| {
+            if (!std.mem.startsWith(u8, req.path, prefix)) return null;
+        }
+
         if (self.method) |m| {
             if (m != req.method) return null;
         }
@@ -23,11 +27,6 @@ pub const Route = struct {
         return Params{};
     }
 };
-
-/// Group multiple routes under a common prefix.
-pub fn group(comptime prefix: []const u8, children: []const Route) Route {
-    return .{ .prefix = prefix, .children = children };
-}
 
 /// Creates a GET route with the given path and handler.
 pub fn get(comptime path: []const u8, comptime handler: anytype) Route {
@@ -110,7 +109,7 @@ fn route(comptime method: std.http.Method, comptime path: []const u8, comptime h
             }
 
             inline for (0..n_params, mid..) |j, i| {
-                args[i] = try ctx.match.params.get(j, @TypeOf(args[i]));
+                args[i] = try ctx.params.get(j, @TypeOf(args[i]));
             }
 
             if (comptime has_query) {
