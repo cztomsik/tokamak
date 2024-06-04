@@ -12,26 +12,15 @@ pub const Injector = struct {
     resolver: *const fn (*anyopaque, TypeId) ?*anyopaque,
     parent: ?*const Injector = null,
 
-    /// Create an empty injector.
-    pub fn empty() Injector {
-        return .{ .ctx = undefined, .resolver = &resolver(*const struct {}) };
-    }
-
-    /// Create a new injector from a context ptr.
-    pub fn from(ctx: anytype) Injector {
+    /// Create a new injector from a context ptr and an optional parent.
+    pub fn init(ctx: anytype, parent: ?*const Injector) Injector {
         if (@typeInfo(@TypeOf(ctx)) != .Pointer) @compileError("Expected pointer to a context");
 
         return .{
             .ctx = @constCast(@ptrCast(ctx)), // resolver() casts back first, so this should be safe
             .resolver = &resolver(@TypeOf(ctx)),
+            .parent = parent,
         };
-    }
-
-    /// Create a new injector from a parent context and a tuple of pointers.
-    pub fn fromParent(parent: *const Injector, ctx: anytype) Injector {
-        var res = Injector.from(ctx);
-        res.parent = parent;
-        return res;
     }
 
     /// Get a dependency from the context.
