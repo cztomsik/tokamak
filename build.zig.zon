@@ -1,6 +1,12 @@
 .{
     .name = "tokamak",
     .version = "0.0.1",
+    .dependencies = .{
+        .libxev = .{
+            .url = "https://github.com/mitchellh/libxev/archive/b3f9918.tar.gz",
+            .hash = "122044caf67c7833c7110dc93531031899e459a6818ed125a0bcfdb0b5243bd7700b",
+        },
+    },
     .paths = .{
         "build.zig",
         "build.zig.zon",
