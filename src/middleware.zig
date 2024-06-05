@@ -73,10 +73,10 @@ pub fn logger(options: struct { scope: @TypeOf(.EnumLiteral) = .server }, childr
     const H = struct {
         fn handleLogger(ctx: *Context) anyerror!void {
             const start = std.time.milliTimestamp();
-            defer if (ctx.res.responded) log.debug("{s} {s} {} [{}ms]", .{
-                @tagName(ctx.req.method),
-                ctx.req.raw.head.target,
-                @intFromEnum(ctx.res.status),
+            defer if (ctx.res.status) |status| log.debug("{s} {s} {} [{}ms]", .{
+                @tagName(ctx.req.head.method),
+                ctx.req.head.target,
+                @intFromEnum(status),
                 std.time.milliTimestamp() - start,
             });
 

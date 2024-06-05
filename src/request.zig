@@ -2,8 +2,7 @@ const std = @import("std");
 
 pub const Request = struct {
     allocator: std.mem.Allocator,
-    raw: std.http.Server.Request,
-    method: std.http.Method,
+    head: std.http.Server.Request.Head,
     path: []const u8,
     query_params: []const QueryParam,
 
@@ -12,14 +11,16 @@ pub const Request = struct {
         value: []const u8,
     };
 
-    pub fn init(allocator: std.mem.Allocator, raw: std.http.Server.Request) !Request {
-        const target: []u8 = try allocator.dupe(u8, raw.head.target);
+    pub fn init(allocator: std.mem.Allocator, input: []const u8) !Request {
+        const head = try std.http.Server.Request.Head.parse(input);
+        if (head.version != .@"HTTP/1.1") return error.UnsupportedVersion;
+
+        const target: []u8 = try allocator.dupe(u8, head.target);
         const i = std.mem.indexOfScalar(u8, target, '?') orelse target.len;
 
         return .{
             .allocator = allocator,
-            .raw = raw,
-            .method = raw.head.method,
+            .head = head,
             .path = decodeInplace(target[0..i]),
             .query_params = if (i < target.len) try parseQueryParams(allocator, target[i + 1 ..]) else &.{},
         };

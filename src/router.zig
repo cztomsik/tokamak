@@ -17,7 +17,7 @@ pub const Route = struct {
         }
 
         if (self.method) |m| {
-            if (m != req.method) return null;
+            if (m != req.head.method) return null;
         }
 
         if (self.path) |p| {
