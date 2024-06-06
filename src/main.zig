@@ -6,7 +6,8 @@ pub const monitor = @import("monitor.zig").monitor;
 
 pub const Injector = @import("injector.zig").Injector;
 pub const Server = server.Server;
-pub const ServerOptions = server.Options;
+pub const ServerOptions = server.InitOptions;
+pub const ListenOptions = server.ListenOptions;
 pub const Handler = server.Handler;
 pub const Context = server.Context;
 pub const Request = @import("request.zig").Request;
