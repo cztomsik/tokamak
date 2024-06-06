@@ -27,7 +27,8 @@ pub fn sendStatic(comptime path: []const u8) Handler {
                 body = try std.fs.cwd().readFileAlloc(ctx.allocator, path, std.math.maxInt(usize));
             }
 
-            try ctx.res.sendChunk(body.?);
+            ctx.res.status = .ok;
+            ctx.res.body = .{ .slice = body.? };
         }
     };
     return H.handleStatic;
