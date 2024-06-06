@@ -78,22 +78,21 @@ pub const Response = struct {
 
     /// Sends a text response.
     pub fn sendText(self: *Response, text: []const u8) !void {
-        if (self.status == null) self.status = .ok;
-
         try self.setHeader("Content-Type", "text/plain; charset=utf-8");
-
-        self.body = .{ .slice = text };
+        try self.sendBytes(text);
     }
 
     /// Sends a JSON response.
     pub fn sendJson(self: *Response, data: anytype) !void {
+        try self.setHeader("Content-Type", "application/json; charset=utf-8");
+        try self.sendBytes(try std.json.stringifyAlloc(self.headers.allocator, data, .{}));
+    }
+
+    /// Sends a fixed-size response
+    pub fn sendBytes(self: *Response, text: []const u8) !void {
         if (self.status == null) self.status = .ok;
 
-        try self.setHeader("Content-Type", "application/json; charset=utf-8");
-
-        self.body = .{
-            .slice = try std.json.stringifyAlloc(self.headers.allocator, data, .{}),
-        };
+        self.body = .{ .slice = text };
     }
 
     /// Redirects the client to a different URL with an optional status code.
