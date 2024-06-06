@@ -13,7 +13,7 @@ pub const InitOptions = struct {
     injector: ?*const Injector = null,
     thread_pool: xev.ThreadPool.Config = .{
         // TODO: could be smaller, but 1M causes cryptic messages like "panicked during panic"
-        .stack_size = 16 * 1024 * 1024,
+        .stack_size = 8 * 1024 * 1024,
     },
 };
 
