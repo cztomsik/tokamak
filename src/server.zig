@@ -73,6 +73,8 @@ pub const Context = struct {
         const prev = self.injector;
         defer self.injector = prev;
         self.injector = Injector.init(ctx, &prev);
+
+        try self.recur();
     }
 };
 
