@@ -85,6 +85,7 @@ pub const Server = struct {
     thread_pool: xev.ThreadPool,
     injector: Injector,
 
+    /// Initialize a new server.
     pub fn init(allocator: std.mem.Allocator, routes: []const Route, options: InitOptions) !*Server {
         const self = try allocator.create(Server);
         errdefer allocator.destroy(self);
@@ -106,12 +107,14 @@ pub const Server = struct {
         return self;
     }
 
+    /// Deinitialize the server.
     pub fn deinit(self: *Server) void {
         self.thread_pool.deinit();
         self.loop.deinit();
         self.allocator.destroy(self);
     }
 
+    /// Start listening for incoming connections.
     pub fn listen(self: *Server, options: ListenOptions) !void {
         if (self.acceptor != null) {
             return error.AlreadyListening;
@@ -136,8 +139,16 @@ const Acceptor = struct {
     comp: xev.Completion = .{},
 
     fn accept(self: *Acceptor, res: xev.AcceptError!Fd) void {
-        const sock = res catch @panic("TODO");
-        const conn = self.server.allocator.create(Connection) catch @panic("TODO");
+        const sock = res catch |e| {
+            // Keep going
+            log.err("accept: {}", .{e});
+            return self.server.loop.accept(self, accept);
+        };
+
+        const conn = self.server.allocator.create(Connection) catch {
+            // TODO: Make this configurable
+            @panic("OOM");
+        };
 
         conn.* = .{
             .server = self.server,
@@ -165,7 +176,7 @@ const Connection = struct {
 
     fn fail(self: *Connection, err: anyerror) void {
         switch (err) {
-            error.EOF, error.ConnectionResetByPeer => {},
+            error.EOF, error.ConnectionResetByPeer, error.BrokenPipe => {},
             else => log.err("err: {}", .{err}),
         }
 
@@ -206,7 +217,7 @@ const Connection = struct {
 
             self.res = &ctx.res;
         } else {
-            @panic("TODO");
+            // Otherwise the `res` will not be set and the connection will be closed
         }
     }
 
@@ -225,7 +236,10 @@ const Connection = struct {
     fn sendBody(self: *Connection, res: xev.WriteError!usize) void {
         _ = res catch |e| return self.fail(e);
 
-        self.server.loop.write(self, self.res.?.body.slice, finish);
+        switch (self.res.?.body) {
+            .slice => |s| self.server.loop.write(self, s, finish),
+            else => @panic("TODO"),
+        }
     }
 
     fn finish(self: *Connection, res: xev.WriteError!usize) void {
@@ -239,7 +253,7 @@ const Connection = struct {
     }
 
     fn reset(self: *Connection) void {
-        _ = self.arena.reset(.{ .retain_with_limit = 8 * 1024 });
+        _ = self.arena.reset(.{ .retain_with_limit = 8 * 1024 * 1024 });
         self.input = &.{};
         self.res = null;
 
@@ -260,7 +274,6 @@ const Connection = struct {
 // QoL wrapper
 const Loop = struct {
     inner: xev.Loop,
-    // TODO: WriteQueue? so we can always write() in order?
 
     const Operation = std.meta.FieldType(xev.Completion, .op);
 
