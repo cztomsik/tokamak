@@ -49,25 +49,21 @@ pub const Response = struct {
 
     /// Sends a response depending on the type of the value.
     pub fn send(self: *Response, res: anytype) !void {
-        return switch (@typeInfo(@TypeOf(res))) {
-            .Void => if (self.status == null) { // tk.send() is void but sets status/body
-                self.status = .no_content;
-                self.body = .{ .slice = "" };
-            },
-            .ErrorSet => self.sendError(res),
-            .ErrorUnion => if (res) |r| self.send(r) else |e| self.sendError(e),
-            else => {
-                self.status = .ok;
-
-                try switch (@TypeOf(res)) {
-                    []const u8 => self.sendText(res),
-                    else => self.sendJson(res),
-                };
+        return switch (@TypeOf(res)) {
+            []const u8 => self.sendText(res),
+            else => |T| switch (@typeInfo(T)) {
+                .Void => if (self.status == null) {
+                    self.status = .no_content;
+                    self.body = .{ .slice = "" };
+                },
+                .ErrorSet => self.sendError(res),
+                .ErrorUnion => if (res) |r| self.send(r) else |e| self.sendError(e),
+                else => self.sendJson(res),
             },
         };
     }
 
-    /// Sends an error response.
+    /// Sends an error response with an appropriate HTTP status.
     pub fn sendError(self: *Response, err: anyerror) !void {
         self.status = switch (err) {
             error.InvalidCharacter, error.UnexpectedToken, error.InvalidNumber, error.Overflow, error.InvalidEnumTag, error.DuplicateField, error.UnknownField, error.MissingField, error.LengthMismatch => .bad_request,
@@ -80,30 +76,34 @@ pub const Response = struct {
         return self.sendJson(.{ .@"error" = err });
     }
 
-    /// Send text header/body.
-    pub fn sendText(self: *Response, body: []const u8) !void {
-        try self.setHeader("Content-Type", "text/plain");
+    /// Sends a text response.
+    pub fn sendText(self: *Response, text: []const u8) !void {
+        if (self.status == null) self.status = .ok;
 
-        self.body = .{ .slice = body };
+        try self.setHeader("Content-Type", "text/plain; charset=utf-8");
+
+        self.body = .{ .slice = text };
     }
 
-    /// Send JSON header/body.
-    pub fn sendJson(self: *Response, body: anytype) !void {
-        try self.setHeader("Content-Type", "application/json");
+    /// Sends a JSON response.
+    pub fn sendJson(self: *Response, data: anytype) !void {
+        if (self.status == null) self.status = .ok;
+
+        try self.setHeader("Content-Type", "application/json; charset=utf-8");
 
         self.body = .{
-            .slice = try std.json.stringifyAlloc(self.headers.allocator, body, .{}),
+            .slice = try std.json.stringifyAlloc(self.headers.allocator, data, .{}),
         };
     }
 
-    /// Redirects the response to a different URL.
+    /// Redirects the client to a different URL with an optional status code.
     pub fn redirect(self: *Response, url: []const u8, options: struct { status: std.http.Status = .found }) !void {
         self.status = options.status;
 
         try self.setHeader("Location", url);
     }
 
-    /// Adds no-cache headers to the response.
+    /// Adds headers to prevent caching of the response.
     pub fn noCache(self: *Response) !void {
         try self.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
         try self.setHeader("Pragma", "no-cache");
