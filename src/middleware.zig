@@ -30,12 +30,12 @@ pub fn group(prefix: []const u8, children: []const Route) Route {
 pub fn provide(comptime factory: anytype, children: []const Route) Route {
     const H = struct {
         fn handleProvide(ctx: *Context) anyerror!void {
-            var dep = try ctx.injector.call(factory, .{});
-            defer if (comptime @hasDecl(DerefType(@TypeOf(dep)), "deinit")) {
-                dep.deinit();
+            var child = .{try ctx.injector.call(factory, .{})};
+            defer if (comptime @hasDecl(DerefType(@TypeOf(child[0])), "deinit")) {
+                child[0].deinit();
             };
 
-            try ctx.recurScoped(&.{dep});
+            try ctx.recurScoped(&child);
         }
 
         fn DerefType(comptime T: type) type {
