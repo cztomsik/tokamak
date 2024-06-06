@@ -60,6 +60,12 @@ pub const Context = struct {
             if (self.res.responded) return;
         }
     }
+
+    pub fn recurScoped(self: *Context, ctx: anytype) !void {
+        const prev = self.injector;
+        defer self.injector = prev;
+        self.injector = Injector.init(ctx, &prev);
+    }
 };
 
 /// A simple HTTP server with dependency injection.

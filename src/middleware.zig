@@ -35,11 +35,7 @@ pub fn provide(comptime factory: anytype, children: []const Route) Route {
                 dep.deinit();
             };
 
-            const prev = ctx.injector;
-            defer ctx.injector = prev;
-            ctx.injector = Injector.fromParent(&prev, &.{&dep});
-
-            try ctx.recur();
+            try ctx.recurScoped(&.{dep});
         }
 
         fn DerefType(comptime T: type) type {
