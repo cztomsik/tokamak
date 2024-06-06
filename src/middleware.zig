@@ -93,11 +93,12 @@ pub fn cors() Route {
         fn handleCors(ctx: *Context) anyerror!void {
             try ctx.res.setHeader("Access-Control-Allow-Origin", ctx.req.getHeader("Origin") orelse "*");
 
-            if (ctx.req.method == .OPTIONS and ctx.req.getHeader("Access-Control-Request-Headers") != null) {
+            if (ctx.req.head.method == .OPTIONS and ctx.req.getHeader("Access-Control-Request-Headers") != null) {
                 try ctx.res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
                 try ctx.res.setHeader("Access-Control-Allow-Headers", "Content-Type");
                 try ctx.res.setHeader("Access-Control-Allow-Private-Network", "true");
-                return ctx.res.sendStatus(.no_content);
+                ctx.res.status = .no_content;
+                return;
             }
         }
     };
