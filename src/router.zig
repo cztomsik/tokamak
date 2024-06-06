@@ -74,15 +74,18 @@ pub fn delete(comptime path: []const u8, comptime handler: anytype) Route {
 /// Creates a group of routes from a struct type. Each pub fn will be equivalent
 /// to calling the corresponding route function with the method and path.
 pub fn router(comptime T: type) Route {
-    const decls = @typeInfo(T).Struct.decls;
-    var children: []const Route = &.{};
+    const children = comptime blk: {
+        var res: []const Route = &.{};
 
-    for (decls) |d| {
-        const j = std.mem.indexOfScalar(u8, d.name, ' ') orelse @compileError("route must contain a space");
-        var buf: [j]u8 = undefined;
-        const method = std.ascii.lowerString(&buf, d.name[0..j]);
-        children = children ++ .{@field(@This(), method)(d.name[j + 1 ..], @field(T, d.name))};
-    }
+        for (@typeInfo(T).Struct.decls) |d| {
+            const j = std.mem.indexOfScalar(u8, d.name, ' ') orelse @compileError("route must contain a space");
+            var buf: [j]u8 = undefined;
+            const method = std.ascii.lowerString(&buf, d.name[0..j]);
+            res = res ++ .{@field(@This(), method)(d.name[j + 1 ..], @field(T, d.name))};
+        }
+
+        break :blk res;
+    };
 
     return .{
         .children = children,
