@@ -203,24 +203,21 @@ const Connection = struct {
         const self: *Connection = @fieldParentPtr("task", task);
         defer self.done.?.notify() catch {};
 
-        if (std.mem.indexOf(u8, self.input, "\r\n\r\n")) |i| {
-            const ctx = Context.init(self.arena.allocator(), self.server, self.input[0 .. i + 4]) catch |e| {
-                std.log.err("err: {}", .{e});
-                return;
-            };
+        const ctx = Context.init(self.arena.allocator(), self.server, self.input) catch |e| {
+            // no ctx.res -> connection will be closed
+            std.log.err("err: {}", .{e});
+            return;
+        };
 
-            ctx.recur() catch |e| {
-                ctx.res.sendError(e) catch {};
-            };
+        ctx.recur() catch |e| {
+            ctx.res.sendError(e) catch {};
+        };
 
-            if (ctx.res.status == null) {
-                ctx.res.sendError(error.NotFound) catch {};
-            }
-
-            self.res = &ctx.res;
-        } else {
-            // Otherwise the `res` will not be set and the connection will be closed
+        if (ctx.res.status == null) {
+            ctx.res.sendError(error.NotFound) catch {};
         }
+
+        self.res = &ctx.res;
     }
 
     fn sendHead(self: *Connection) void {

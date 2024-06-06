@@ -2,27 +2,39 @@ const std = @import("std");
 
 pub const Request = struct {
     allocator: std.mem.Allocator,
+    raw: []const u8,
     head: std.http.Server.Request.Head,
     path: []const u8,
     query_params: []const QueryParam,
+    body: ?[]const u8,
 
     pub const QueryParam = struct {
         name: []const u8,
         value: []const u8,
     };
 
-    pub fn init(allocator: std.mem.Allocator, input: []const u8) !Request {
-        const head = try std.http.Server.Request.Head.parse(input);
+    pub fn init(allocator: std.mem.Allocator, raw: []const u8) !Request {
+        const head = try std.http.Server.Request.Head.parse(raw);
         if (head.version != .@"HTTP/1.1") return error.UnsupportedVersion;
 
         const target: []u8 = try allocator.dupe(u8, head.target);
-        const i = std.mem.indexOfScalar(u8, target, '?') orelse target.len;
+        const q = std.mem.indexOfScalar(u8, target, '?') orelse target.len;
+
+        const body = if (head.content_length) |len| blk: {
+            const start = (std.mem.indexOf(u8, raw, "\r\n\r\n") orelse return error.InvalidRequest) + 4;
+            const end = start + len;
+            if (end > raw.len) return error.InvalidContentLength;
+
+            break :blk raw[start..end];
+        } else null;
 
         return .{
             .allocator = allocator,
+            .raw = raw,
             .head = head,
-            .path = decodeInplace(target[0..i]),
-            .query_params = if (i < target.len) try parseQueryParams(allocator, target[i + 1 ..]) else &.{},
+            .path = decodeInplace(target[0..q]),
+            .query_params = if (q < target.len) try parseQueryParams(allocator, target[q + 1 ..]) else &.{},
+            .body = body,
         };
     }
 
@@ -40,7 +52,7 @@ pub const Request = struct {
 
     /// Returns the value of the given header or null if it doesn't exist.
     pub fn getHeader(self: *Request, name: []const u8) ?[]const u8 {
-        var it = self.raw.iterateHeaders();
+        var it = std.http.HeaderIterator.init(self.raw);
 
         while (it.next()) |header| {
             if (std.ascii.eqlIgnoreCase(header.name, name)) return header.value;
@@ -91,12 +103,10 @@ pub const Request = struct {
 
     /// Reads the request body as JSON.
     pub fn readJson(self: *Request, comptime T: type) !T {
-        var reader = std.json.reader(self.allocator, try self.raw.reader());
-
-        return std.json.parseFromTokenSourceLeaky(
+        return std.json.parseFromSliceLeaky(
             T,
             self.allocator,
-            &reader,
+            self.body orelse return error.MissingBody,
             .{ .ignore_unknown_fields = true },
         );
     }
