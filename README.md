@@ -1,3 +1,6 @@
+> **There were some changes recently, so the README is outdated.** 
+> Please come back later or check out the source code directly.
+
 # tokamak
 
 > I wrote a short blog post about the **[motivation and the design of the

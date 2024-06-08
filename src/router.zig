@@ -1,27 +1,26 @@
 const std = @import("std");
-const Context = @import("server.zig").Context;
-const Handler = @import("server.zig").Handler;
-const Request = @import("request.zig").Request;
-const Params = @import("request.zig").Params;
+const httpz = @import("httpz");
+const Context = @import("context.zig").Context;
+const Handler = @import("context.zig").Handler;
 
 pub const Route = struct {
-    method: ?std.http.Method = null,
+    method: ?httpz.Method = null,
     prefix: ?[]const u8 = null,
     path: ?[]const u8 = null,
     handler: ?*const Handler = null,
     children: []const Route = &.{},
 
-    pub fn match(self: *const Route, req: *const Request) ?Params {
+    pub fn match(self: *const Route, req: *const httpz.Request) ?Params {
         if (self.prefix) |prefix| {
-            if (!std.mem.startsWith(u8, req.path, prefix)) return null;
+            if (!std.mem.startsWith(u8, req.url.path, prefix)) return null;
         }
 
         if (self.method) |m| {
-            if (m != req.head.method) return null;
+            if (m != req.method) return null;
         }
 
         if (self.path) |p| {
-            return req.match(p);
+            return Params.match(p, req.url.path);
         }
 
         return Params{};
@@ -92,7 +91,7 @@ pub fn router(comptime T: type) Route {
     };
 }
 
-fn route(comptime method: std.http.Method, comptime path: []const u8, comptime has_body: bool, comptime handler: anytype) Route {
+fn route(comptime method: httpz.Method, comptime path: []const u8, comptime has_body: bool, comptime handler: anytype) Route {
     const has_query = comptime path[path.len - 1] == '?';
     const n_params = comptime brk: {
         var n: usize = 0;
@@ -116,14 +115,14 @@ fn route(comptime method: std.http.Method, comptime path: []const u8, comptime h
             }
 
             if (comptime has_query) {
-                args[mid + n_params] = try ctx.req.readQuery(@TypeOf(args[mid + n_params]));
+                args[mid + n_params] = try ctx.readQuery(@TypeOf(args[mid + n_params]));
             }
 
             if (comptime has_body) {
-                args[args.len - 1] = try ctx.req.readJson(@TypeOf(args[args.len - 1]));
+                args[args.len - 1] = try ctx.readJson(@TypeOf(args[args.len - 1]));
             }
 
-            try ctx.res.send(@call(.auto, handler, args));
+            try ctx.send(@call(.auto, handler, args));
             return;
         }
     };
@@ -133,4 +132,61 @@ fn route(comptime method: std.http.Method, comptime path: []const u8, comptime h
         .path = path[0 .. path.len - @intFromBool(has_query)],
         .handler = H.handleRoute,
     };
+}
+
+pub const Params = struct {
+    matches: [16][]const u8 = undefined,
+    len: usize = 0,
+
+    pub fn match(pattern: []const u8, path: []const u8) ?Params {
+        var res = Params{};
+        var pattern_parts = std.mem.tokenizeScalar(u8, pattern, '/');
+        var path_parts = std.mem.tokenizeScalar(u8, path, '/');
+
+        while (true) {
+            const pat = pattern_parts.next() orelse return if (pattern[pattern.len - 1] == '*' or path_parts.next() == null) res else null;
+            const pth = path_parts.next() orelse return null;
+            const dynamic = pat[0] == ':' or pat[0] == '*';
+
+            if (std.mem.indexOfScalar(u8, pat, '.')) |i| {
+                const j = (if (dynamic) std.mem.lastIndexOfScalar(u8, pth, '.') else std.mem.indexOfScalar(u8, pth, '.')) orelse return null;
+
+                if (match(pat[i + 1 ..], pth[j + 1 ..])) |ch| {
+                    for (ch.matches, res.len..) |s, l| res.matches[l] = s;
+                    res.len += ch.len;
+                } else return null;
+            }
+
+            if (!dynamic and !std.mem.eql(u8, pat, pth)) return null;
+
+            if (pat[0] == ':') {
+                res.matches[res.len] = pth;
+                res.len += 1;
+            }
+        }
+    }
+
+    pub fn get(self: *const Params, index: usize, comptime T: type) !T {
+        if (index >= self.len) return error.NoMatch;
+
+        return Context.parse(T, self.matches[index]);
+    }
+};
+
+fn expectMatch(pattern: []const u8, path: []const u8, len: usize) !void {
+    if (Params.match(pattern, path)) |m| {
+        try std.testing.expectEqual(m.len, len);
+    } else return error.ExpectedMatch;
+}
+
+test "Params matching" {
+    try expectMatch("/", "/", 0);
+    // TODO: fix this, but we need more tests first
+    // try expectMatch("/*", "/", 0);
+    try expectMatch("/*", "/foo", 0);
+    try expectMatch("/*", "/foo/bar", 0);
+    try expectMatch("/*.js", "/foo.js", 0);
+    try expectMatch("/foo", "/foo", 0);
+    try expectMatch("/:foo", "/foo", 1);
+    try expectMatch("/:foo/bar", "/foo/bar", 1);
 }

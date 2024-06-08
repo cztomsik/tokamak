@@ -1,7 +1,7 @@
 const std = @import("std");
 const Injector = @import("injector.zig").Injector;
-const Context = @import("server.zig").Context;
-const Handler = @import("server.zig").Handler;
+const Context = @import("context.zig").Context;
+const Handler = @import("context.zig").Handler;
 const Route = @import("router.zig").Route;
 
 /// Groups the given routes under a common prefix. The prefix is removed
@@ -9,9 +9,9 @@ const Route = @import("router.zig").Route;
 pub fn group(prefix: []const u8, children: []const Route) Route {
     const H = struct {
         fn handleGroup(ctx: *Context) anyerror!void {
-            const orig = ctx.req.path;
-            ctx.req.path = ctx.req.path[ctx.current.prefix.?.len..];
-            defer ctx.req.path = orig;
+            const orig = ctx.req.url.path;
+            ctx.req.url.path = ctx.req.url.path[ctx.current.prefix.?.len..];
+            defer ctx.req.url.path = orig;
 
             try ctx.recur();
         }
@@ -56,10 +56,20 @@ pub fn provide(comptime factory: anytype, children: []const Route) Route {
 pub fn send(comptime res: anytype) Handler {
     const H = struct {
         fn handleSend(ctx: *Context) anyerror!void {
-            return ctx.res.send(res);
+            return ctx.send(res);
         }
     };
     return H.handleSend;
+}
+
+/// Returns a handler that will redirect user somewhere else.
+pub fn redirect(comptime url: []const u8) Handler {
+    const H = struct {
+        fn handleRedirect(ctx: *Context) anyerror!void {
+            return ctx.redirect(url, .{});
+        }
+    };
+    return H.handleRedirect;
 }
 
 /// Returns a wrapper for logging all requests going through it.
@@ -69,10 +79,10 @@ pub fn logger(options: struct { scope: @TypeOf(.EnumLiteral) = .server }, childr
     const H = struct {
         fn handleLogger(ctx: *Context) anyerror!void {
             const start = std.time.milliTimestamp();
-            defer if (ctx.res.status) |status| log.debug("{s} {s} {} [{}ms]", .{
-                @tagName(ctx.req.head.method),
-                ctx.req.head.target,
-                @intFromEnum(status),
+            defer if (ctx.responded) log.debug("{s} {s} {} [{}ms]", .{
+                @tagName(ctx.req.method),
+                ctx.req.url.path,
+                ctx.res.status,
                 std.time.milliTimestamp() - start,
             });
 
@@ -91,14 +101,13 @@ pub fn logger(options: struct { scope: @TypeOf(.EnumLiteral) = .server }, childr
 pub fn cors() Route {
     const H = struct {
         fn handleCors(ctx: *Context) anyerror!void {
-            try ctx.res.setHeader("Access-Control-Allow-Origin", ctx.req.getHeader("Origin") orelse "*");
+            ctx.res.header("access-control-allow-origin", ctx.req.header("origin") orelse "*");
 
-            if (ctx.req.head.method == .OPTIONS and ctx.req.getHeader("Access-Control-Request-Headers") != null) {
-                try ctx.res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-                try ctx.res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-                try ctx.res.setHeader("Access-Control-Allow-Private-Network", "true");
-                ctx.res.status = .no_content;
-                return;
+            if (ctx.req.method == .OPTIONS and ctx.req.header("access-control-request-headers") != null) {
+                ctx.res.header("access-control-allow-methods", "GET, POST, PUT, DELETE, OPTIONS");
+                ctx.res.header("access-control-allow-headers", "content-type");
+                ctx.res.header("access-control-allow-private-network", "true");
+                return ctx.send(void{});
             }
         }
     };

@@ -1,4 +1,5 @@
 const std = @import("std");
+const httpz = @import("httpz");
 const server = @import("server.zig");
 
 pub const config = @import("config.zig");
@@ -8,11 +9,10 @@ pub const Injector = @import("injector.zig").Injector;
 pub const Server = server.Server;
 pub const ServerOptions = server.InitOptions;
 pub const ListenOptions = server.ListenOptions;
-pub const Handler = server.Handler;
-pub const Context = server.Context;
-pub const Request = @import("request.zig").Request;
-pub const Params = @import("request.zig").Params;
-pub const Response = @import("response.zig").Response;
+pub const Context = @import("context.zig").Context;
+pub const Handler = @import("context.zig").Handler;
+pub const Request = httpz.Request;
+pub const Response = httpz.Response;
 
 pub usingnamespace @import("router.zig");
 pub usingnamespace @import("middleware.zig");

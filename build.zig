@@ -10,8 +10,8 @@ pub fn build(b: *std.Build) !void {
         .root_source_file = .{ .path = "src/main.zig" },
     });
 
-    const xev = b.dependency("libxev", .{ .target = target, .optimize = optimize });
-    root.addImport("xev", xev.module("xev"));
+    const httpz = b.dependency("httpz", .{ .target = target, .optimize = optimize });
+    root.addImport("httpz", httpz.module("httpz"));
 
     try embedFiles(b, root, @alignCast(embed));
 
