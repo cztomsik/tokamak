@@ -61,7 +61,7 @@ const Adapter = struct {
         var ctx: Context = undefined;
         ctx = .{
             .server = self.server,
-            .allocator = req.arena,
+            .allocator = res.arena,
             .req = req,
             .res = res,
             .current = .{ .children = self.server.routes },
