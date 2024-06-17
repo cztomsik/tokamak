@@ -5,7 +5,7 @@ const mime = @import("mime.zig").mime;
 const Context = @import("context.zig").Context;
 const Handler = @import("context.zig").Handler;
 
-const E = std.ComptimeStringMap([]const u8, kvs: {
+const E = std.StaticStringMap([]const u8).initComptime(kvs: {
     var res: [embed.files.len]struct { []const u8, []const u8 } = undefined;
     for (embed.files, embed.contents, 0..) |f, c, i| res[i] = .{ f, c };
     break :kvs &res;
