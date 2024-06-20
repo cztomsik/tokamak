@@ -1,3 +1,4 @@
+const builtin = @import("builtin");
 const std = @import("std");
 
 /// Injector serves as a custom runtime scope for retrieving dependencies.
@@ -46,8 +47,16 @@ pub const Injector = struct {
         return error.MissingDependency;
     }
 
-    fn find(self: Injector, comptime T: type) ?T {
-        return if (self.resolver(self.ctx, typeId(T))) |ptr| @constCast(@ptrCast(@alignCast(ptr))) else null;
+    fn find(self: Injector, comptime P: type) ?P {
+        const ptr = self.resolver(self.ctx, typeId(P));
+
+        if (comptime builtin.mode == .Debug) {
+            if (@intFromPtr(ptr) == 0xaaaaaaaaaaaaaaaa and @sizeOf(@typeInfo(P).Pointer.child) > 0) {
+                std.debug.panic("bad ptr: {s}", .{@typeName(P)});
+            }
+        }
+
+        return @ptrFromInt(@intFromPtr(ptr));
     }
 
     /// Call a function with dependencies. The `extra_args` tuple is used to
