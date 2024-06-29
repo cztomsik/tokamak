@@ -13,6 +13,8 @@ pub const Injector = struct {
     resolver: *const fn (*anyopaque, TypeId) ?*anyopaque,
     parent: ?*const Injector = null,
 
+    pub const EMPTY = .{ .ctx = undefined, .resolver = &resolver(*struct {}) };
+
     /// Create a new injector from a context ptr and an optional parent.
     pub fn init(ctx: anytype, parent: ?*const Injector) Injector {
         if (@typeInfo(@TypeOf(ctx)) != .Pointer) @compileError("Expected pointer to a context");

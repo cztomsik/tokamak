@@ -5,7 +5,7 @@ const Context = @import("context.zig").Context;
 const Route = @import("router.zig").Route;
 
 pub const InitOptions = struct {
-    injector: ?*const Injector = null,
+    injector: Injector = Injector.EMPTY,
 };
 
 pub const ListenOptions = struct {
@@ -32,7 +32,7 @@ pub const Server = struct {
         self.* = .{
             .allocator = allocator,
             .routes = routes,
-            .injector = Injector.init(self, options.injector),
+            .injector = options.injector,
             .http = http,
         };
 
