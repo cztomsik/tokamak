@@ -7,7 +7,7 @@ pub const Route = struct {
     method: ?httpz.Method = null,
     prefix: ?[]const u8 = null,
     path: ?[]const u8 = null,
-    handler: ?*const Handler = null,
+    handler: ?*const fn (*Context) anyerror!void = null, // TODO(zig): should be ?*const Handler
     children: []const Route = &.{},
 
     pub fn match(self: *const Route, req: *const httpz.Request) ?Params {
