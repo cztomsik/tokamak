@@ -3,6 +3,7 @@ const httpz = @import("httpz");
 const server = @import("server.zig");
 
 pub const config = @import("config.zig");
+pub const cron = @import("cron.zig");
 pub const monitor = @import("monitor.zig").monitor;
 
 pub const Injector = @import("injector.zig").Injector;
