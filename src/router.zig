@@ -149,7 +149,7 @@ pub const Params = struct {
 
         while (true) {
             const pat = pattern_parts.next() orelse return if (pattern[pattern.len - 1] == '*' or path_parts.next() == null) res else null;
-            const pth = path_parts.next() orelse return null;
+            const pth = path_parts.next() orelse return if (pat.len == 1 and pat[0] == '*') res else null;
             const dynamic = pat[0] == ':' or pat[0] == '*';
 
             if (std.mem.indexOfScalar(u8, pat, '.')) |i| {
@@ -177,20 +177,44 @@ pub const Params = struct {
     }
 };
 
-fn expectMatch(pattern: []const u8, path: []const u8, len: usize) !void {
-    if (Params.match(pattern, path)) |m| {
-        try std.testing.expectEqual(m.len, len);
-    } else return error.ExpectedMatch;
+fn expectMatch(pattern: []const u8, path: []const u8, len: ?usize) !void {
+    const res = Params.match(pattern, path);
+    if (len) |l| {
+        try std.testing.expectEqual(l, res.?.len);
+    } else {
+        try std.testing.expect(res == null);
+    }
 }
 
 test "Params matching" {
     try expectMatch("/", "/", 0);
-    // TODO: fix this, but we need more tests first
-    // try expectMatch("/*", "/", 0);
+    try expectMatch("/", "/foo", null);
+    try expectMatch("/", "/foo/bar", null);
+
+    try expectMatch("/*", "/", 0);
     try expectMatch("/*", "/foo", 0);
     try expectMatch("/*", "/foo/bar", 0);
+
     try expectMatch("/*.js", "/foo.js", 0);
+    try expectMatch("/*.js", "/foo-bar.js", 0);
+    try expectMatch("/*.js", "/foo/bar.js", null);
+    try expectMatch("/*.js", "/", null);
+
     try expectMatch("/foo", "/foo", 0);
+    try expectMatch("/foo", "/foo/bar", null);
+    try expectMatch("/foo", "/bar", null);
+
     try expectMatch("/:foo", "/foo", 1);
+    try expectMatch("/:foo", "/bar", 1);
+    try expectMatch("/:foo", "/foo/bar", null);
+
     try expectMatch("/:foo/bar", "/foo/bar", 1);
+    try expectMatch("/:foo/bar", "/baz/bar", 1);
+    try expectMatch("/:foo/bar", "/foo/bar/baz", null);
+
+    try expectMatch("/api/*", "/api", 0);
+    try expectMatch("/api/*", "/api/foo", 0);
+    try expectMatch("/api/*", "/api/foo/bar", 0);
+    try expectMatch("/api/*", "/foo", null);
+    try expectMatch("/api/*", "/", null);
 }

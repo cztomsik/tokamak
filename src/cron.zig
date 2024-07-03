@@ -19,7 +19,7 @@ fn localtime(epoch: i64) std.enums.EnumFieldStruct(std.meta.FieldEnum(Expr), u8,
     };
 }
 
-const Expr = struct {
+pub const Expr = struct {
     minute: std.StaticBitSet(60), // 0-59
     hour: std.StaticBitSet(24), // 0-23
     day: std.StaticBitSet(32), // 1-31 !!!
