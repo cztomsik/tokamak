@@ -3,22 +3,17 @@
 
 # tokamak
 
-> I wrote a short blog post about the **[motivation and the design of the
-> framework](https://tomsik.cz/posts/tokamak/)**
->
-> I am doing some breaking changes, so maybe check one of the [previous
-> versions](https://github.com/cztomsik/tokamak/tree/629dfd45bd95f310646d61f635604ec393253990)
-> if you want to use it right now. The most up-to-date example is/might be in
-> the [Ava PLS](https://github.com/cztomsik/ava) repository.
+> Learn more about the
+> **[motivation and design of Tokamak](https://tomsik.cz/posts/tokamak/)**
+> in my blog post and/or
+> **[checkout the Ava PLS repo](https://github.com/cztomsik/ava)** for a
+> real-world application built with this.
 
-Server-side framework for Zig, relying heavily on dependency injection.
+Tokamak is a server-side framework for Zig, built around
+[http.zig](https://github.com/karlseguin/http.zig) and a simple dependency
+injection container.
 
-The code has been extracted from [Ava PLS](https://github.com/cztomsik/ava)
-which has been using it for a few months already, and I'm using it in one other
-project which is going to production soon, so it's not just a toy, it actually
-works.
-
-That said, it is **not designed to be used alone**, but with a reverse proxy in
+Note, that it is **not designed to be used alone**, but with a reverse proxy in
 front of it, like Nginx or Cloudfront, which will handle SSL, caching,
 sanitization, etc.
 
@@ -50,7 +45,7 @@ Notable types you can inject are:
 - `std.mem.Allocator` (request-scoped arena allocator)
 - `*tk.Request` (current request, including headers, body reader, etc.)
 - `*tk.Response` (current response, with methods to send data, set headers, etc.)
-- `*tk.Injector` (the injector itself, see below)
+- `tk.Injector` (the injector itself, see below)
 - and everything you provide yourself
 
 For example, you can you easily write a handler function which will create a
@@ -91,9 +86,10 @@ You can also provide your own (global) dependencies by passing your own
 ```zig
 pub fn main() !void {
     var db = try sqlite.open("my.db");
+    var cx = .{ &db };
 
     var server = try tk.Server.start(allocator, hello, .{
-        .injector = tk.Injector.from(.{ &db }),
+        .injector = tk.Injector.init(&cx, null),
         .port = 8080
     });
 
