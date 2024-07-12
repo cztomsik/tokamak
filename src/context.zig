@@ -22,6 +22,7 @@ pub const Context = struct {
     pub fn parse(comptime T: type, s: []const u8) !T {
         return switch (@typeInfo(T)) {
             .Optional => |o| if (std.mem.eql(u8, s, "null")) null else try parse(o.child, s),
+            .Bool => std.mem.eql(u8, s, "true"),
             .Int => std.fmt.parseInt(T, s, 10),
             .Enum => std.meta.stringToEnum(T, s) orelse error.InvalidEnumTag,
             else => s,
