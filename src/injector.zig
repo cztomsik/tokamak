@@ -13,11 +13,14 @@ pub const Injector = struct {
     resolver: *const fn (*anyopaque, TypeId) ?*anyopaque,
     parent: ?*const Injector = null,
 
-    pub const EMPTY = .{ .ctx = undefined, .resolver = &resolver(*struct {}) };
+    pub const EMPTY: Injector = .{ .ctx = undefined, .resolver = &resolver(*struct {}) };
+    pub threadlocal var current = EMPTY;
 
     /// Create a new injector from a context ptr and an optional parent.
     pub fn init(ctx: anytype, parent: ?*const Injector) Injector {
-        if (@typeInfo(@TypeOf(ctx)) != .Pointer) @compileError("Expected pointer to a context");
+        if (comptime @typeInfo(@TypeOf(ctx)) != .Pointer) {
+            @compileError("Expected pointer to a context");
+        }
 
         return .{
             .ctx = @constCast(@ptrCast(ctx)), // resolver() casts back first, so this should be safe
@@ -28,7 +31,13 @@ pub const Injector = struct {
 
     /// Get a dependency from the context.
     pub fn get(self: Injector, comptime T: type) !T {
-        if (T == Injector) return self;
+        if (comptime T == Injector) {
+            return self;
+        }
+
+        if (comptime @sizeOf(T) == 0) {
+            return undefined;
+        }
 
         switch (@typeInfo(T)) {
             .Pointer => |p| {
@@ -49,6 +58,17 @@ pub const Injector = struct {
         return error.MissingDependency;
     }
 
+    /// Attempt to create a struct using dependencies from the context.
+    pub fn create(self: Injector, comptime T: type) !T {
+        var res: T = undefined;
+
+        inline for (@typeInfo(T).Struct.fields) |f| {
+            @field(res, f.name) = try self.get(f.type);
+        }
+
+        return res;
+    }
+
     fn find(self: Injector, comptime P: type) ?P {
         const ptr = self.resolver(self.ctx, typeId(P));
 
@@ -63,8 +83,14 @@ pub const Injector = struct {
 
     /// Call a function with dependencies. The `extra_args` tuple is used to
     /// pass additional arguments to the function.
-    pub fn call(self: *const Injector, comptime fun: anytype, extra_args: anytype) CallRes(@TypeOf(fun)) {
-        if (@typeInfo(@TypeOf(extra_args)) != .Struct) @compileError("Expected a tuple of arguments");
+    pub fn call(self: Injector, comptime fun: anytype, extra_args: anytype) CallRes(@TypeOf(fun)) {
+        if (comptime @typeInfo(@TypeOf(extra_args)) != .Struct) {
+            @compileError("Expected a tuple of arguments");
+        }
+
+        const prev = current;
+        defer current = prev;
+        current = self;
 
         var args: std.meta.ArgsTuple(@TypeOf(fun)) = undefined;
         const extra_start = args.len - extra_args.len;
@@ -80,6 +106,21 @@ pub const Injector = struct {
         return @call(.auto, fun, args);
     }
 };
+
+/// Wrapper ZST helper for getting a dependency from the inner-most injector.
+/// This will only work inside `injector.call()` and it will panic if the
+/// dependency is not found, so it should be used with caution. It is useful
+/// for getting request-scoped dependencies, but notably, it can also be used
+/// for dependency inversion.
+pub fn Scoped(comptime T: type) type {
+    return struct {
+        pub fn get(_: @This()) T {
+            return Injector.current.get(T) catch |err| {
+                std.debug.panic("Scoped<{s}>: {s}", .{ @typeName(T), @errorName(err) });
+            };
+        }
+    };
+}
 
 const TypeId = struct { id: [*:0]const u8 };
 
