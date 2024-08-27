@@ -8,6 +8,7 @@ pub const monitor = @import("monitor.zig").monitor;
 
 pub const Injector = @import("injector.zig").Injector;
 pub const Scoped = @import("injector.zig").Scoped;
+pub const TypeId = @import("injector.zig").TypeId;
 pub const Server = server.Server;
 pub const ServerOptions = server.InitOptions;
 pub const ListenOptions = server.ListenOptions;

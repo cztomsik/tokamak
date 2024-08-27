@@ -1,4 +1,3 @@
-const builtin = @import("builtin");
 const std = @import("std");
 
 /// Injector serves as a custom runtime scope for retrieving dependencies.
@@ -13,24 +12,37 @@ pub const Injector = struct {
     resolver: *const fn (*anyopaque, TypeId) ?*anyopaque,
     parent: ?*const Injector = null,
 
-    pub const EMPTY: Injector = .{ .ctx = undefined, .resolver = &resolver(*struct {}) };
+    pub const EMPTY: Injector = .{ .ctx = undefined, .resolver = empty };
     pub threadlocal var current = EMPTY;
 
     /// Create a new injector from a context ptr and an optional parent.
     pub fn init(ctx: anytype, parent: ?*const Injector) Injector {
         if (comptime @typeInfo(@TypeOf(ctx)) != .Pointer) {
-            @compileError("Expected pointer to a context");
+            @compileError("Expected pointer to a context, got " ++ @typeName(@TypeOf(ctx)));
         }
+
+        const H = struct {
+            fn resolve(ptr: *anyopaque, tid: TypeId) ?*anyopaque {
+                var cx: @TypeOf(ctx) = @constCast(@ptrCast(@alignCast(ptr)));
+                const res: Resolver = .{ .tid = tid };
+
+                // TODO: find a better name?
+                if (comptime @hasDecl(@TypeOf(cx.*), "resolve")) {
+                    return cx.resolve(res);
+                }
+
+                return res.visit(cx);
+            }
+        };
 
         return .{
             .ctx = @constCast(@ptrCast(ctx)), // resolver() casts back first, so this should be safe
-            .resolver = &resolver(@TypeOf(ctx)),
+            .resolver = &H.resolve,
             .parent = parent,
         };
     }
 
-    /// Get a dependency from the context.
-    pub fn get(self: Injector, comptime T: type) !T {
+    pub fn find(self: Injector, comptime T: type) ?T {
         if (comptime T == Injector) {
             return self;
         }
@@ -39,23 +51,29 @@ pub const Injector = struct {
             return undefined;
         }
 
-        switch (@typeInfo(T)) {
-            .Pointer => |p| {
-                if (self.find(T)) |ptr| return ptr;
-                if (p.is_const) if (self.find(*p.child)) |ptr| return ptr;
-            },
-            else => {
-                if (self.find(*T)) |ptr| return ptr.*;
-                if (self.find(*const T)) |ptr| return ptr.*;
-            },
+        if (comptime @typeInfo(T) != .Pointer) {
+            return if (self.find(*const T)) |p| p.* else null;
         }
 
-        if (self.parent) |parent| {
-            return parent.get(T);
+        if (self.resolver(self.ctx, TypeId.get(T))) |ptr| {
+            return @ptrCast(@constCast(@alignCast(ptr)));
         }
 
-        std.log.debug("Missing dependency: {s}", .{@typeName(T)});
-        return error.MissingDependency;
+        if (comptime @typeInfo(T).Pointer.is_const) {
+            if (self.resolver(self.ctx, TypeId.get(*@typeInfo(T).Pointer.child))) |ptr| {
+                return @ptrCast(@constCast(@alignCast(ptr)));
+            }
+        }
+
+        return if (self.parent) |p| p.find(T) else null;
+    }
+
+    /// Get a dependency from the context.
+    pub fn get(self: Injector, comptime T: type) !T {
+        return self.find(T) orelse {
+            std.log.debug("Missing dependency: {s}", .{@typeName(T)});
+            return error.MissingDependency;
+        };
     }
 
     /// Attempt to create a struct using dependencies from the context.
@@ -67,18 +85,6 @@ pub const Injector = struct {
         }
 
         return res;
-    }
-
-    fn find(self: Injector, comptime P: type) ?P {
-        const ptr = self.resolver(self.ctx, typeId(P));
-
-        if (comptime builtin.mode == .Debug) {
-            if (@intFromPtr(ptr) == 0xaaaaaaaaaaaaaaaa and @sizeOf(@typeInfo(P).Pointer.child) > 0) {
-                std.debug.panic("bad ptr: {s}", .{@typeName(P)});
-            }
-        }
-
-        return @ptrFromInt(@intFromPtr(ptr));
     }
 
     /// Call a function with dependencies. The `extra_args` tuple is used to
@@ -122,35 +128,34 @@ pub fn Scoped(comptime T: type) type {
     };
 }
 
-const TypeId = struct { id: [*:0]const u8 };
+pub const TypeId = enum(usize) {
+    _,
 
-fn typeId(comptime T: type) TypeId {
-    return .{ .id = @typeName(T) };
-}
+    pub inline fn get(comptime T: type) TypeId {
+        return @enumFromInt(@intFromPtr(@typeName(T)));
+    }
+};
 
-fn resolver(comptime T: type) fn (*anyopaque, TypeId) ?*anyopaque {
-    const H = struct {
-        fn resolve(ctx: *anyopaque, type_id: TypeId) ?*anyopaque {
-            var cx: T = @constCast(@ptrCast(@alignCast(ctx)));
+const Resolver = struct {
+    tid: TypeId,
 
-            inline for (std.meta.fields(@typeInfo(T).Pointer.child)) |f| {
-                const ptr = if (comptime @typeInfo(f.type) == .Pointer) @field(cx, f.name) else &@field(cx, f.name);
+    pub fn visit(self: Resolver, cx: anytype) ?*anyopaque {
+        inline for (std.meta.fields(@TypeOf(cx.*))) |f| {
+            const ptr = if (comptime @typeInfo(f.type) == .Pointer) @field(cx, f.name) else &@field(cx, f.name);
+            std.debug.assert(@intFromPtr(ptr) != 0xaaaaaaaaaaaaaaaa);
 
-                if (typeId(@TypeOf(ptr)).id == type_id.id) {
-                    return @constCast(@ptrCast(ptr));
-                }
+            if (self.tid == TypeId.get(@TypeOf(ptr))) {
+                return @ptrCast(@constCast(ptr));
             }
-
-            if (typeId(T).id == type_id.id) {
-                return ctx;
-            }
-
-            return null;
         }
-    };
 
-    return H.resolve;
-}
+        if (self.tid == TypeId.get(@TypeOf(cx))) {
+            return @ptrCast(@constCast(cx));
+        }
+
+        return null;
+    }
+};
 
 fn CallRes(comptime F: type) type {
     switch (@typeInfo(F)) {
@@ -164,4 +169,22 @@ fn CallRes(comptime F: type) type {
         },
         else => @compileError("Expected a function, got " ++ @typeName(@TypeOf(F))),
     }
+}
+
+fn empty(_: *anyopaque, _: TypeId) ?*anyopaque {
+    return null;
+}
+
+const t = std.testing;
+
+test Injector {
+    var num: u32 = 123;
+    var cx = .{ .num = &num };
+    const inj = Injector.init(&cx, null);
+
+    try t.expectEqual(inj, inj.get(Injector));
+    try t.expectEqual(&num, inj.get(*u32));
+    try t.expectEqual(@as(*const u32, &num), inj.get(*const u32));
+    try t.expectEqual(123, inj.get(u32));
+    try t.expectEqual(error.MissingDependency, inj.get(u64));
 }
