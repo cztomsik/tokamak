@@ -13,7 +13,6 @@ pub const Injector = struct {
     parent: ?*const Injector = null,
 
     pub const EMPTY: Injector = .{ .ctx = undefined, .resolver = empty };
-    pub threadlocal var current = EMPTY;
 
     /// Create a new injector from a context ptr and an optional parent.
     pub fn init(ctx: anytype, parent: ?*const Injector) Injector {
@@ -94,10 +93,6 @@ pub const Injector = struct {
             @compileError("Expected a tuple of arguments");
         }
 
-        const prev = current;
-        defer current = prev;
-        current = self;
-
         var args: std.meta.ArgsTuple(@TypeOf(fun)) = undefined;
         const extra_start = args.len - extra_args.len;
 
@@ -112,21 +107,6 @@ pub const Injector = struct {
         return @call(.auto, fun, args);
     }
 };
-
-/// Wrapper ZST helper for getting a dependency from the inner-most injector.
-/// This will only work inside `injector.call()` and it will panic if the
-/// dependency is not found, so it should be used with caution. It is useful
-/// for getting request-scoped dependencies, but notably, it can also be used
-/// for dependency inversion.
-pub fn Scoped(comptime T: type) type {
-    return struct {
-        pub fn get(_: @This()) T {
-            return Injector.current.get(T) catch |err| {
-                std.debug.panic("Scoped<{s}>: {s}", .{ @typeName(T), @errorName(err) });
-            };
-        }
-    };
-}
 
 pub const TypeId = enum(usize) {
     _,

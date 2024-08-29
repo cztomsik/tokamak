@@ -108,11 +108,6 @@ fn route(comptime method: httpz.Method, comptime path: []const u8, comptime has_
 
     const H = struct {
         fn handleRoute(ctx: *Context) anyerror!void {
-            // TODO: use Injector.call()
-            const prev = Injector.current;
-            defer Injector.current = prev;
-            Injector.current = ctx.injector;
-
             var args: std.meta.ArgsTuple(@TypeOf(handler)) = undefined;
             const mid = args.len - n_params - @intFromBool(has_query) - @intFromBool(has_body);
 
