@@ -80,7 +80,15 @@ pub const Injector = struct {
         var res: T = undefined;
 
         inline for (@typeInfo(T).Struct.fields) |f| {
-            @field(res, f.name) = try self.get(f.type);
+            if (self.find(f.type)) |dep| {
+                @field(res, f.name) = dep;
+            } else {
+                if (comptime @as(?*align(1) const f.type, @ptrCast(f.default_value))) |ptr| {
+                    @field(res, f.name) = ptr.*;
+                } else {
+                    return error.MissingDependency;
+                }
+            }
         }
 
         return res;
