@@ -52,6 +52,10 @@ pub const Server = struct {
 
         try self.http.listen();
     }
+
+    pub fn stop(self: *Server) void {
+        self.http.stop();
+    }
 };
 
 const Adapter = struct {
