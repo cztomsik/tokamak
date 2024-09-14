@@ -27,7 +27,7 @@ pub fn sendStatic(comptime path: []const u8) Handler {
                 body = try std.fs.cwd().readFileAlloc(ctx.allocator, path, std.math.maxInt(usize));
             }
 
-            ctx.res.body = body;
+            ctx.res.body = body orelse "";
             ctx.responded = true;
         }
     };

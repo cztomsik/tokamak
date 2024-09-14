@@ -3,8 +3,8 @@
     .version = "0.0.1",
     .dependencies = .{
         .httpz = .{
-            .url = "https://github.com/karlseguin/http.zig/archive/fbca868592dc83ee3ee3cad414c62afa266f4866.tar.gz",
-            .hash = "122089946af5ba1cdfae3f515f0fa1c96327f42a462515fbcecc719fe94fab38d9b8",
+            .url = "https://github.com/karlseguin/http.zig/archive/44b97984c6a9613634e238d27ca6cdff4d4abebd.tar.gz",
+            .hash = "122034afde1b4ff5971787929d1a4a8ef175e1c18fe0cf4ffc1af1ce0c95c7b6be7b",
         },
     },
     .paths = .{

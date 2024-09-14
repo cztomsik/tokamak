@@ -6,6 +6,12 @@ const Route = @import("router.zig").Route;
 
 pub const InitOptions = struct {
     injector: Injector = Injector.EMPTY,
+    workers: httpz.Config.Worker = .{},
+    request: httpz.Config.Request = .{},
+    response: httpz.Config.Response = .{},
+    timeout: httpz.Config.Timeout = .{},
+    thread_pool: httpz.Config.ThreadPool = .{},
+    websocket: httpz.Config.Websocket = .{},
 };
 
 pub const ListenOptions = struct {
@@ -26,7 +32,14 @@ pub const Server = struct {
         const self = try allocator.create(Server);
         errdefer allocator.destroy(self);
 
-        const http = try httpz.ServerCtx(Adapter, Adapter).init(allocator, .{}, .{ .server = self });
+        const http = try httpz.ServerCtx(Adapter, Adapter).init(allocator, .{
+            .workers = options.workers,
+            .request = options.request,
+            .response = options.response,
+            .timeout = options.timeout,
+            .thread_pool = options.thread_pool,
+            .websocket = options.websocket,
+        }, .{ .server = self });
         errdefer http.deinit();
 
         self.* = .{
@@ -53,6 +66,7 @@ pub const Server = struct {
         try self.http.listen();
     }
 
+    /// Stop the server.
     pub fn stop(self: *Server) void {
         self.http.stop();
     }
