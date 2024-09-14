@@ -129,7 +129,7 @@ const Resolver = struct {
 
     pub fn visit(self: Resolver, cx: anytype) ?*anyopaque {
         inline for (std.meta.fields(@TypeOf(cx.*))) |f| {
-            const ptr = if (comptime @typeInfo(f.type) == .Pointer) @field(cx, f.name) else &@field(cx, f.name);
+            const ptr = if (comptime isOnePtr(f.type)) @field(cx, f.name) else &@field(cx, f.name);
             std.debug.assert(@intFromPtr(ptr) != 0xaaaaaaaaaaaaaaaa);
 
             if (self.tid == TypeId.get(@TypeOf(ptr))) {
@@ -161,6 +161,13 @@ fn CallRes(comptime F: type) type {
 
 fn empty(_: *anyopaque, _: TypeId) ?*anyopaque {
     return null;
+}
+
+fn isOnePtr(comptime T: type) bool {
+    return switch (@typeInfo(T)) {
+        .Pointer => |p| p.size == .One,
+        else => false,
+    };
 }
 
 const t = std.testing;
