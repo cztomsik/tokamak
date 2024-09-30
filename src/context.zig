@@ -1,8 +1,8 @@
 const std = @import("std");
 const httpz = @import("httpz");
 const Server = @import("server.zig").Server;
-const Route = @import("router.zig").Route;
-const Params = @import("router.zig").Params;
+const Route = @import("route.zig").Route;
+const Params = @import("route.zig").Params;
 const Injector = @import("injector.zig").Injector;
 const log = std.log.scoped(.tokamak);
 

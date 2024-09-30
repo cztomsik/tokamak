@@ -2,7 +2,7 @@ const std = @import("std");
 const Injector = @import("injector.zig").Injector;
 const Context = @import("context.zig").Context;
 const Handler = @import("context.zig").Handler;
-const Route = @import("router.zig").Route;
+const Route = @import("route.zig").Route;
 
 /// Groups the given routes under a common prefix. The prefix is removed
 /// from the request path before the children are called.

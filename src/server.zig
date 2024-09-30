@@ -2,7 +2,7 @@ const std = @import("std");
 const httpz = @import("httpz");
 const Injector = @import("injector.zig").Injector;
 const Context = @import("context.zig").Context;
-const Route = @import("router.zig").Route;
+const Route = @import("route.zig").Route;
 
 pub const InitOptions = struct {
     injector: Injector = Injector.empty,
