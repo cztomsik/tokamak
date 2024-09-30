@@ -5,7 +5,7 @@ const Context = @import("context.zig").Context;
 const Route = @import("router.zig").Route;
 
 pub const InitOptions = struct {
-    injector: Injector = Injector.EMPTY,
+    injector: Injector = Injector.empty,
     workers: httpz.Config.Worker = .{},
     request: httpz.Config.Request = .{},
     response: httpz.Config.Response = .{},
@@ -25,14 +25,14 @@ pub const Server = struct {
     allocator: std.mem.Allocator,
     routes: []const Route,
     injector: Injector,
-    http: httpz.ServerCtx(Adapter, Adapter),
+    http: httpz.Server(Adapter),
 
     /// Initialize a new server.
     pub fn init(allocator: std.mem.Allocator, routes: []const Route, options: InitOptions) !*Server {
         const self = try allocator.create(Server);
         errdefer allocator.destroy(self);
 
-        const http = try httpz.ServerCtx(Adapter, Adapter).init(allocator, .{
+        const http = try httpz.Server(Adapter).init(allocator, .{
             .workers = options.workers,
             .request = options.request,
             .response = options.response,

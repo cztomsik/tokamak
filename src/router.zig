@@ -75,12 +75,12 @@ pub fn delete(comptime path: []const u8, comptime handler: anytype) Route {
 /// to calling the corresponding route function with the method and path.
 pub fn router(comptime T: type) Route {
     const children = comptime blk: {
-        @setEvalBranchQuota(@typeInfo(T).Struct.decls.len * 100);
+        @setEvalBranchQuota(@typeInfo(T).@"struct".decls.len * 100);
 
         var res: []const Route = &.{};
 
-        for (@typeInfo(T).Struct.decls) |d| {
-            if (@typeInfo(@TypeOf(@field(T, d.name))) != .Fn) continue;
+        for (std.meta.declarations(T)) |d| {
+            if (@typeInfo(@TypeOf(@field(T, d.name))) != .@"fn") continue;
 
             const j = std.mem.indexOfScalar(u8, d.name, ' ') orelse @compileError("route must contain a space");
             var buf: [j]u8 = undefined;

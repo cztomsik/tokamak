@@ -40,7 +40,7 @@ pub fn provide(comptime factory: anytype, children: []const Route) Route {
 
         fn DerefType(comptime T: type) type {
             return switch (@typeInfo(T)) {
-                .Pointer => |p| p.child,
+                .pointer => |p| p.child,
                 else => T,
             };
         }

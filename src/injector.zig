@@ -1,4 +1,5 @@
 const std = @import("std");
+const t = std.testing;
 
 /// Injector serves as a custom runtime scope for retrieving dependencies.
 /// It can be passed around, enabling any code to request a value or reference
@@ -12,11 +13,11 @@ pub const Injector = struct {
     resolver: *const fn (*anyopaque, TypeId) ?*anyopaque,
     parent: ?*const Injector = null,
 
-    pub const EMPTY: Injector = .{ .ctx = undefined, .resolver = empty };
+    pub const empty: Injector = .{ .ctx = undefined, .resolver = resolveNull };
 
     /// Create a new injector from a context ptr and an optional parent.
     pub fn init(ctx: anytype, parent: ?*const Injector) Injector {
-        if (comptime @typeInfo(@TypeOf(ctx)) != .Pointer) {
+        if (comptime @typeInfo(@TypeOf(ctx)) != .pointer) {
             @compileError("Expected pointer to a context, got " ++ @typeName(@TypeOf(ctx)));
         }
 
@@ -46,11 +47,7 @@ pub const Injector = struct {
             return self;
         }
 
-        if (comptime @sizeOf(T) == 0) {
-            return undefined;
-        }
-
-        if (comptime @typeInfo(T) != .Pointer) {
+        if (comptime !isOnePtr(T)) {
             return if (self.find(*const T)) |p| p.* else null;
         }
 
@@ -58,8 +55,8 @@ pub const Injector = struct {
             return @ptrCast(@constCast(@alignCast(ptr)));
         }
 
-        if (comptime @typeInfo(T).Pointer.is_const) {
-            if (self.resolver(self.ctx, TypeId.get(*@typeInfo(T).Pointer.child))) |ptr| {
+        if (comptime @typeInfo(T).pointer.is_const) {
+            if (self.resolver(self.ctx, TypeId.get(*@typeInfo(T).pointer.child))) |ptr| {
                 return @ptrCast(@constCast(@alignCast(ptr)));
             }
         }
@@ -75,42 +72,38 @@ pub const Injector = struct {
         };
     }
 
-    /// Attempt to create a struct using dependencies from the context.
-    pub fn create(self: Injector, comptime T: type) !T {
-        var res: T = undefined;
+    test get {
+        var num: u32 = 123;
+        var cx = .{ .num = &num };
+        const inj = Injector.init(&cx, null);
 
-        inline for (@typeInfo(T).Struct.fields) |f| {
-            if (self.find(f.type)) |dep| {
-                @field(res, f.name) = dep;
-            } else {
-                if (comptime @as(?*align(1) const f.type, @ptrCast(f.default_value))) |ptr| {
-                    @field(res, f.name) = ptr.*;
-                } else {
-                    return error.MissingDependency;
-                }
-            }
-        }
-
-        return res;
+        try t.expectEqual(inj, inj.get(Injector));
+        try t.expectEqual(&num, inj.get(*u32));
+        try t.expectEqual(@as(*const u32, &num), inj.get(*const u32));
+        try t.expectEqual(123, inj.get(u32));
+        try t.expectEqual(error.MissingDependency, inj.get(u64));
     }
 
     /// Call a function with dependencies. The `extra_args` tuple is used to
-    /// pass additional arguments to the function.
+    /// pass additional arguments to the function. Function with anytype can
+    /// be called as long as the concrete value is provided in the `extra_args`.
     pub fn call(self: Injector, comptime fun: anytype, extra_args: anytype) CallRes(@TypeOf(fun)) {
-        if (comptime @typeInfo(@TypeOf(extra_args)) != .Struct) {
+        if (comptime @typeInfo(@TypeOf(extra_args)) != .@"struct") {
             @compileError("Expected a tuple of arguments");
         }
 
-        var args: std.meta.ArgsTuple(@TypeOf(fun)) = undefined;
-        const extra_start = args.len - extra_args.len;
+        const params = @typeInfo(@TypeOf(fun)).@"fn".params;
+        const extra_start = params.len - extra_args.len;
 
-        inline for (0..extra_start) |i| {
-            args[i] = try self.get(@TypeOf(args[i]));
-        }
+        const types = comptime brk: {
+            var types: [params.len]type = undefined;
+            for (0..extra_start) |i| types[i] = params[i].type orelse @compileError("reached anytype");
+            for (extra_start..params.len, 0..) |i, j| types[i] = @TypeOf(extra_args[j]);
+            break :brk &types;
+        };
 
-        inline for (extra_start..args.len, 0..) |i, j| {
-            args[i] = extra_args[j];
-        }
+        var args: std.meta.Tuple(types) = undefined;
+        inline for (0..args.len) |i| args[i] = if (i < extra_start) try self.get(@TypeOf(args[i])) else extra_args[i - extra_start];
 
         return @call(.auto, fun, args);
     }
@@ -130,9 +123,9 @@ const Resolver = struct {
     pub fn visit(self: Resolver, cx: anytype) ?*anyopaque {
         inline for (std.meta.fields(@TypeOf(cx.*))) |f| {
             const ptr = if (comptime isOnePtr(f.type)) @field(cx, f.name) else &@field(cx, f.name);
-            std.debug.assert(@intFromPtr(ptr) != 0xaaaaaaaaaaaaaaaa);
 
             if (self.tid == TypeId.get(@TypeOf(ptr))) {
+                std.debug.assert(@intFromPtr(ptr) != 0xaaaaaaaaaaaaaaaa);
                 return @ptrCast(@constCast(ptr));
             }
         }
@@ -146,40 +139,22 @@ const Resolver = struct {
 };
 
 fn CallRes(comptime F: type) type {
-    switch (@typeInfo(F)) {
-        .Fn => |f| {
-            const R = f.return_type orelse @compileError("Invalid function");
-
-            return switch (@typeInfo(R)) {
-                .ErrorUnion => |e| return anyerror!e.payload,
-                else => anyerror!R,
-            };
+    return switch (@typeInfo(F)) {
+        .@"fn" => |f| switch (@typeInfo(f.return_type.?)) {
+            .error_union => |e| return anyerror!e.payload,
+            else => anyerror!f.return_type.?,
         },
         else => @compileError("Expected a function, got " ++ @typeName(@TypeOf(F))),
-    }
+    };
 }
 
-fn empty(_: *anyopaque, _: TypeId) ?*anyopaque {
+fn resolveNull(_: *anyopaque, _: TypeId) ?*anyopaque {
     return null;
 }
 
 fn isOnePtr(comptime T: type) bool {
     return switch (@typeInfo(T)) {
-        .Pointer => |p| p.size == .One,
+        .pointer => |p| p.size == .One,
         else => false,
     };
-}
-
-const t = std.testing;
-
-test Injector {
-    var num: u32 = 123;
-    var cx = .{ .num = &num };
-    const inj = Injector.init(&cx, null);
-
-    try t.expectEqual(inj, inj.get(Injector));
-    try t.expectEqual(&num, inj.get(*u32));
-    try t.expectEqual(@as(*const u32, &num), inj.get(*const u32));
-    try t.expectEqual(123, inj.get(u32));
-    try t.expectEqual(error.MissingDependency, inj.get(u64));
 }

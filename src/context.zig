@@ -21,10 +21,10 @@ pub const Context = struct {
     /// Get value from a string.
     pub fn parse(comptime T: type, s: []const u8) !T {
         return switch (@typeInfo(T)) {
-            .Optional => |o| if (std.mem.eql(u8, s, "null")) null else try parse(o.child, s),
-            .Bool => std.mem.eql(u8, s, "true"),
-            .Int => std.fmt.parseInt(T, s, 10),
-            .Enum => std.meta.stringToEnum(T, s) orelse error.InvalidEnumTag,
+            .optional => |o| if (std.mem.eql(u8, s, "null")) null else try parse(o.child, s),
+            .bool => std.mem.eql(u8, s, "true"),
+            .int => std.fmt.parseInt(T, s, 10),
+            .@"enum" => std.meta.stringToEnum(T, s) orelse error.InvalidEnumTag,
             else => s,
         };
     }
@@ -34,7 +34,7 @@ pub const Context = struct {
         const query = try self.req.query();
         var res: T = undefined;
 
-        inline for (@typeInfo(T).Struct.fields) |f| {
+        inline for (std.meta.fields(T)) |f| {
             if (query.get(f.name)) |param| {
                 @field(res, f.name) = try parse(f.type, param);
             } else if (f.default_value) |ptr| {
@@ -97,8 +97,8 @@ pub const Context = struct {
                 self.res.body = res;
             },
             else => |T| switch (@typeInfo(T)) {
-                .Void => return,
-                .ErrorSet => {
+                .void => return,
+                .error_set => {
                     self.res.status = switch (@as(anyerror, res)) {
                         error.BadRequest => 400,
                         error.Unauthorized => 401,
@@ -108,7 +108,7 @@ pub const Context = struct {
                     };
                     try self.send(.{ .@"error" = res });
                 },
-                .ErrorUnion => if (res) |r| self.send(r) else |e| self.send(e),
+                .error_union => if (res) |r| self.send(r) else |e| self.send(e),
                 else => self.res.json(res, .{}),
             },
         };
