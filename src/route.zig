@@ -155,7 +155,7 @@ fn route(comptime method: httpz.Method, comptime path: []const u8, comptime has_
     return .{
         .method = method,
         .path = path[0 .. path.len - @intFromBool(has_query)],
-        .handler = H.handleRoute,
+        .handler = if (comptime @TypeOf(handler) == Route) handler.handler.? else H.handleRoute,
     };
 }
 
