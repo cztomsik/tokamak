@@ -26,75 +26,75 @@ pub const Route = struct {
 
         return Params{};
     }
+
+    /// Creates a GET route with the given path and handler.
+    pub fn get(comptime path: []const u8, comptime handler: anytype) Route {
+        return route(.GET, path, false, handler);
+    }
+
+    /// Creates a POST route with the given path and handler. The handler will
+    /// receive the request body in the last argument.
+    pub fn post(comptime path: []const u8, comptime handler: anytype) Route {
+        return route(.POST, path, true, handler);
+    }
+
+    /// Creates a POST route with the given path and handler but without a body.
+    pub fn post0(comptime path: []const u8, comptime handler: anytype) Route {
+        return route(.POST, path, false, handler);
+    }
+
+    /// Creates a PUT route with the given path and handler. The handler will
+    /// receive the request body in the last argument.
+    pub fn put(comptime path: []const u8, comptime handler: anytype) Route {
+        return route(.PUT, path, true, handler);
+    }
+
+    /// Creates a PUT route with the given path and handler but without a body.
+    pub fn put0(comptime path: []const u8, comptime handler: anytype) Route {
+        return route(.PUT, path, false, handler);
+    }
+
+    /// Creates a PATCH route with the given path and handler. The handler will
+    /// receive the request body in the last argument.
+    pub fn patch(comptime path: []const u8, comptime handler: anytype) Route {
+        return route(.PATCH, path, true, handler);
+    }
+
+    /// Creates a PATCH route with the given path and handler but without a body.
+    pub fn patch0(comptime path: []const u8, comptime handler: anytype) Route {
+        return route(.PATCH, path, false, handler);
+    }
+
+    /// Creates a DELETE route with the given path and handler.
+    pub fn delete(comptime path: []const u8, comptime handler: anytype) Route {
+        return route(.DELETE, path, false, handler);
+    }
+
+    /// Creates a group of routes from a struct type. Each pub fn will be equivalent
+    /// to calling the corresponding route function with the method and path.
+    pub fn router(comptime T: type) Route {
+        const children = comptime blk: {
+            @setEvalBranchQuota(@typeInfo(T).@"struct".decls.len * 100);
+
+            var res: []const Route = &.{};
+
+            for (std.meta.declarations(T)) |d| {
+                if (@typeInfo(@TypeOf(@field(T, d.name))) != .@"fn") continue;
+
+                const j = std.mem.indexOfScalar(u8, d.name, ' ') orelse @compileError("route must contain a space");
+                var buf: [j]u8 = undefined;
+                const method = std.ascii.lowerString(&buf, d.name[0..j]);
+                res = res ++ .{@field(@This(), method)(d.name[j + 1 ..], @field(T, d.name))};
+            }
+
+            break :blk res;
+        };
+
+        return .{
+            .children = children,
+        };
+    }
 };
-
-/// Creates a GET route with the given path and handler.
-pub fn get(comptime path: []const u8, comptime handler: anytype) Route {
-    return route(.GET, path, false, handler);
-}
-
-/// Creates a POST route with the given path and handler. The handler will
-/// receive the request body in the last argument.
-pub fn post(comptime path: []const u8, comptime handler: anytype) Route {
-    return route(.POST, path, true, handler);
-}
-
-/// Creates a POST route with the given path and handler but without a body.
-pub fn post0(comptime path: []const u8, comptime handler: anytype) Route {
-    return route(.POST, path, false, handler);
-}
-
-/// Creates a PUT route with the given path and handler. The handler will
-/// receive the request body in the last argument.
-pub fn put(comptime path: []const u8, comptime handler: anytype) Route {
-    return route(.PUT, path, true, handler);
-}
-
-/// Creates a PUT route with the given path and handler but without a body.
-pub fn put0(comptime path: []const u8, comptime handler: anytype) Route {
-    return route(.PUT, path, false, handler);
-}
-
-/// Creates a PATCH route with the given path and handler. The handler will
-/// receive the request body in the last argument.
-pub fn patch(comptime path: []const u8, comptime handler: anytype) Route {
-    return route(.PATCH, path, true, handler);
-}
-
-/// Creates a PATCH route with the given path and handler but without a body.
-pub fn patch0(comptime path: []const u8, comptime handler: anytype) Route {
-    return route(.PATCH, path, false, handler);
-}
-
-/// Creates a DELETE route with the given path and handler.
-pub fn delete(comptime path: []const u8, comptime handler: anytype) Route {
-    return route(.DELETE, path, false, handler);
-}
-
-/// Creates a group of routes from a struct type. Each pub fn will be equivalent
-/// to calling the corresponding route function with the method and path.
-pub fn router(comptime T: type) Route {
-    const children = comptime blk: {
-        @setEvalBranchQuota(@typeInfo(T).@"struct".decls.len * 100);
-
-        var res: []const Route = &.{};
-
-        for (std.meta.declarations(T)) |d| {
-            if (@typeInfo(@TypeOf(@field(T, d.name))) != .@"fn") continue;
-
-            const j = std.mem.indexOfScalar(u8, d.name, ' ') orelse @compileError("route must contain a space");
-            var buf: [j]u8 = undefined;
-            const method = std.ascii.lowerString(&buf, d.name[0..j]);
-            res = res ++ .{@field(@This(), method)(d.name[j + 1 ..], @field(T, d.name))};
-        }
-
-        break :blk res;
-    };
-
-    return .{
-        .children = children,
-    };
-}
 
 fn route(comptime method: httpz.Method, comptime path: []const u8, comptime has_body: bool, comptime handler: anytype) Route {
     const has_query = comptime path[path.len - 1] == '?';
