@@ -6,7 +6,7 @@ const routes = &.{
     tk.logger(.{}, &.{
         .get("/", tk.sendStatic("public/index.html")),
         .get("/main.js", tk.sendStatic("public/main.js")),
-        tk.group("/api", &.{
+        .group("/api", &.{
             .router(api),
         }),
     }),

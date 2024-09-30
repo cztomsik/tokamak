@@ -121,7 +121,7 @@ pub const Context = struct {
         self.res.header("location", url);
     }
 
-    pub fn recur(self: *Context) !void {
+    pub fn next(self: *Context) !void {
         for (self.current.children) |route| {
             if (route.match(self.req)) |params| {
                 self.current = route;
@@ -130,7 +130,7 @@ pub const Context = struct {
                 if (route.handler) |handler| {
                     try handler(self);
                 } else {
-                    try self.recur();
+                    try self.next();
                 }
             }
 
@@ -138,12 +138,13 @@ pub const Context = struct {
         }
     }
 
-    pub fn recurScoped(self: *Context, ctx: anytype) !void {
+    // TODO: remove this
+    pub fn nextScoped(self: *Context, ctx: anytype) !void {
         const prev = self.injector;
         defer self.injector = prev;
         self.injector = Injector.init(ctx, &prev);
 
-        try self.recur();
+        try self.next();
     }
 };
 

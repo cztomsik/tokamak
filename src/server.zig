@@ -87,7 +87,7 @@ const Adapter = struct {
             .injector = Injector.init(&ctx, &self.server.injector),
         };
 
-        ctx.recur() catch |e| {
+        ctx.next() catch |e| {
             ctx.send(e) catch {};
             return;
         };

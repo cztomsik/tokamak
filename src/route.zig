@@ -27,6 +27,26 @@ pub const Route = struct {
         return Params{};
     }
 
+    /// Groups the given routes under a common prefix. The prefix is removed
+    /// from the request path before the children are called.
+    pub fn group(prefix: []const u8, children: []const Route) Route {
+        const H = struct {
+            fn handleGroup(ctx: *Context) anyerror!void {
+                const orig = ctx.req.url.path;
+                ctx.req.url.path = ctx.req.url.path[ctx.current.prefix.?.len..];
+                defer ctx.req.url.path = orig;
+
+                try ctx.next();
+            }
+        };
+
+        return .{
+            .prefix = prefix,
+            .handler = H.handleGroup,
+            .children = children,
+        };
+    }
+
     /// Creates a GET route with the given path and handler.
     pub fn get(comptime path: []const u8, comptime handler: anytype) Route {
         return route(.GET, path, false, handler);

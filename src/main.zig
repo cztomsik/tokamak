@@ -8,6 +8,7 @@ pub const monitor = @import("monitor.zig").monitor;
 pub const Injector = @import("injector.zig").Injector;
 pub const TypeId = @import("injector.zig").TypeId;
 pub const Factory = @import("factory.zig").Factory;
+
 pub const Server = @import("server.zig").Server;
 pub const ServerOptions = @import("server.zig").InitOptions;
 pub const ListenOptions = @import("server.zig").ListenOptions;
@@ -17,6 +18,10 @@ pub const Handler = @import("context.zig").Handler;
 pub const Request = httpz.Request;
 pub const Response = httpz.Response;
 
+pub const cors = @import("middleware/cors.zig").cors;
+pub const logger = @import("middleware/logger.zig").logger;
+
+// TODO: split/avoid usingnamespace
 pub usingnamespace @import("middleware.zig");
 pub usingnamespace @import("static.zig");
 
