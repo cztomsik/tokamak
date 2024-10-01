@@ -7,8 +7,9 @@ const App = () => {
   return html`
     <div class="overflow-hidden rounded-lg border shadow-lg">
       <div class="bg-gray-100 px-8 py-5 border-b">
-        <ul class="flex justify-center gap-5 font-medium">
+        <ul class="flex items-center justify-center gap-5 font-medium">
           <h1 class="text-lg font-semibold">My Blog</h1>
+          <a href="/swagger-ui" class="text-blue-500">Swagger UI</a>
         </ul>
       </div>
       <div class="text-center p-8">${path ? html`<${EditPost} id=${+path} />` : html`<${Posts} />`}</div>

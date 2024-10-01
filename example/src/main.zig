@@ -8,6 +8,8 @@ const routes = &.{
         .group("/api", &.{
             .router(api),
         }),
+        .get("/openapi.json", tk.swagger.json(.{ .info = .{ .title = "Example" } })),
+        .get("/swagger-ui", tk.swagger.ui(.{ .url = "openapi.json" })),
     }),
 };
 
