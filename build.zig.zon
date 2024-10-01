@@ -1,6 +1,12 @@
 .{
     .name = "tokamak",
-    .version = "0.0.1",
+    .version = "2.0.0",
+    .dependencies = .{
+        .httpz = .{
+            .url = "git+https://github.com/karlseguin/http.zig#master",
+            .hash = "12201df692f62d526fdf94e6000cf8de2142edf27484887e2e8f1ec5db4c9b808e5c",
+        },
+    },
     .paths = .{
         "build.zig",
         "build.zig.zon",

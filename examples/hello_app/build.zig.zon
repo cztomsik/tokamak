@@ -1,0 +1,14 @@
+.{
+    .name = "hello_app",
+    .version = "0.0.0",
+    .dependencies = .{
+        .tokamak = .{
+            .path = "../..",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}

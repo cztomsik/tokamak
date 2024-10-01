@@ -1,23 +1,19 @@
 # tokamak
 
-> I wrote a short blog post about the **[motivation and the design of the
-> framework](https://tomsik.cz/posts/tokamak/)**
->
-> I am doing some breaking changes, so maybe check one of the [previous
-> versions](https://github.com/cztomsik/tokamak/tree/629dfd45bd95f310646d61f635604ec393253990)
-> if you want to use it right now. The most up-to-date example is/might be in
-> the [Ava PLS](https://github.com/cztomsik/ava) repository.
+Tokamak is a server-side framework for Zig, built around
+[http.zig](https://github.com/karlseguin/http.zig) and a simple dependency
+injection container.
 
-Server-side framework for Zig, relying heavily on dependency injection.
-
-The code has been extracted from [Ava PLS](https://github.com/cztomsik/ava)
-which has been using it for a few months already, and I'm using it in one other
-project which is going to production soon, so it's not just a toy, it actually
-works.
-
-That said, it is **not designed to be used alone**, but with a reverse proxy in
+Note, that it is **not designed to be used alone**, but with a reverse proxy in
 front of it, like Nginx or Cloudfront, which will handle SSL, caching,
 sanitization, etc.
+
+> ### Recent changes
+> - Switched to [http.zig](https://github.com/karlseguin/http.zig) for improved
+>   performance over `std.http`.
+> - Implemented hierarchical and introspectable routes.
+> - Added basic Swagger support.
+> - Added `tk.static.dir()` for serving entire directories.
 
 ## Getting started
 
@@ -26,13 +22,17 @@ Simple things should be easy to do.
 ```zig
 const tk = @import("tokamak");
 
-pub fn main() !void {
-    var server = try tk.Server.start(allocator, hello, .{ .port = 8080 });
-    server.wait();
-}
+const routes = []const tk.Route = &.{
+    .get("/", hello),
+};
 
 fn hello() ![]const u8 {
     return "Hello";
+}
+
+pub fn main() !void {
+    const server = try tk.Server.start(allocator, routes, .{ .port = 8080 });
+    try server.start();
 }
 ```
 
@@ -47,11 +47,12 @@ Notable types you can inject are:
 - `std.mem.Allocator` (request-scoped arena allocator)
 - `*tk.Request` (current request, including headers, body reader, etc.)
 - `*tk.Response` (current response, with methods to send data, set headers, etc.)
-- `*tk.Injector` (the injector itself, see below)
+- `tk.Injector` (the injector itself, see below)
 - and everything you provide yourself
 
-For example, you can you easily write a handler function which will create a
-string on the fly and return it to the client without any tight coupling to the server or the request/response types.
+For example, you can easily write a handler function which will create a
+string on the fly and return it to the client without any tight coupling to the
+server or the request/response types.
 
 ```zig
 fn hello(allocator: std.mem.Allocator) ![]const u8 {
@@ -76,7 +77,7 @@ If you need a more fine-grained control over the response, you can inject a
 
 ```zig
 fn hello(res: *tk.Response) !void {
-    try res.sendJson(.{ .message = "Hello" });
+    try res.json(.{ .message = "Hello" }, .{});
 }
 ```
 
@@ -88,55 +89,49 @@ You can also provide your own (global) dependencies by passing your own
 ```zig
 pub fn main() !void {
     var db = try sqlite.open("my.db");
+    var cx = .{ &db };
 
-    var server = try tk.Server.start(allocator, hello, .{
-        .injector = tk.Injector.from(.{ &db }),
+    const server = try tk.Server.init(allocator, routes, .{
+        .injector = tk.Injector.init(&cx, null),
         .port = 8080
     });
 
-    server.wait();
+    try server.start();
 }
 ```
 
 ## Middlewares
 
-The framework supports special functions, called middlewares, which can alter
-the flow of the request by either responding directly or calling the next
-middleware.
+We don't have 1:1 middleware support like in Express.js, but given that our
+routes can be nested and that the `prefix`, `path` and `method` fields are
+optional, you can easily achieve the same effect.
 
-For example, here's a simple logger middleware:
+For example, here's a simple function which will return a logger route:
 
 ```zig
-fn handleLogger(ctx: *Context) anyerror!void {
-    log.debug("{s} {s}", .{ @tagName(ctx.req.method), ctx.req.url });
+fn logger(children: []const Route) tk.Route {
+    const H = struct {
+        fn handleLogger(ctx: *Context) anyerror!void {
+            log.debug("{s} {s}", .{ @tagName(ctx.req.method), ctx.req.url });
 
-    return ctx.next();
+            return ctx.next();
+        }
+
+    };
+    return .{ .handler = &H.handleLogger, .children = children };
 }
+
+const routes = []const tk.Route = &.{
+    logger(&.{
+        .get("/", hello),
+    }),
+};
 ```
 
-As you can see, the middleware takes a `*Context` and returns `anyerror!void`.
+As you can see, the handler takes a `*Context` and returns `anyerror!void`.
 It can do some pre-processing, logging, etc., and then call `ctx.next()` to
-continue with the next middleware or the handler function.
+continue with the next handler in the chain.
 
-There are few built-in middlewares, like `tk.chain()`, or `tk.send()`, and they
-work similarly to Express.js except that we don't have closures in Zig, so some
-things are a bit more verbose and/or need custom-scoping (see below).
-
-```zig
-var server = try tk.Server.start(gpa.allocator(), handler, .{ .port = 8080 });
-server.wait();
-
-const handler = tk.chain(.{
-    // Log every request
-    tk.logger(.{}),
-
-    // Send "Hello" for GET requests to "/"
-    tk.get("/", tk.send("Hello")),
-
-    // Send 404 for anything else
-    tk.send(error.NotFound),
-});
-```
 
 ## Custom-scoping
 
@@ -162,47 +157,33 @@ fn auth(ctx: *Context) anyerror!void {
 ## Routing
 
 There's a simple router built in, in the spirit of Express.js. It supports
-up to 16 basic path params, and `*` wildcard.
+up to 16 basic path params, and `*` wildcard. The example below shows how deps
+and params will be passed to the handler function.
 
 ```zig
 const tk = @import("tokamak");
 
-const api = struct {
-    // Path params need to be in the order they appear in the path
-    // Dependencies go always first
-    pub fn @"GET /:name"(allocator: std.mem.Allocator, name: []const u8) ![]const u8 {
-        return std.fmt.allocPrint(allocator, "Hello, {s}", .{name});
-    }
-
-    // In case of POST/PUT there's also a body
-    // The body is deserialized from JSON
-    pub fn @"POST /:id"(allocator: std.mem.Allocator, id: u32, data: struct {}) ![]const u8 {
-        ...
-    }
-
+const routes: []const tk.Route = &.{
+    .get("/", hello),                        // fn(...deps)
+    .get("/hello/:name", helloName),         // fn(...deps, name)
+    .get("/hello/:name/:age", helloNameAge), // fn(...deps, name, age)
+    .get("/hello/*", helloWildcard),         // fn(...deps)
+    .post("/hello", helloPost),              // fn(...deps, body)
+    .post0("/hello", helloPost0),            // fn(...deps)
     ...
-}
-
-pub fn main() !void {
-    var server = try tk.Server.start(allocator, api, .{ .port = 8080 });
-    server.wait();
-}
+};
 ```
 
-For the convenience, you can pass the api struct directly to the server, but
-under the hood it's just another middleware, which you can compose to a
-more complex hierarchy.
+There's also `Route.router(T)` method, which accepts special DSL-like struct,
+which allows you to define routes together with the fns in a single place.
 
 ```zig
-var server = try tk.Server.start(gpa.allocator(), handler, .{ .port = 8080 });
-server.wait();
-
-const handler = tk.chain(.{
+const routes: []const tk.Route = &.{
     tk.logger(.{}),
-    tk.get("/", tk.send("Hello")), // this is classic, express-style routing
-    tk.group("/api", tk.router(api)), // and this is our shorthand
-    tk.send(error.NotFound),
-});
+    .get("/", tk.send("Hello")),        // this is the classic, express-style routing
+    .group("/api", &.{ .router(api) }), // and this is our shorthand
+    .send(error.NotFound),
+};
 
 const api = struct {
     pub fn @"GET /"() []const u8 {
@@ -229,16 +210,28 @@ fn hello() !void {
 
 ## Static files
 
-> TODO: It is not possible to serve whole directories yet.
-
-To send a static file, you can use the `tk.sendStatic(path)` middleware.
+To send a static file, you can use the `tk.static.file(path)` middleware.
 
 ```zig
-const handler = tk.chain(.{
-    tk.logger(.{}),
-    tk.get("/", tk.sendStatic("static/index.html")),
-    tk.send(error.NotFound),
-});
+const routes: []const tk.Route = &.{
+    .get("/", tk.static.file("static/index.html")),
+};
+```
+
+You can also serve entire directories with `tk.static.dir(path)`.
+
+```zig
+const routes: []const tk.Route = &.{
+    tk.static.dir("public", .{}),
+};
+```
+
+And of course, the `tk.static.dir()` also works with wildcard routes.
+
+```zig
+const routes: []const tk.Route = &.{
+    tk.get("/assets/*", tk.static.dir("assets", .{ .index = null })),
+};
 ```
 
 If you want to embed some files into the binary, you can specify such paths to

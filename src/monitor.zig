@@ -52,7 +52,7 @@ fn run(proc: anytype) noreturn {
 
     const res = @call(.auto, proc[1], proc[2]);
 
-    if (comptime @typeInfo(@TypeOf(res)) == .ErrorUnion) {
+    if (comptime @typeInfo(@TypeOf(res)) == .error_union) {
         _ = res catch |e| {
             log.err("{s}", .{@errorName(e)});
 
@@ -79,9 +79,9 @@ fn setproctitle(name: [:0]const u8) void {
 fn isTupleOfProcesses(comptime T: type) bool {
     if (!isTuple(T)) return false;
 
-    inline for (@typeInfo(T).Struct.fields) |f| {
+    inline for (@typeInfo(T).@"struct".fields) |f| {
         if (!isTuple(f.type)) return false;
-        if (@typeInfo(f.type).Struct.fields.len != 3) return false;
+        if (@typeInfo(f.type).@"struct".fields.len != 3) return false;
     }
 
     return true;
@@ -89,5 +89,5 @@ fn isTupleOfProcesses(comptime T: type) bool {
 
 fn isTuple(comptime T: type) bool {
     const info = @typeInfo(T);
-    return info == .Struct and info.Struct.is_tuple;
+    return info == .@"struct" and info.@"struct".is_tuple;
 }
