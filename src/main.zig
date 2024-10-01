@@ -57,6 +57,27 @@ pub fn provide(comptime factory: anytype, children: []const Route) Route {
     };
 }
 
+pub fn run(comptime App: type) !void {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+
+    const provided = Injector.init(&.{
+        &gpa.allocator(),
+        &Factory(*Server).init,
+        &ServerOptions{},
+    }, null);
+
+    var app = try Factory(App).auto.call(provided);
+    defer if (comptime std.meta.hasMethod(App, "deinit")) app.deinit();
+
+    const injector = Injector.init(&app, null);
+
+    if (injector.find(*Server)) |server| {
+        server.injector = injector;
+        try server.start();
+    }
+}
+
 test {
     std.testing.refAllDecls(@This());
 }
