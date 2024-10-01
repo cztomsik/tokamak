@@ -67,7 +67,7 @@ pub fn run(comptime App: type) !void {
         &ServerOptions{},
     }, null);
 
-    var app = try Factory(App).auto.call(provided);
+    var app = try Factory(App).auto(2).call(provided);
     defer if (comptime std.meta.hasMethod(App, "deinit")) app.deinit();
 
     const injector = Injector.init(&app, null);
