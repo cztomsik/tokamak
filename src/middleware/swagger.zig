@@ -78,17 +78,19 @@ fn walk(arena: std.mem.Allocator, prefix: []const u8, res: *PathMap, routes: []c
             try walk(arena, prefix, res, route.children);
 
             if (route.method) |m| {
-                const p = try std.mem.concat(arena, u8, &.{ prefix, route.path orelse continue });
+                // TODO: translatePath(arena, prefix, path) which will replace :id with {id}
+                const key = try std.mem.concat(arena, u8, &.{ prefix, route.path orelse continue });
 
-                if (!res.map.contains(p)) {
+                if (!res.map.contains(key)) {
                     try res.map.put(arena, p, .{});
                 }
 
-                const path = res.map.getPtr(p).?;
+                const path = res.map.getPtr(key).?;
 
                 try path.map.put(arena, try std.ascii.allocLowerString(arena, @tagName(m)), .{
-                    .parameters = &.{},
-                    .responses = &.{},
+                    .parameters = &.{}, // TODO: route.meta.params
+                    // TODO: route.meta.body_schema
+                    .responses = &.{}, // TODO: route.meta.response_schema
                 });
             }
         }
