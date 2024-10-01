@@ -5,6 +5,7 @@ const Context = @import("context.zig").Context;
 const Route = @import("route.zig").Route;
 
 pub const InitOptions = struct {
+    listen: ListenOptions = .{},
     injector: Injector = Injector.empty,
     workers: httpz.Config.Worker = .{},
     request: httpz.Config.Request = .{},
@@ -15,9 +16,8 @@ pub const InitOptions = struct {
 };
 
 pub const ListenOptions = struct {
-    // public_url: ?[]const u8 = null,
     hostname: []const u8 = "127.0.0.1",
-    port: u16,
+    port: u16 = 8080,
 };
 
 /// A simple HTTP server with dependency injection.
@@ -33,6 +33,8 @@ pub const Server = struct {
         errdefer allocator.destroy(self);
 
         const http = try httpz.Server(Adapter).init(allocator, .{
+            .address = options.listen.hostname,
+            .port = options.listen.port,
             .workers = options.workers,
             .request = options.request,
             .response = options.response,
@@ -59,10 +61,7 @@ pub const Server = struct {
     }
 
     /// Start listening for incoming connections.
-    pub fn listen(self: *Server, options: ListenOptions) !void {
-        self.http.config.address = options.hostname;
-        self.http.config.port = options.port;
-
+    pub fn start(self: *Server) !void {
         try self.http.listen();
     }
 
