@@ -64,29 +64,29 @@ pub fn ui(options: UiOptions) Route {
     };
 }
 
-fn paths(allocator: std.mem.Allocator, routes: []const Route) !PathMap {
+fn paths(arena: std.mem.Allocator, routes: []const Route) !PathMap {
     var res: PathMap = .{};
-    errdefer res.deinit(allocator);
-
-    try walk(allocator, &res, routes);
+    try walk(arena, "", &res, routes);
     return res;
 }
 
-fn walk(allocator: std.mem.Allocator, res: *PathMap, routes: []const Route) !void {
+fn walk(arena: std.mem.Allocator, prefix: []const u8, res: *PathMap, routes: []const Route) !void {
     for (routes) |route| {
-        // TODO: prefix
+        if (route.prefix) |p| {
+            try walk(arena, try std.mem.concat(arena, u8, &.{ prefix, p }), res, route.children);
+        } else {
+            try walk(arena, prefix, res, route.children);
 
-        try walk(allocator, res, route.children);
-
-        if (route.path) |p| {
             if (route.method) |m| {
+                const p = try std.mem.concat(arena, u8, &.{ prefix, route.path orelse continue });
+
                 if (!res.map.contains(p)) {
-                    try res.map.put(allocator, p, .{});
+                    try res.map.put(arena, p, .{});
                 }
 
                 const path = res.map.getPtr(p).?;
 
-                try path.map.put(allocator, try std.ascii.allocLowerString(allocator, @tagName(m)), .{
+                try path.map.put(arena, try std.ascii.allocLowerString(arena, @tagName(m)), .{
                     .parameters = &.{},
                     .responses = &.{},
                 });
