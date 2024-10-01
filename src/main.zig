@@ -20,10 +20,10 @@ pub const Response = httpz.Response;
 
 pub const cors = @import("middleware/cors.zig").cors;
 pub const logger = @import("middleware/logger.zig").logger;
+pub const static = @import("middleware/static.zig");
 
 // TODO: split/avoid usingnamespace
 pub usingnamespace @import("middleware.zig");
-pub usingnamespace @import("static.zig");
 
 test {
     std.testing.refAllDecls(@This());

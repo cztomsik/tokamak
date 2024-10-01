@@ -4,8 +4,7 @@ const api = @import("api.zig");
 
 const routes = &.{
     tk.logger(.{}, &.{
-        .get("/", tk.sendStatic("public/index.html")),
-        .get("/main.js", tk.sendStatic("public/main.js")),
+        tk.static.dir("public", .{}),
         .group("/api", &.{
             .router(api),
         }),
