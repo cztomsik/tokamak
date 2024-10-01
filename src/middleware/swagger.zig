@@ -82,7 +82,7 @@ fn walk(arena: std.mem.Allocator, prefix: []const u8, res: *PathMap, routes: []c
                 const key = try std.mem.concat(arena, u8, &.{ prefix, route.path orelse continue });
 
                 if (!res.map.contains(key)) {
-                    try res.map.put(arena, p, .{});
+                    try res.map.put(arena, key, .{});
                 }
 
                 const path = res.map.getPtr(key).?;
