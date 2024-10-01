@@ -27,6 +27,32 @@ pub const Route = struct {
         return Params{};
     }
 
+    /// Returns a route that sends the given, comptime response.
+    pub fn send(comptime res: anytype) Route {
+        const H = struct {
+            fn handleSend(ctx: *Context) anyerror!void {
+                return ctx.send(res);
+            }
+        };
+
+        return .{
+            .handler = &H.handleSend,
+        };
+    }
+
+    /// Returns a route that will redirect user somewhere else.
+    pub fn redirect(comptime url: []const u8) Route {
+        const H = struct {
+            fn handleRedirect(ctx: *Context) anyerror!void {
+                return ctx.redirect(url, .{});
+            }
+        };
+
+        return .{
+            .handler = &H.handleRedirect,
+        };
+    }
+
     /// Groups the given routes under a common prefix. The prefix is removed
     /// from the request path before the children are called.
     pub fn group(prefix: []const u8, children: []const Route) Route {
