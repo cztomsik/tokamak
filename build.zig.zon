@@ -1,6 +1,6 @@
 .{
     .name = "tokamak",
-    .version = "0.0.1",
+    .version = "2.0.0",
     .dependencies = .{
         .httpz = .{
             .url = "git+https://github.com/karlseguin/http.zig#master",
