@@ -1,4 +1,5 @@
 const std = @import("std");
+const meta = @import("meta.zig");
 const t = std.testing;
 
 /// Injector serves as a custom runtime scope for retrieving dependencies.
@@ -17,7 +18,7 @@ pub const Injector = struct {
 
     /// Create a new injector from a context ptr and an optional parent.
     pub fn init(ctx: anytype, parent: ?*const Injector) Injector {
-        if (comptime @typeInfo(@TypeOf(ctx)) != .pointer) {
+        if (comptime !meta.isOnePtr(@TypeOf(ctx))) {
             @compileError("Expected pointer to a context, got " ++ @typeName(@TypeOf(ctx)));
         }
 
@@ -47,7 +48,7 @@ pub const Injector = struct {
             return self;
         }
 
-        if (comptime !isOnePtr(T)) {
+        if (comptime !meta.isOnePtr(T)) {
             return if (self.find(*const T)) |p| p.* else null;
         }
 
@@ -122,7 +123,7 @@ const Resolver = struct {
 
     pub fn visit(self: Resolver, cx: anytype) ?*anyopaque {
         inline for (std.meta.fields(@TypeOf(cx.*))) |f| {
-            const ptr = if (comptime isOnePtr(f.type)) @field(cx, f.name) else &@field(cx, f.name);
+            const ptr = if (comptime meta.isOnePtr(f.type)) @field(cx, f.name) else &@field(cx, f.name);
 
             if (self.tid == TypeId.get(@TypeOf(ptr))) {
                 std.debug.assert(@intFromPtr(ptr) != 0xaaaaaaaaaaaaaaaa);
@@ -150,11 +151,4 @@ fn CallRes(comptime F: type) type {
 
 fn resolveNull(_: *anyopaque, _: TypeId) ?*anyopaque {
     return null;
-}
-
-fn isOnePtr(comptime T: type) bool {
-    return switch (@typeInfo(T)) {
-        .pointer => |p| p.size == .One,
-        else => false,
-    };
 }
