@@ -11,7 +11,7 @@ const t = std.testing;
 /// is searched. If the dependency is still not found, an error is returned.
 pub const Injector = struct {
     ctx: *anyopaque,
-    resolver: *const fn (*anyopaque, TypeId) ?*anyopaque,
+    resolver: *const fn (*anyopaque, meta.TypeId) ?*anyopaque,
     parent: ?*const Injector = null,
 
     pub const empty: Injector = .{ .ctx = undefined, .resolver = resolveNull };
@@ -23,7 +23,7 @@ pub const Injector = struct {
         }
 
         const H = struct {
-            fn resolve(ptr: *anyopaque, tid: TypeId) ?*anyopaque {
+            fn resolve(ptr: *anyopaque, tid: meta.TypeId) ?*anyopaque {
                 var cx: @TypeOf(ctx) = @constCast(@ptrCast(@alignCast(ptr)));
                 const res: Resolver = .{ .tid = tid };
 
@@ -52,12 +52,12 @@ pub const Injector = struct {
             return if (self.find(*const T)) |p| p.* else null;
         }
 
-        if (self.resolver(self.ctx, TypeId.get(T))) |ptr| {
+        if (self.resolver(self.ctx, meta.TypeId.get(T))) |ptr| {
             return @ptrCast(@constCast(@alignCast(ptr)));
         }
 
         if (comptime @typeInfo(T).pointer.is_const) {
-            if (self.resolver(self.ctx, TypeId.get(*@typeInfo(T).pointer.child))) |ptr| {
+            if (self.resolver(self.ctx, meta.TypeId.get(*@typeInfo(T).pointer.child))) |ptr| {
                 return @ptrCast(@constCast(@alignCast(ptr)));
             }
         }
@@ -110,28 +110,20 @@ pub const Injector = struct {
     }
 };
 
-pub const TypeId = enum(usize) {
-    _,
-
-    pub inline fn get(comptime T: type) TypeId {
-        return @enumFromInt(@intFromPtr(@typeName(T)));
-    }
-};
-
 const Resolver = struct {
-    tid: TypeId,
+    tid: meta.TypeId,
 
     pub fn visit(self: Resolver, cx: anytype) ?*anyopaque {
         inline for (std.meta.fields(@TypeOf(cx.*))) |f| {
             const ptr = if (comptime meta.isOnePtr(f.type)) @field(cx, f.name) else &@field(cx, f.name);
 
-            if (self.tid == TypeId.get(@TypeOf(ptr))) {
+            if (self.tid == meta.TypeId.get(@TypeOf(ptr))) {
                 std.debug.assert(@intFromPtr(ptr) != 0xaaaaaaaaaaaaaaaa);
                 return @ptrCast(@constCast(ptr));
             }
         }
 
-        if (self.tid == TypeId.get(@TypeOf(cx))) {
+        if (self.tid == meta.TypeId.get(@TypeOf(cx))) {
             return @ptrCast(@constCast(cx));
         }
 
@@ -149,6 +141,6 @@ fn CallRes(comptime F: type) type {
     };
 }
 
-fn resolveNull(_: *anyopaque, _: TypeId) ?*anyopaque {
+fn resolveNull(_: *anyopaque, _: meta.TypeId) ?*anyopaque {
     return null;
 }
