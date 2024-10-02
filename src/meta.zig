@@ -1,3 +1,5 @@
+const std = @import("std");
+
 pub const TypeId = enum(usize) {
     _,
 
@@ -11,4 +13,8 @@ pub fn isOnePtr(comptime T: type) bool {
         .pointer => |p| p.size == .One,
         else => false,
     };
+}
+
+pub fn Deref(comptime T: type) type {
+    return if (isOnePtr(T)) std.meta.Child(T) else T;
 }
