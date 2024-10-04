@@ -8,6 +8,22 @@ pub const TypeId = enum(usize) {
     }
 };
 
+pub fn ReturnType(comptime fun: anytype) type {
+    return switch (@typeInfo(@TypeOf(fun))) {
+        .@"fn" => |f| f.return_type.?,
+        else => @compileError("Expected a function, got " ++ @typeName(@TypeOf(fun))),
+    };
+}
+
+pub fn Result(comptime fun: anytype) type {
+    const R = ReturnType(fun);
+
+    return switch (@typeInfo(R)) {
+        .error_union => |r| r.payload,
+        else => R,
+    };
+}
+
 pub fn isOnePtr(comptime T: type) bool {
     return switch (@typeInfo(T)) {
         .pointer => |p| p.size == .One,
