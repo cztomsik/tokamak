@@ -24,6 +24,10 @@ pub fn Result(comptime fun: anytype) type {
     };
 }
 
+pub fn isGeneric(comptime fun: anytype) bool {
+    return @typeInfo(@TypeOf(fun)).@"fn".is_generic;
+}
+
 pub fn isOnePtr(comptime T: type) bool {
     return switch (@typeInfo(T)) {
         .pointer => |p| p.size == .One,
