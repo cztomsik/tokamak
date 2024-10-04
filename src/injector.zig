@@ -88,7 +88,7 @@ pub const Injector = struct {
     /// Call a function with dependencies. The `extra_args` tuple is used to
     /// pass additional arguments to the function. Function with anytype can
     /// be called as long as the concrete value is provided in the `extra_args`.
-    pub fn call(self: Injector, comptime fun: anytype, extra_args: anytype) CallRes(@TypeOf(fun)) {
+    pub fn call(self: Injector, comptime fun: anytype, extra_args: anytype) anyerror!meta.Result(fun) {
         if (comptime @typeInfo(@TypeOf(extra_args)) != .@"struct") {
             @compileError("Expected a tuple of arguments");
         }
@@ -130,16 +130,6 @@ const Resolver = struct {
         return null;
     }
 };
-
-fn CallRes(comptime F: type) type {
-    return switch (@typeInfo(F)) {
-        .@"fn" => |f| switch (@typeInfo(f.return_type.?)) {
-            .error_union => |e| return anyerror!e.payload,
-            else => anyerror!f.return_type.?,
-        },
-        else => @compileError("Expected a function, got " ++ @typeName(@TypeOf(F))),
-    };
-}
 
 fn resolveNull(_: *anyopaque, _: meta.TypeId) ?*anyopaque {
     return null;
