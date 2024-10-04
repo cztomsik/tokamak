@@ -148,9 +148,7 @@ fn auth(ctx: *Context) anyerror!void {
     const token = try jwt.parse(ctx.req.getHeader("Authorization"));
     const user = db.find(User, token.id) catch null;
 
-    ctx.injector.push(&user);
-
-    return ctx.next();
+    return ctx.nextScoped(&.{ user });
 }
 ```
 
