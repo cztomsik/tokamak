@@ -60,11 +60,15 @@ pub fn Module(comptime T: type) type {
                 }
             }
 
+            if (comptime @typeInfo(S) != .@"struct") {
+                return error.CannotAutoInit;
+            }
+
             inline for (std.meta.fields(S)) |f| {
                 if (comptime @as(?*align(1) const f.type, @ptrCast(f.default_value))) |def| {
                     @field(target, f.name) = injector.find(f.type) orelse def.*;
                 } else {
-                    @field(target, f.name) = injector.get(f.type);
+                    @field(target, f.name) = try injector.get(f.type);
                 }
             }
         }
