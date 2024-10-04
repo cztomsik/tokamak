@@ -5,9 +5,11 @@ pub const config = @import("config.zig");
 pub const cron = @import("cron.zig");
 pub const monitor = @import("monitor.zig").monitor;
 
+pub const TypeId = @import("meta.zig").TypeId;
 pub const Injector = @import("injector.zig").Injector;
-pub const TypeId = @import("injector.zig").TypeId;
-pub const Factory = @import("factory.zig").Factory;
+pub const Module = @import("module.zig").Module;
+pub const initializer = @import("module.zig").initializer;
+pub const factory = @import("module.zig").factory;
 
 pub const Server = @import("server.zig").Server;
 pub const ServerOptions = @import("server.zig").InitOptions;
@@ -32,10 +34,10 @@ pub const redirect = Route.redirect;
 /// Call the factory and provide result to all children. The factory can
 /// use the current scope to resolve its own dependencies. If the resulting
 /// type has a `deinit` method, it will be called at the end of the scope.
-pub fn provide(comptime factory: anytype, children: []const Route) Route {
+pub fn provide(comptime fac: anytype, children: []const Route) Route {
     const H = struct {
         fn handleProvide(ctx: *Context) anyerror!void {
-            var child = .{try ctx.injector.call(factory, .{})};
+            var child = .{try ctx.injector.call(fac, .{})};
             defer if (comptime @hasDecl(DerefType(@TypeOf(child[0])), "deinit")) {
                 child[0].deinit();
             };
