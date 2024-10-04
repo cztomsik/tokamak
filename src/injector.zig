@@ -25,14 +25,21 @@ pub const Injector = struct {
         const H = struct {
             fn resolve(ptr: *anyopaque, tid: meta.TypeId) ?*anyopaque {
                 var cx: @TypeOf(ctx) = @constCast(@ptrCast(@alignCast(ptr)));
-                const res: Resolver = .{ .tid = tid };
 
-                // TODO: find a better name?
-                if (comptime @hasDecl(@TypeOf(cx.*), "resolve")) {
-                    return cx.resolve(res);
+                inline for (std.meta.fields(@TypeOf(cx.*))) |f| {
+                    const p = if (comptime meta.isOnePtr(f.type)) @field(cx, f.name) else &@field(cx, f.name);
+
+                    if (tid == meta.TypeId.get(@TypeOf(p))) {
+                        std.debug.assert(@intFromPtr(p) != 0xaaaaaaaaaaaaaaaa);
+                        return @ptrCast(@constCast(p));
+                    }
                 }
 
-                return res.visit(cx);
+                if (tid == meta.TypeId.get(@TypeOf(cx))) {
+                    return ptr;
+                }
+
+                return null;
             }
         };
 
@@ -107,27 +114,6 @@ pub const Injector = struct {
         inline for (0..args.len) |i| args[i] = if (i < extra_start) try self.get(@TypeOf(args[i])) else extra_args[i - extra_start];
 
         return @call(.auto, fun, args);
-    }
-};
-
-const Resolver = struct {
-    tid: meta.TypeId,
-
-    pub fn visit(self: Resolver, cx: anytype) ?*anyopaque {
-        inline for (std.meta.fields(@TypeOf(cx.*))) |f| {
-            const ptr = if (comptime meta.isOnePtr(f.type)) @field(cx, f.name) else &@field(cx, f.name);
-
-            if (self.tid == meta.TypeId.get(@TypeOf(ptr))) {
-                std.debug.assert(@intFromPtr(ptr) != 0xaaaaaaaaaaaaaaaa);
-                return @ptrCast(@constCast(ptr));
-            }
-        }
-
-        if (self.tid == meta.TypeId.get(@TypeOf(cx))) {
-            return @ptrCast(@constCast(cx));
-        }
-
-        return null;
     }
 };
 
