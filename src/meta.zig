@@ -15,7 +15,7 @@ pub inline fn tid(comptime T: type) TypeId {
     return &H.id;
 }
 
-pub fn ReturnType(comptime fun: anytype) type {
+pub fn Return(comptime fun: anytype) type {
     return switch (@typeInfo(@TypeOf(fun))) {
         .@"fn" => |f| f.return_type.?,
         else => @compileError("Expected a function, got " ++ @typeName(@TypeOf(fun))),
@@ -23,7 +23,7 @@ pub fn ReturnType(comptime fun: anytype) type {
 }
 
 pub fn Result(comptime fun: anytype) type {
-    const R = ReturnType(fun);
+    const R = Return(fun);
 
     return switch (@typeInfo(R)) {
         .error_union => |r| r.payload,
