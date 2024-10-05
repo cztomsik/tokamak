@@ -18,6 +18,7 @@ pub const ListenOptions = @import("server.zig").ListenOptions;
 pub const Route = @import("route.zig").Route;
 pub const Context = @import("context.zig").Context;
 pub const Handler = @import("context.zig").Handler;
+pub const Schema = @import("schema.zig").Schema;
 pub const Request = httpz.Request;
 pub const Response = httpz.Response;
 
