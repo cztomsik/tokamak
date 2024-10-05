@@ -1,15 +1,27 @@
 const std = @import("std");
 const httpz = @import("httpz");
+const meta = @import("meta.zig");
+const Injector = @import("injector.zig").Injector;
 const Context = @import("context.zig").Context;
 const Handler = @import("context.zig").Handler;
-const Injector = @import("injector.zig").Injector;
+const Schema = @import("schema.zig").Schema;
 
 pub const Route = struct {
     method: ?httpz.Method = null,
     prefix: ?[]const u8 = null,
     path: ?[]const u8 = null,
-    handler: ?*const fn (*Context) anyerror!void = null, // TODO(zig): should be ?*const Handler
+    handler: ?*const Handler = null,
     children: []const Route = &.{},
+    metadata: ?*const Metadata = null,
+
+    const Metadata = struct {
+        deps: []const meta.TypeId, // TODO: Server.init() should use this to check if we have all dependencies for all routes.
+        params: []const Schema,
+        query: ?Schema,
+        body: ?Schema,
+        result: ?Schema,
+        errors: []const anyerror,
+    };
 
     pub fn match(self: *const Route, req: *const httpz.Request) ?Params {
         if (self.prefix) |prefix| {
@@ -143,7 +155,37 @@ pub const Route = struct {
 };
 
 fn route(comptime method: httpz.Method, comptime path: []const u8, comptime has_body: bool, comptime handler: anytype) Route {
-    const has_query = comptime path[path.len - 1] == '?';
+    // Special case for putting catch-all routes behind a path.
+    if (comptime @TypeOf(handler) == Route) {
+        if (handler.metadata) |m| {
+            if (m.params.len != 0 or m.query != null or m.body != null) {
+                @compileError("Only functions or paramless routes can be used as handlers");
+            }
+        }
+
+        var copy = handler;
+        copy.method = method;
+        copy.path = path;
+        return copy;
+    }
+
+    const metadata: Route.Metadata = comptime routeMetadata(
+        path,
+        path[path.len - 1] == '?',
+        has_body,
+        handler,
+    );
+
+    return .{
+        .method = method,
+        .path = path[0 .. path.len - @intFromBool(metadata.query != null)],
+        .metadata = &metadata,
+        .handler = routeHandler(metadata, handler),
+    };
+}
+
+fn routeMetadata(comptime path: []const u8, comptime has_query: bool, comptime has_body: bool, comptime handler: anytype) Route.Metadata {
+    const fields = std.meta.fields(std.meta.ArgsTuple(@TypeOf(handler)));
     const n_params = comptime brk: {
         var n: usize = 0;
         for (path) |c| {
@@ -151,25 +193,64 @@ fn route(comptime method: httpz.Method, comptime path: []const u8, comptime has_
         }
         break :brk n;
     };
+    const n_deps = comptime fields.len - n_params - @intFromBool(has_query) - @intFromBool(has_body);
+
+    return .{
+        .deps = comptime brk: {
+            var deps: [n_deps]meta.TypeId = undefined;
+            for (0..n_deps) |i| deps[i] = meta.tid(fields[i].type);
+            const res = deps;
+            break :brk &res;
+        },
+        .params = comptime brk: {
+            var params: [n_params]Schema = undefined;
+            for (0..n_params, n_deps..) |i, j| params[i] = Schema.forType(fields[j].type);
+            const res = params;
+            break :brk &res;
+        },
+        .query = if (has_query) Schema.forType(fields[n_deps + n_params].type) else null,
+        .body = if (has_body) Schema.forType(fields[fields.len - 1].type) else null,
+        .result = switch (meta.Result(handler)) {
+            void => null,
+            else => |R| Schema.forType(R),
+        },
+        .errors = comptime brk: {
+            switch (@typeInfo(meta.Return(handler))) {
+                .error_union => |r| {
+                    if (@typeInfo(r.error_set).error_set == null) break :brk &.{};
+                    const names = std.meta.fieldNames(r.error_set);
+                    var errors: [names.len]anyerror = undefined;
+                    for (names, 0..) |e, i| errors[i] = @field(anyerror, e);
+                    const res = errors;
+                    break :brk &res;
+                },
+                else => break :brk &.{},
+            }
+        },
+    };
+}
+
+fn routeHandler(comptime m: Route.Metadata, comptime handler: anytype) *const Handler {
+    const n_deps = m.deps.len;
+    const n_params = m.params.len;
 
     const H = struct {
         fn handleRoute(ctx: *Context) anyerror!void {
             var args: std.meta.ArgsTuple(@TypeOf(handler)) = undefined;
-            const mid = args.len - n_params - @intFromBool(has_query) - @intFromBool(has_body);
 
-            inline for (0..mid) |i| {
+            inline for (0..n_deps) |i| {
                 args[i] = try ctx.injector.get(@TypeOf(args[i]));
             }
 
-            inline for (0..n_params, mid..) |j, i| {
+            inline for (0..n_params, n_deps..) |j, i| {
                 args[i] = try ctx.params.get(j, @TypeOf(args[i]));
             }
 
-            if (comptime has_query) {
-                args[mid + n_params] = try ctx.readQuery(@TypeOf(args[mid + n_params]));
+            if (comptime m.query != null) {
+                args[n_deps + n_params] = try ctx.readQuery(@TypeOf(args[n_deps + n_params]));
             }
 
-            if (comptime has_body) {
+            if (comptime m.body != null) {
                 args[args.len - 1] = try ctx.readJson(@TypeOf(args[args.len - 1]));
             }
 
@@ -178,11 +259,7 @@ fn route(comptime method: httpz.Method, comptime path: []const u8, comptime has_
         }
     };
 
-    return .{
-        .method = method,
-        .path = path[0 .. path.len - @intFromBool(has_query)],
-        .handler = if (comptime @TypeOf(handler) == Route) handler.handler.? else H.handleRoute,
-    };
+    return &H.handleRoute;
 }
 
 pub const Params = struct {
