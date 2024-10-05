@@ -99,13 +99,7 @@ pub const Context = struct {
             else => |T| switch (@typeInfo(T)) {
                 .void => return,
                 .error_set => {
-                    self.res.status = switch (@as(anyerror, res)) {
-                        error.BadRequest => 400,
-                        error.Unauthorized => 401,
-                        error.Forbidden => 403,
-                        error.NotFound => 404,
-                        else => 500,
-                    };
+                    self.res.status = getErrorStatus(res);
                     try self.send(.{ .@"error" = res });
                 },
                 .error_union => if (res) |r| self.send(r) else |e| self.send(e),
@@ -154,6 +148,16 @@ pub const CookieOptions = struct {
     http_only: bool = false,
     secure: bool = false,
 };
+
+pub fn getErrorStatus(e: anyerror) u16 {
+    return switch (e) {
+        error.BadRequest => 400,
+        error.Unauthorized => 401,
+        error.Forbidden => 403,
+        error.NotFound => 404,
+        else => 500,
+    };
+}
 
 // fn fakeReq(arena: *std.heap.ArenaAllocator, input: []const u8) !Request {
 //     const bytes = try arena.allocator().dupe(u8, input);
