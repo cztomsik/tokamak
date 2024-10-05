@@ -1,12 +1,19 @@
 const std = @import("std");
 
-pub const TypeId = enum(usize) {
-    _,
-
-    pub inline fn get(comptime T: type) TypeId {
-        return @enumFromInt(@intFromPtr(@typeName(T)));
-    }
+// https://github.com/ziglang/zig/issues/19858#issuecomment-2370673253
+pub const TypeId = *const struct {
+    _: u8 = undefined,
 };
+
+pub inline fn tid(comptime T: type) TypeId {
+    const H = struct {
+        comptime {
+            _ = T;
+        }
+        var id: Deref(TypeId) = .{};
+    };
+    return &H.id;
+}
 
 pub fn ReturnType(comptime fun: anytype) type {
     return switch (@typeInfo(@TypeOf(fun))) {

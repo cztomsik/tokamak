@@ -29,13 +29,13 @@ pub const Injector = struct {
                 inline for (std.meta.fields(@TypeOf(cx.*))) |f| {
                     const p = if (comptime meta.isOnePtr(f.type)) @field(cx, f.name) else &@field(cx, f.name);
 
-                    if (tid == meta.TypeId.get(@TypeOf(p))) {
+                    if (tid == meta.tid(@TypeOf(p))) {
                         std.debug.assert(@intFromPtr(p) != 0xaaaaaaaaaaaaaaaa);
                         return @ptrCast(@constCast(p));
                     }
                 }
 
-                if (tid == meta.TypeId.get(@TypeOf(cx))) {
+                if (tid == meta.tid(@TypeOf(cx))) {
                     return ptr;
                 }
 
@@ -59,12 +59,12 @@ pub const Injector = struct {
             return if (self.find(*const T)) |p| p.* else null;
         }
 
-        if (self.resolver(self.ctx, meta.TypeId.get(T))) |ptr| {
+        if (self.resolver(self.ctx, meta.tid(T))) |ptr| {
             return @ptrCast(@constCast(@alignCast(ptr)));
         }
 
         if (comptime @typeInfo(T).pointer.is_const) {
-            if (self.resolver(self.ctx, meta.TypeId.get(*@typeInfo(T).pointer.child))) |ptr| {
+            if (self.resolver(self.ctx, meta.tid(*@typeInfo(T).pointer.child))) |ptr| {
                 return @ptrCast(@constCast(@alignCast(ptr)));
             }
         }
