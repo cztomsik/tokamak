@@ -186,7 +186,7 @@ pub fn EventStream(comptime T: type) type {
             }
 
             while (impl.next()) |ev| {
-                sendEvent(stream, ev) catch break;
+                sendEvent(stream, ev orelse break) catch break;
             } else |e| {
                 sendEvent(stream, .{ .@"error" = @errorName(e) }) catch {};
             }
