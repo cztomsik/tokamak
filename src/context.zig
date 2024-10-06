@@ -180,6 +180,7 @@ pub fn EventStream(comptime T: type) type {
                     impl.deinit();
                 }
 
+                stream.close();
                 arena.deinit();
                 arena.child_allocator.destroy(arena);
             }
