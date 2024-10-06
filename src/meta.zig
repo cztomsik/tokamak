@@ -16,8 +16,6 @@ pub inline fn tid(comptime T: type) TypeId {
 }
 
 pub fn dupe(allocator: std.mem.Allocator, value: anytype) !@TypeOf(value) {
-    std.log.debug("dupe {s}", .{@typeName(@TypeOf(value))});
-
     return switch (@typeInfo(@TypeOf(value))) {
         .optional => try dupe(allocator, value orelse return null),
         .@"struct" => |s| {
