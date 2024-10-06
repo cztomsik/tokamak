@@ -1,9 +1,11 @@
 const std = @import("std");
 const httpz = @import("httpz");
+const meta = @import("meta.zig");
+const Injector = @import("injector.zig").Injector;
 const Server = @import("server.zig").Server;
 const Route = @import("route.zig").Route;
 const Params = @import("route.zig").Params;
-const Injector = @import("injector.zig").Injector;
+const Schema = @import("schema.zig").Schema;
 const log = std.log.scoped(.tokamak);
 
 pub const Handler = fn (*Context) anyerror!void;
@@ -91,6 +93,10 @@ pub const Context = struct {
     pub fn send(self: *Context, res: anytype) !void {
         self.responded = true;
 
+        if (comptime std.meta.hasMethod(@TypeOf(res), "sendResponse")) {
+            return res.sendResponse(self);
+        }
+
         return switch (@TypeOf(res)) {
             []const u8 => {
                 if (self.res.content_type == null) self.res.content_type = .TEXT;
@@ -141,6 +147,57 @@ pub const Context = struct {
         try self.next();
     }
 };
+
+/// Wrapper type over already-initialized iterator, which will be cloned with
+/// meta.dupe() and then run in a newly created thread. Every next() result
+/// will be JSON stringified and sent as SSE event.
+pub fn EventStream(comptime T: type) type {
+    const Cx = struct { *std.heap.ArenaAllocator, T };
+
+    return struct {
+        impl: T,
+
+        pub const jsonSchema: Schema = Schema.forType(meta.Result(T.next));
+
+        pub fn sendResponse(self: @This(), ctx: *Context) !void {
+            const allocator = ctx.server.allocator;
+
+            const arena = try allocator.create(std.heap.ArenaAllocator);
+            errdefer allocator.destroy(arena);
+
+            arena.* = .init(allocator);
+            errdefer arena.deinit();
+
+            const clone = try meta.dupe(arena.allocator(), self.impl);
+            try ctx.res.startEventStream(Cx{ arena, clone }, run);
+        }
+
+        fn run(cx: Cx, stream: std.net.Stream) void {
+            const arena, var impl = cx;
+
+            defer {
+                if (comptime std.meta.hasMethod(T, "deinit")) {
+                    impl.deinit();
+                }
+
+                arena.deinit();
+                arena.child_allocator.destroy(arena);
+            }
+
+            while (impl.next()) |ev| {
+                sendEvent(stream, ev) catch break;
+            } else |e| {
+                sendEvent(stream, .{ .@"error" = @errorName(e) }) catch {};
+            }
+        }
+
+        fn sendEvent(stream: std.net.Stream, event: anytype) !void {
+            try stream.writeAll("data: ");
+            try std.json.stringify(event, .{}, stream.writer());
+            try stream.writeAll("\n\n");
+        }
+    };
+}
 
 pub const CookieOptions = struct {
     domain: ?[]const u8 = null,
