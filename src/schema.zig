@@ -1,4 +1,5 @@
 const std = @import("std");
+const meta = @import("meta.zig");
 
 pub const Schema = union(enum) {
     null,
@@ -11,7 +12,7 @@ pub const Schema = union(enum) {
     oneOf: []const Schema, // inentional camelCase (ident)
 
     pub fn forType(comptime T: type) Schema {
-        if (comptime std.meta.hasFn(T, "jsonSchema")) {
+        if (comptime meta.hasDecl(T, "jsonSchema")) {
             return T.jsonSchema;
         }
 
