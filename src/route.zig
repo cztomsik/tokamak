@@ -155,6 +155,10 @@ pub const Route = struct {
 };
 
 fn route(comptime method: httpz.Method, comptime path: []const u8, comptime has_body: bool, comptime handler: anytype) Route {
+    if (comptime path.len == 0 or path[0] != '/') {
+        @compileError("Path must start with a slash");
+    }
+
     // Special case for putting catch-all routes behind a path.
     if (comptime @TypeOf(handler) == Route) {
         if (handler.metadata) |m| {

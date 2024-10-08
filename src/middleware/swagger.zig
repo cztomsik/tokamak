@@ -139,10 +139,6 @@ fn swaggerPath(arena: std.mem.Allocator, prefix: []const u8, path: []const u8) !
 
     var pos: usize = 0;
     while (pos < path.len) {
-        if (pos > 0) {
-            try res.append('/');
-        }
-
         const colon = std.mem.indexOfScalarPos(u8, path, pos, ':') orelse {
             try res.appendSlice(path[pos..]);
             break;
