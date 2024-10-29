@@ -138,7 +138,6 @@ pub const Context = struct {
         }
     }
 
-    // TODO: remove this
     pub fn nextScoped(self: *Context, ctx: anytype) !void {
         const prev = self.injector;
         defer self.injector = prev;

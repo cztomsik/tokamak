@@ -39,6 +39,25 @@ pub const Route = struct {
         return Params{};
     }
 
+    /// Provides a dependency to the children routes by calling the given
+    /// factory. If there is a `deinit` method, it will be called at the end of
+    /// the scope.
+    pub fn provide(comptime fac: anytype, children: []const Route) Route {
+        const H = struct {
+            fn handleProvide(ctx: *Context) anyerror!void {
+                var child = .{try ctx.injector.call(fac, .{})};
+                defer if (comptime std.meta.hasMethod(@TypeOf(child[0]), "deinit")) child[0].deinit();
+
+                try ctx.nextScoped(&child);
+            }
+        };
+
+        return .{
+            .handler = H.handleProvide,
+            .children = children,
+        };
+    }
+
     /// Returns a route that sends the given, comptime response.
     pub fn send(comptime res: anytype) Route {
         const H = struct {
