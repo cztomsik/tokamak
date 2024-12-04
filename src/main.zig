@@ -1,12 +1,12 @@
 const std = @import("std");
 const httpz = @import("httpz");
 
+pub const meta = @import("meta.zig");
 pub const app = @import("app.zig");
 pub const config = @import("config.zig");
 pub const cron = @import("cron.zig");
 pub const monitor = @import("monitor.zig").monitor;
 
-pub const TypeId = @import("meta.zig").TypeId;
 pub const Injector = @import("injector.zig").Injector;
 pub const Module = @import("module.zig").Module;
 pub const initializer = @import("module.zig").initializer;
