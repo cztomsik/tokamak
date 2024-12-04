@@ -7,7 +7,7 @@ pub const Event = union(enum) {
     close: []const u8,
     text: []const u8,
 
-    const Attr = @FieldType(Event, "attr");
+    pub const Attr = @FieldType(Event, "attr");
 
     pub fn format(self: Event, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
         try switch (self) {
