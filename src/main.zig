@@ -3,6 +3,7 @@ const httpz = @import("httpz");
 
 pub const meta = @import("meta.zig");
 pub const app = @import("app.zig");
+pub const crypto = @import("crypto.zig");
 pub const config = @import("config.zig");
 pub const cron = @import("cron.zig");
 pub const monitor = @import("monitor.zig").monitor;
