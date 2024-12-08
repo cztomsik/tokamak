@@ -8,12 +8,17 @@ pub fn run(comptime App: type) !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
 
-    var mod = Module(App).with(&.{ &gpa.allocator(), &ServerOptions{} });
-    try mod.init();
-    defer mod.deinit();
+    const root = Injector.init(&.{
+        &gpa.allocator(),
+        &ServerOptions{},
+    }, null);
 
-    if (mod.injector.find(*Server)) |server| {
-        server.injector = mod.injector;
+    var app: App = undefined;
+    const injector = try Module(App).init(&app, &root);
+    defer Module(App).deinit(injector);
+
+    if (injector.find(*Server)) |server| {
+        server.injector = injector;
         try server.start();
     }
 }

@@ -3,30 +3,25 @@ const meta = @import("meta.zig");
 const Injector = @import("injector.zig").Injector;
 const log = std.log.scoped(.tokamak);
 
+/// While the `Injector` can be freely used with any previously created struct
+/// or tuple, the `Module(T)` is more like an abstract recipe, describing how
+/// the context should be created and wired together.
+///
+/// The way it works is that you define a struct, e.g., called `App`, where each
+/// field represents a dependency that will be available for injection, and
+/// also for initialization of any other services. These services will be
+/// eagerly initialized unless they were previously provided, or defined with
+/// a default value.
 pub fn Module(comptime T: type) type {
     return struct {
-        inner: ?T = null,
-        injector: Injector = .empty,
-        provided: Injector = .empty,
+        pub fn init(target: *T, parent: ?*const Injector) !Injector {
+            const injector = Injector.init(target, parent orelse &.empty);
 
-        pub fn with(cx: anytype) @This() {
-            return .{
-                .provided = Injector.init(cx, null),
-            };
-        }
-
-        pub fn init(self: *@This()) !void {
-            self.inner = undefined;
-            errdefer self.inner = null;
-
-            const target = &self.inner.?;
-            const injector = Injector.init(target, &self.provided);
-
-            // NOTE: This is similar to the initService() function, but we
-            //       only inject from the outer scope, and if that fails, we
-            //       always try to auto-initialize the field, whereas the other
-            //       will fail if a dependency is missing. Lastly, we initialize
-            //       defaults first, so that we can use them in the custom
+            // NOTE: The similarity with the `initService()` is rather
+            //       accidental, we don't call the `T.init()`, we only inject
+            //       from the outer-scope, and if that fails, we attempt to
+            //       initialize the service. Also, we initialize any defaults
+            //       first, so that we can use them in any of the custom
             //       initializers.
 
             inline for (std.meta.fields(T)) |f| {
@@ -38,16 +33,16 @@ pub fn Module(comptime T: type) type {
             inline for (std.meta.fields(T)) |f| {
                 errdefer log.debug("Failed to init " ++ @typeName(f.type), .{});
 
-                if (self.provided.find(f.type)) |dep| {
+                if (injector.parent.?.find(f.type)) |dep| {
                     @field(target, f.name) = dep;
-                } else if (self.provided.find(Initializer(f.type))) |custom| {
+                } else if (injector.parent.?.find(Initializer(f.type))) |custom| {
                     try custom.init(&@field(target, f.name), injector);
                 } else if (comptime f.default_value == null) {
                     try initService(f.type, &@field(target, f.name), injector);
                 }
             }
 
-            self.injector = injector;
+            return injector;
         }
 
         fn initService(comptime S: type, target: *S, injector: Injector) !void {
@@ -73,22 +68,18 @@ pub fn Module(comptime T: type) type {
             }
         }
 
-        pub fn deinit(self: *@This()) void {
-            if (self.inner) |*inner| {
-                const fields = std.meta.fields(T);
+        pub fn deinit(injector: Injector) void {
+            const target = injector.find(*T).?;
+            const fields = std.meta.fields(T);
 
-                inline for (0..fields.len) |i| {
-                    const f = fields[fields.len - i - 1];
+            inline for (0..fields.len) |i| {
+                const f = fields[fields.len - i - 1];
 
-                    if (self.provided.find(f.type) == null) {
-                        if (comptime std.meta.hasMethod(f.type, "deinit")) {
-                            @field(inner, f.name).deinit();
-                        }
+                if (injector.parent.?.find(f.type) == null) {
+                    if (comptime std.meta.hasMethod(f.type, "deinit")) {
+                        @field(target, f.name).deinit();
                     }
                 }
-
-                self.inner = null;
-                self.injector = .empty;
             }
         }
     };
