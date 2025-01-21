@@ -25,7 +25,7 @@ pub fn Module(comptime T: type) type {
             //       initializers.
 
             inline for (std.meta.fields(T)) |f| {
-                if (comptime @as(?*align(1) const f.type, @ptrCast(f.default_value))) |ptr| {
+                if (comptime @as(?*align(1) const f.type, @ptrCast(f.default_value_ptr))) |ptr| {
                     @field(target, f.name) = ptr.*;
                 }
             }
@@ -37,7 +37,7 @@ pub fn Module(comptime T: type) type {
                     @field(target, f.name) = dep;
                 } else if (injector.parent.?.find(Initializer(f.type))) |custom| {
                     try custom.init(&@field(target, f.name), injector);
-                } else if (comptime f.default_value == null) {
+                } else if (comptime f.default_value_ptr == null) {
                     try initService(f.type, &@field(target, f.name), injector);
                 }
             }
@@ -60,7 +60,7 @@ pub fn Module(comptime T: type) type {
             }
 
             inline for (std.meta.fields(S)) |f| {
-                if (comptime @as(?*align(1) const f.type, @ptrCast(f.default_value))) |def| {
+                if (comptime @as(?*align(1) const f.type, @ptrCast(f.default_value_ptr))) |def| {
                     @field(target, f.name) = injector.find(f.type) orelse def.*;
                 } else {
                     @field(target, f.name) = try injector.get(f.type);

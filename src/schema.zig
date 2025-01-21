@@ -37,7 +37,7 @@ pub const Schema = union(enum) {
                 },
                 .array => |a| .{ .array = &Schema.forType(a.child) },
                 .pointer => |p| {
-                    if (p.size == .Slice) {
+                    if (p.size == .slice) {
                         return .{ .array = &Schema.forType(p.child) };
                     } else {
                         @compileError("Unsupported ptr type " ++ @typeName(T));
