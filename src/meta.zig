@@ -58,6 +58,16 @@ pub fn isOnePtr(comptime T: type) bool {
     };
 }
 
+pub fn isString(comptime T: type) bool {
+    return switch (@typeInfo(T)) {
+        .pointer => |ptr| ptr.child == u8 or switch (@typeInfo(ptr.child)) {
+            .array => |arr| arr.child == u8,
+            else => false,
+        },
+        else => false,
+    };
+}
+
 pub fn Deref(comptime T: type) type {
     return if (isOnePtr(T)) std.meta.Child(T) else T;
 }
