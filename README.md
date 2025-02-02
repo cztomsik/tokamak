@@ -17,24 +17,22 @@ sanitization, etc.
 
 ## Getting started
 
-Simple things should be easy to do.
+### Installation
 
-```zig
-const tk = @import("tokamak");
+Add `tokamak` as a dependency to your `build.zig.zon`
 
-const routes = []const tk.Route = &.{
-    .get("/", hello),
-};
-
-fn hello() ![]const u8 {
-    return "Hello";
-}
-
-pub fn main() !void {
-    const server = try tk.Server.start(allocator, routes, .{ .port = 8080 });
-    try server.start();
-}
 ```
+zig fetch --save git+https://github.com/cztomsik/tokamak
+```
+
+An example for adding tokamak to your `zig.build` can be found in
+[examples](examples/hello/build.zig).
+
+### Usage
+
+There is a [Hello World example](examples/hello/src/main.zig) as well as a
+more complex [Blog example](examples/blog/src/) that can be used to get
+more familiar with tokamak.
 
 ## Dependency injection
 
