@@ -1,3 +1,8 @@
+// This is experimental; it may change and is likely to have bugs. The scope is
+// currently unclear, and it is not intended for HTML templating. However, the
+// templates can be parsed at compile time and are useful for simple
+// conditionals and concatenations, where std.fmt.* falls short.
+
 const std = @import("std");
 const meta = @import("meta.zig");
 const Vec = @import("vec.zig").Vec;
@@ -8,14 +13,14 @@ pub fn raw(allocator: std.mem.Allocator, comptime template: []const u8, data: an
     var buf = std.ArrayList(u8).init(allocator);
     errdefer buf.deinit();
 
-    try tpl.render(&buf, data);
+    try tpl.render(data, buf.writer());
     return buf.toOwnedSlice();
 }
 
 test raw {
-    // const res = try raw(std.testing.allocator, "{{foo}}", .{ .foo = 123 });
-    // defer std.testing.allocator.free(res);
-    // try std.testing.expectEqualStrings("123", res);
+    const res = try raw(std.testing.allocator, "{{foo}}", .{ .foo = 123 });
+    defer std.testing.allocator.free(res);
+    try std.testing.expectEqualStrings("123", res);
 }
 
 const Template = struct {
@@ -67,26 +72,32 @@ const Template = struct {
         allocator.free(self.tokens);
     }
 
-    pub fn render(self: *const Template, buf: *std.ArrayList(u8), data: anytype) !void {
-        try renderPart(buf, self.tokens, .{ .object = Ref.fromPtr(@TypeOf(data), &data) });
+    pub fn render(self: *const Template, data: anytype, writer: anytype) !void {
+        try renderPart(self.tokens, .fromStruct(@TypeOf(data), &data), writer);
     }
 
-    fn renderPart(buf: *std.ArrayList(u8), tokens: []const Token, data: Value) !void {
+    fn renderPart(tokens: []const Token, data: Value, writer: anytype) !void {
         var i: usize = 0;
 
-        while (i < tokens.len) : (i += 1) {
+        while (i < tokens.len) {
+            defer i += switch (tokens[i]) {
+                .section_open => |s| s.outer_len,
+                else => 1,
+            };
+
             switch (tokens[i]) {
-                .text => |text| try buf.appendSlice(text),
+                .text => |text| {
+                    try writer.writeAll(text);
+                },
 
                 .variable => |name| {
                     try Value.render(
                         if (name.len == 1 and name[0] == '.') data else data.resolve(name),
-                        buf,
+                        writer,
                     );
                 },
 
                 .section_open => |sec| {
-                    defer i += sec.outer_len + 1;
                     const part = tokens[i + 1 .. i + sec.outer_len];
                     const val = data.resolve(sec.name);
 
@@ -95,14 +106,18 @@ const Template = struct {
                     }
 
                     if (sec.inverted) {
-                        try renderPart(buf, part, data);
+                        try renderPart(part, data, writer);
                         continue;
                     }
 
                     switch (val) {
-                        .object => try renderPart(buf, part, val),
-                        // .array => |arr| for (arr.items) |it| try renderPart(buf, next, it),
-                        else => try renderPart(buf, part, data),
+                        .@"struct" => try renderPart(part, val, writer),
+                        .indexable => |x| {
+                            for (0..x[1]) |j| {
+                                try renderPart(part, x[2](x[0], j), writer);
+                            }
+                        },
+                        else => try renderPart(part, data, writer),
                     }
                 },
 
@@ -116,7 +131,7 @@ fn expectRender(tpl: Template, data: anytype, expected: []const u8) !void {
     var buf = std.ArrayList(u8).init(std.testing.allocator);
     defer buf.deinit();
 
-    try tpl.render(&buf, data);
+    try tpl.render(data, buf.writer());
     try std.testing.expectEqualStrings(expected, buf.items);
 }
 
@@ -125,16 +140,18 @@ test "Template" {
     defer tpl.deinit(std.testing.allocator);
 
     try expectRender(tpl, .{ .name = "Alice" }, "Hello Alice");
-    // try expectRender(tpl, .{ .name = null }, "Hello World");
-    // try expectRender(tpl, .{ .name = "" }, "Hello World");
-    // try expectRender(tpl, .{ .name = [_]u32{} }, "Hello World");
-    // try expectRender(tpl, .{ .name = struct {}{} }, "Hello ");
+    try expectRender(tpl, .{}, "Hello World");
+    try expectRender(tpl, .{ .name = null }, "Hello World");
+    try expectRender(tpl, .{ .name = "" }, "Hello World");
+    try expectRender(tpl, .{ .name = [_]u32{} }, "Hello World");
+    try expectRender(tpl, .{ .name = struct {}{} }, "Hello ");
 
     var tpl2 = try Template.parse(std.testing.allocator, "{{#names}}- {{.}}\n{{/names}}{{^names}}No names{{/names}}");
     defer tpl2.deinit(std.testing.allocator);
 
-    // try expectRender(tpl2, .{ .names = .{} }, "No names");
-    // try expectRender(tpl2, .{ .names = .{ "first", "second" } }, "- first\n- second\n");
+    try expectRender(tpl2, .{ .names = @as([]const []const u8, &.{}) }, "No names");
+    try expectRender(tpl2, .{ .names = @as([]const []const u8, &.{ "first", "second" }) }, "- first\n- second\n");
+    try expectRender(tpl2, .{ .names = .{ "first", "second" } }, "- first\n- second\n");
 }
 
 pub const Value = union(enum) {
@@ -143,20 +160,86 @@ pub const Value = union(enum) {
     int: i64,
     float: f64,
     string: []const u8,
-    object: Ref,
+    @"struct": struct { *const anyopaque, *const fn (ptr: *const anyopaque, name: []const u8) Value },
+    indexable: struct { *const anyopaque, usize, *const fn (ptr: *const anyopaque, index: usize) Value },
 
     fn fromPtr(ptr: anytype) Value {
         const T = @TypeOf(ptr.*);
 
-        return switch (T) {
-            @TypeOf(null) => .null,
-            bool => .{ .bool = ptr.* },
-            @TypeOf(1) => .{ .int = @intCast(ptr.*) },
-            else => {
+        return switch (@typeInfo(T)) {
+            .null => .null,
+            .bool => .{ .bool = ptr.* },
+            .int, .comptime_int => .{ .int = @intCast(ptr.*) },
+            .float, .comptime_float => .{ .int = @floatCast(ptr.*) },
+            .@"struct" => |s| if (s.is_tuple) .fromTuple(T, ptr) else .fromStruct(T, ptr),
+            .array => |a| .fromSlice(a.child, ptr),
+            .pointer => |p| {
                 if (comptime meta.isString(T)) return .{ .string = ptr.* };
+                if (p.size == .slice) return .fromSlice(p.child, ptr.*);
 
-                @panic("TODO");
+                @compileError("TODO " ++ @typeName(T));
             },
+            else => @compileError("TODO " ++ @typeName(T)),
+        };
+    }
+
+    fn fromStruct(comptime T: type, ptr: *const T) Value {
+        const H = struct {
+            fn resolve(cx: *const anyopaque, name: []const u8) Value {
+                const self: *const T = @ptrFromInt(@intFromPtr(cx));
+
+                inline for (std.meta.fields(T)) |f| {
+                    if (std.mem.eql(u8, f.name, name)) {
+                        if (f.is_comptime) { // otherwise: runtime value contains reference to comptime var
+                            const copy = @field(self, f.name);
+                            return Value.fromPtr(&copy);
+                        }
+
+                        return Value.fromPtr(&@field(self, f.name));
+                    }
+                }
+
+                return .null;
+            }
+        };
+
+        return .{
+            .@"struct" = .{ ptr, &H.resolve },
+        };
+    }
+
+    fn fromTuple(comptime T: type, ptr: *const T) Value {
+        const H = struct {
+            fn get(cx: *const anyopaque, index: usize) Value {
+                const self: *const T = @ptrCast(@alignCast(cx));
+                inline for (std.meta.fields(T), 0..) |f, i| {
+                    if (i == index) {
+                        if (f.is_comptime) { // otherwise: runtime value contains reference to comptime var
+                            const copy = @field(self, f.name);
+                            return Value.fromPtr(&copy);
+                        }
+
+                        return Value.fromPtr(&@field(self, f.name));
+                    }
+                }
+                return .null;
+            }
+        };
+
+        return .{
+            .indexable = .{ @ptrCast(ptr), std.meta.fields(T).len, &H.get },
+        };
+    }
+
+    fn fromSlice(comptime T: type, items: []const T) Value {
+        const H = struct {
+            fn get(cx: *const anyopaque, index: usize) Value {
+                return Value.fromPtr(&@as([*]const T, @ptrCast(@alignCast(cx)))[index]);
+            }
+        };
+
+        return .{
+            .indexable = .{ @ptrCast(items), items.len, &H.get },
         };
     }
 
@@ -166,59 +249,26 @@ pub const Value = union(enum) {
             .bool => |v| v,
             inline .int, .float => |v| v != 0,
             .string => |s| s.len > 0,
-            else => true,
+            .indexable => |x| x[1] > 0,
+            .@"struct" => true,
         };
     }
 
     fn resolve(self: Value, name: []const u8) Value {
         return switch (self) {
-            .object => |o| o.resolve(o.ptr, name),
+            .@"struct" => |s| s[1](s[0], name),
             else => .null,
         };
     }
 
-    fn render(self: Value, buf: *std.ArrayList(u8)) !void {
+    fn render(self: Value, writer: anytype) !void {
         switch (self) {
             .null => {},
-            .bool => |v| try buf.appendSlice(if (v) "true" else "false"),
-            inline .int, .float => |v| try buf.writer().print("{}", .{v}),
-            .string => |v| try buf.appendSlice(v),
-            inline else => @panic("TODO"),
-        }
-    }
-};
-
-const Ref = struct {
-    ptr: *const anyopaque,
-    resolve: Resolver,
-
-    const Resolver = *const fn (cx: *const anyopaque, name: []const u8) Value;
-
-    fn fromPtr(comptime T: type, ptr: *const T) Ref {
-        switch (@typeInfo(T)) {
-            .@"struct" => {
-                const H = struct {
-                    fn resolve(cx: *const anyopaque, name: []const u8) Value {
-                        const self: *const T = @ptrFromInt(@intFromPtr(cx));
-
-                        inline for (std.meta.fields(T)) |f| {
-                            if (f.is_comptime) { // otherwise: runtime value contains reference to comptime var
-                                const copy = @field(self, f.name);
-                                return Value.fromPtr(&copy);
-                            }
-
-                            if (std.mem.eql(u8, f.name, name)) {
-                                return Value.fromPtr(&@field(self, f.name));
-                            }
-                        }
-
-                        return .null;
-                    }
-                };
-
-                return .{ .ptr = ptr, .resolve = H.resolve };
-            },
-            else => @compileError("TODO"),
+            .bool => |v| try writer.writeAll(if (v) "true" else "false"),
+            inline .int, .float => |v| try writer.print("{}", .{v}),
+            .string => |v| try writer.writeAll(v),
+            .@"struct" => try writer.writeAll("[Struct]"),
+            .indexable => try writer.writeAll("[Indexable]"),
         }
     }
 };
