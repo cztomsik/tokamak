@@ -18,9 +18,22 @@ pub fn raw(allocator: std.mem.Allocator, comptime template: []const u8, data: an
 }
 
 test raw {
-    const res = try raw(std.testing.allocator, "{{foo}}", .{ .foo = 123 });
-    defer std.testing.allocator.free(res);
-    try std.testing.expectEqualStrings("123", res);
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    try std.testing.expectEqualStrings(
+        "123",
+        try raw(arena.allocator(), "{{foo}}", .{ .foo = 123 }),
+    );
+
+    try std.testing.expectEqualStrings(
+        "- Alice\n- Bob\n",
+        try raw(
+            arena.allocator(),
+            "{{#names}}\n- {{.}}\n{{/names}}\n",
+            .{ .names = .{ "Alice", "Bob" } },
+        ),
+    );
 }
 
 const Template = struct {
@@ -65,6 +78,7 @@ const Template = struct {
     }
 
     pub fn parseComptime(comptime input: []const u8) Template {
+        @setEvalBranchQuota(input.len * 10);
         return comptime parse(undefined, input) catch |e| @compileError(@errorName(e));
     }
 
@@ -372,6 +386,9 @@ const Tokenizer = struct {
     fn section(self: *Tokenizer, tag: Tag, inverted: bool) ?Token {
         if (self.consumeIdent()) |name| {
             if (self.consume("}}")) {
+                // Skip adjacent newline
+                _ = self.consume("\n");
+
                 return switch (tag) {
                     .section_open => .{ .section_open = .{ .name = name, .inverted = inverted } },
                     .section_close => .{ .section_close = name },
