@@ -20,6 +20,7 @@ sanitization, etc.
 Simple things should be easy to do.
 
 ```zig
+const std = @import("std");
 const tk = @import("tokamak");
 
 const routes: []const tk.Route = &.{
