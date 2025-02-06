@@ -35,7 +35,8 @@ pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
     defer _ = gpa.deinit();
-    const server = try tk.Server.init(allocator, routes, .{ .port = 8080 });
+    
+    const server = try tk.Server.init(allocator, routes, .{ .listen = .{ .port = 8080 } });
     try server.start();
 }
 ```
