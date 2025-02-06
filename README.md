@@ -22,7 +22,7 @@ Simple things should be easy to do.
 ```zig
 const tk = @import("tokamak");
 
-const routes = []const tk.Route = &.{
+const routes: []const tk.Route = &.{
     .get("/", hello),
 };
 
@@ -31,7 +31,10 @@ fn hello() ![]const u8 {
 }
 
 pub fn main() !void {
-    const server = try tk.Server.start(allocator, routes, .{ .port = 8080 });
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    const allocator = gpa.allocator();
+    defer _ = gpa.deinit();
+    const server = try tk.Server.init(allocator, routes, .{ .port = 8080 });
     try server.start();
 }
 ```
