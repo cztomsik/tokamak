@@ -2,16 +2,20 @@ const std = @import("std");
 const HttpClient = @import("client.zig").HttpClient;
 const Options = @import("client.zig").Options;
 const Response = @import("client.zig").Response;
+const log = std.log.scoped(.openai);
 
 pub const Config = struct {
     base_url: []const u8 = "https://api.openai.com/v1/",
     api_key: ?[]const u8 = null,
+    timeout: ?usize = 2 * 60,
 };
 
 pub const CompletionReq = struct {
     model: []const u8,
     messages: []const Message,
-    // response_format: ?struct { type: []const u8 } = null,
+    response_format: ?struct {
+        type: []const u8,
+    } = null,
     max_tokens: u32 = 256,
     temperature: f32 = 1,
 };
@@ -52,6 +56,14 @@ pub const CompletionRes = struct {
     system_fingerprint: ?[]const u8,
 };
 
+pub const JsonReq = struct {
+    model: []const u8,
+    system_prompt: ?[]const u8 = null,
+    prompt: []const u8,
+    max_tokens: u32 = 512,
+    temperature: f32 = 1,
+};
+
 pub const EmbeddingsReq = struct {
     model: []const u8,
     input: []const u8,
@@ -78,27 +90,66 @@ pub const Client = struct {
     config: Config,
 
     pub fn createCompletion(self: *Client, arena: std.mem.Allocator, params: CompletionReq) !CompletionRes {
-        const res = try self.request(arena, .POST, "chat/completions", .{ .body = .json(&params) });
+        const res = try self.request(arena, .{
+            .method = .POST,
+            .url = "chat/completions",
+            .body = .json(&params),
+        });
+
         return res.json(CompletionRes);
     }
 
+    pub fn createJson(self: *Client, comptime T: type, arena: std.mem.Allocator, params: JsonReq) !T {
+        const messages: [2]Message = .{
+            .{ .role = "system", .content = params.system_prompt orelse undefined },
+            .{ .role = "user", .content = params.prompt },
+        };
+
+        const res = try self.createCompletion(arena, .{
+            .model = params.model,
+            .messages = messages[@intFromBool(params.system_prompt == null)..], // Skip the system prompt if it's empty
+            .response_format = .{ .type = "json_object" },
+            .max_tokens = params.max_tokens,
+            .temperature = params.temperature,
+        });
+
+        return std.json.parseFromSliceLeaky(
+            T,
+            arena,
+            res.choices[0].message.content,
+            .{ .ignore_unknown_fields = true },
+        ) catch |e| {
+            if (e == error.AllocError) {
+                return e;
+            }
+
+            log.debug("Failed to parse {s} from completion: {s}", .{ @typeName(T), res.choices[0].message.content });
+            return error.InvalidCompletion;
+        };
+    }
+
     pub fn createEmbeddings(self: *Client, arena: std.mem.Allocator, params: EmbeddingsReq) !EmbeddingsRes {
-        const res = try self.request(arena, .POST, "embeddings", .{ .body = .json(&params) });
+        const res = try self.request(arena, .{
+            .method = .POST,
+            .url = "embeddings",
+            .body = .json(&params),
+        });
+
         return res.json(EmbeddingsRes);
     }
 
-    fn request(self: *Client, arena: std.mem.Allocator, method: std.http.Method, url: []const u8, options: Options) !Response {
+    fn request(self: *Client, arena: std.mem.Allocator, options: Options) !Response {
         var opts = options;
-
-        opts.base_url = self.config.base_url;
-        opts.method = method;
-        opts.url = url;
+        opts.base_url = opts.base_url orelse self.config.base_url;
+        opts.timeout = opts.timeout orelse self.config.timeout;
 
         if (self.config.api_key) |key| {
-            opts.headers = &.{.{
-                .name = "Authorization",
-                .value = try std.fmt.allocPrint(arena, "Bearer {s}", .{key}),
-            }};
+            opts.headers = &.{
+                .{
+                    .name = "Authorization",
+                    .value = try std.fmt.allocPrint(arena, "Bearer {s}", .{key}),
+                },
+            };
         }
 
         return self.client.request(arena, opts);
