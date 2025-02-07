@@ -185,6 +185,7 @@ pub const Value = union(enum) {
             .bool => .{ .bool = ptr.* },
             .int, .comptime_int => .{ .int = @intCast(ptr.*) },
             .float, .comptime_float => .{ .int = @floatCast(ptr.*) },
+            .optional => if (ptr.*) |*p| .fromPtr(p) else .null,
             .@"struct" => |s| if (s.is_tuple) .fromTuple(T, ptr) else .fromStruct(T, ptr),
             .array => |a| .fromSlice(a.child, ptr),
             .pointer => |p| {
