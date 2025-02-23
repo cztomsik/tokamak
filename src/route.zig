@@ -266,7 +266,7 @@ fn routeHandler(comptime m: Route.Metadata, comptime handler: anytype) *const Ha
             }
 
             inline for (0..n_params, n_deps..) |j, i| {
-                args[i] = try ctx.params.get(j, @TypeOf(args[i]));
+                args[i] = try ctx.parse(@TypeOf(args[i]), ctx.params.get(j) orelse return error.MissingArg);
             }
 
             if (comptime m.query != null) {
@@ -317,10 +317,8 @@ pub const Params = struct {
         }
     }
 
-    pub fn get(self: *const Params, index: usize, comptime T: type) !T {
-        if (index >= self.len) return error.NoMatch;
-
-        return Context.parse(T, self.matches[index]);
+    pub fn get(self: *const Params, index: usize) ?[]const u8 {
+        return if (index >= self.len) null else self.matches[index];
     }
 };
 

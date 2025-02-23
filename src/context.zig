@@ -21,13 +21,27 @@ pub const Context = struct {
     responded: bool = false,
 
     /// Get value from a string.
-    pub fn parse(comptime T: type, s: []const u8) !T {
+    pub fn parse(self: *Context, comptime T: type, s: []const u8) !T {
         return switch (@typeInfo(T)) {
-            .optional => |o| if (std.mem.eql(u8, s, "null")) null else try parse(o.child, s),
+            .optional => |o| if (std.mem.eql(u8, s, "null")) null else try self.parse(o.child, s),
             .bool => std.mem.eql(u8, s, "true"),
             .int => std.fmt.parseInt(T, s, 10),
             .@"enum" => std.meta.stringToEnum(T, s) orelse error.InvalidEnumTag,
-            else => s,
+            .pointer => |p| {
+                if (comptime meta.isString(T)) return s;
+
+                if (p.size == .slice) {
+                    var res = std.ArrayList(p.child).init(self.req.arena);
+                    var it = std.mem.splitScalar(u8, s, ',');
+                    while (it.next()) |part| {
+                        try res.append(try self.parse(p.child, part));
+                    }
+                    return res.items;
+                }
+
+                @compileError("Not supported");
+            },
+            else => @compileError("Not supported"),
         };
     }
 
@@ -38,7 +52,7 @@ pub const Context = struct {
 
         inline for (std.meta.fields(T)) |f| {
             if (query.get(f.name)) |param| {
-                @field(res, f.name) = try parse(f.type, param);
+                @field(res, f.name) = try self.parse(f.type, param);
             } else if (f.default_value_ptr) |ptr| {
                 @field(res, f.name) = @as(*const f.type, @ptrCast(@alignCast(ptr))).*;
             } else {
