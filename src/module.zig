@@ -12,78 +12,77 @@ const log = std.log.scoped(.tokamak);
 /// also for initialization of any other services. These services will be
 /// eagerly initialized unless they were previously provided, or defined with
 /// a default value.
-pub fn Module(comptime T: type) type {
-    return struct {
-        pub fn init(target: *T, parent: ?*const Injector) !Injector {
-            const injector = Injector.init(target, parent orelse &.empty);
+pub const Module = struct {
+    pub fn init(target: anytype, parent: ?*const Injector) !Injector {
+        comptime std.debug.assert(meta.isOnePtr(@TypeOf(target)));
 
-            // NOTE: The similarity with the `initService()` is rather
-            //       accidental, we don't call the `T.init()`, we only inject
-            //       from the outer-scope, and if that fails, we attempt to
-            //       initialize the service. Also, we initialize any defaults
-            //       first, so that we can use them in any of the custom
-            //       initializers.
+        const injector = Injector.init(target, parent orelse &.empty);
 
-            inline for (std.meta.fields(T)) |f| {
-                if (comptime @as(?*align(1) const f.type, @ptrCast(f.default_value_ptr))) |ptr| {
-                    @field(target, f.name) = ptr.*;
-                }
-            }
+        // NOTE: The similarity with the `initService()` is rather
+        //       accidental, we don't call the `T.init()`, we only inject
+        //       from the outer-scope, and if that fails, we attempt to
+        //       initialize the service. Also, we initialize any defaults
+        //       first, so that we can use them in any of the custom
+        //       initializers.
 
-            inline for (std.meta.fields(T)) |f| {
-                errdefer log.debug("Failed to init " ++ @typeName(f.type), .{});
-
-                if (injector.parent.?.find(f.type)) |dep| {
-                    @field(target, f.name) = dep;
-                } else if (injector.parent.?.find(Initializer(f.type))) |custom| {
-                    try custom.init(&@field(target, f.name), injector);
-                } else if (comptime f.default_value_ptr == null) {
-                    try initService(f.type, &@field(target, f.name), injector);
-                }
-            }
-
-            return injector;
-        }
-
-        fn initService(comptime S: type, target: *S, injector: Injector) !void {
-            if (comptime std.meta.hasMethod(S, "init")) {
-                const fac = meta.Deref(S).init;
-
-                if (comptime !meta.isGeneric(fac) and meta.Result(fac) == S) {
-                    target.* = try injector.call(fac, .{});
-                    return;
-                }
-            }
-
-            if (comptime @typeInfo(S) != .@"struct") {
-                return error.CannotAutoInit;
-            }
-
-            inline for (std.meta.fields(S)) |f| {
-                if (comptime @as(?*align(1) const f.type, @ptrCast(f.default_value_ptr))) |def| {
-                    @field(target, f.name) = injector.find(f.type) orelse def.*;
-                } else {
-                    @field(target, f.name) = try injector.get(f.type);
-                }
+        inline for (std.meta.fields(@TypeOf(target.*))) |f| {
+            if (comptime @as(?*align(1) const f.type, @ptrCast(f.default_value_ptr))) |ptr| {
+                @field(target, f.name) = ptr.*;
             }
         }
 
-        pub fn deinit(injector: Injector) void {
-            const target = injector.find(*T).?;
-            const fields = std.meta.fields(T);
+        inline for (std.meta.fields(@TypeOf(target.*))) |f| {
+            errdefer log.debug("Failed to init " ++ @typeName(f.type), .{});
 
-            inline for (0..fields.len) |i| {
-                const f = fields[fields.len - i - 1];
-
-                if (injector.parent.?.find(f.type) == null) {
-                    if (comptime std.meta.hasMethod(f.type, "deinit")) {
-                        @field(target, f.name).deinit();
-                    }
-                }
+            if (injector.parent.?.find(f.type)) |dep| {
+                @field(target, f.name) = dep;
+            } else if (injector.parent.?.find(Initializer(f.type))) |custom| {
+                try custom.init(&@field(target, f.name), injector);
+            } else if (comptime f.default_value_ptr == null) {
+                try initService(f.type, &@field(target, f.name), injector);
             }
         }
-    };
-}
+
+        return injector;
+    }
+
+    fn initService(comptime S: type, target: *S, injector: Injector) !void {
+        if (comptime std.meta.hasMethod(S, "init")) {
+            const fac = meta.Deref(S).init;
+
+            if (comptime !meta.isGeneric(fac) and meta.Result(fac) == S) {
+                target.* = try injector.call(fac, .{});
+                return;
+            }
+        }
+
+        if (comptime @typeInfo(S) != .@"struct") {
+            return error.CannotAutoInit;
+        }
+
+        inline for (std.meta.fields(S)) |f| {
+            if (comptime @as(?*align(1) const f.type, @ptrCast(f.default_value_ptr))) |def| {
+                @field(target, f.name) = injector.find(f.type) orelse def.*;
+            } else {
+                @field(target, f.name) = try injector.get(f.type);
+            }
+        }
+    }
+
+    pub fn deinit(target: anytype) void {
+        comptime std.debug.assert(meta.isOnePtr(@TypeOf(target)));
+
+        const fields = std.meta.fields(@TypeOf(target.*));
+
+        inline for (0..fields.len) |i| {
+            const f = fields[fields.len - i - 1];
+
+            if (comptime std.meta.hasMethod(f.type, "deinit")) {
+                @field(target, f.name).deinit();
+            }
+        }
+    }
+};
 
 pub fn Initializer(comptime T: type) type {
     return struct {
@@ -114,4 +113,15 @@ pub fn factory(comptime fun: anytype) Initializer(meta.Result(fun)) {
     return .{
         .init = &H.init,
     };
+}
+
+test {
+    const Svc = struct { x: u32 = 0 };
+    const Mod = struct { svc: Svc };
+
+    var mod: Mod = undefined;
+    const inj = try Module.init(&mod, null);
+    defer Module.deinit(&mod);
+
+    _ = try inj.get(*Svc);
 }
