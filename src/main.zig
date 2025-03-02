@@ -12,8 +12,6 @@ pub const tpl = @import("tpl.zig");
 
 pub const Injector = @import("injector.zig").Injector;
 pub const Module = @import("module.zig").Module;
-pub const initializer = @import("module.zig").initializer;
-pub const factory = @import("module.zig").factory;
 
 pub const Server = @import("server.zig").Server;
 pub const ServerOptions = @import("server.zig").InitOptions;

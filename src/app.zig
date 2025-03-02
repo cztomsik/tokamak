@@ -14,7 +14,7 @@ pub fn run(comptime App: type) !void {
     }, null);
 
     var app: App = undefined;
-    const injector = try Module.init(&app, &root);
+    const injector = try Module.initAlone(&app, &root);
     defer Module.deinit(&app);
 
     if (injector.find(*Server)) |server| {
