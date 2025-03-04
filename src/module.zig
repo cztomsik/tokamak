@@ -15,12 +15,6 @@ const log = std.log.scoped(.tokamak);
 pub const Module = struct {
     type: type,
 
-    pub fn forType(comptime M: type) Module {
-        return .{
-            .type = M,
-        };
-    }
-
     pub fn initAlone(ctx: anytype, injector: ?*const Injector) !Injector {
         comptime std.debug.assert(meta.isOnePtr(@TypeOf(ctx)) and !meta.isTuple(@TypeOf(ctx.*)));
 
@@ -42,29 +36,19 @@ pub const Module = struct {
             Plan.forTypes(&.{@TypeOf(ctx.*)}).deinit(@as(*[1]@TypeOf(ctx.*), ctx));
         }
     }
-
-    fn findInitializer(self: Module, comptime T: type) ?Plan.Cb {
-        for (std.meta.declarations(self.type)) |d| {
-            if (d.name.len > 4 and std.mem.startsWith(u8, d.name, "init")) {
-                switch (@typeInfo(@TypeOf(@field(self.type, d.name)))) {
-                    .@"fn" => |f| {
-                        if (meta.Result(@field(self.type, d.name)) == T or (f.params.len > 0 and f.params[0].type.? == *T)) {
-                            return .{ self.type, d.name };
-                        }
-                    },
-                    else => {},
-                }
-            }
-        } else return null;
-    }
 };
 
+/// Compiled plan represents the initialization and deinitialization strategy
+/// for a set of modules.
 const Plan = struct {
     mods: []const Module,
     ops: []const Op,
 
+    /// Callback definition for initializer and factory methods
     const Cb = struct { type, []const u8 };
 
+    /// Each Op represents a single service that needs to be initialized
+    /// and specifies how that initialization should happen.
     const Op = struct {
         m: usize,
         mod: Module,
@@ -90,7 +74,7 @@ const Plan = struct {
 
     fn forTypes(types: []const type) Plan {
         var mods: [types.len]Module = undefined;
-        for (types, 0..) |M, i| mods[i] = Module.forType(M);
+        for (types, 0..) |M, i| mods[i] = .{ .type = M };
         const copy = mods;
         return compile(&copy);
     }
@@ -104,10 +88,14 @@ const Plan = struct {
             for (std.meta.fields(mod.type)) |f| {
                 var op: Op = .{ .m = m, .mod = mod, .field = f, .how = .auto };
 
-                if (mod.findInitializer(meta.Deref(f.type))) |cb| {
+                if (findOverride(mods, f.type)) |cb| {
+                    op.how = if (meta.Result(@field(cb[0], cb[1])) == void) .{ .initializer = cb } else .{ .factory = cb };
+                } else if (findInitializer(mod, f.type)) |cb| {
                     op.how = if (meta.Result(@field(cb[0], cb[1])) == void) .{ .initializer = cb } else .{ .factory = cb };
                 } else if (f.defaultValue() != null) {
                     op.how = .default;
+                } else if (findProvider(mods, f.type)) |cb| {
+                    op.how = if (meta.Result(@field(cb[0], cb[1])) == void) .{ .initializer = cb } else .{ .factory = cb };
                 } else if (std.meta.hasMethod(f.type, "init")) {
                     const cb: Cb = .{ meta.Deref(f.type), "init" };
                     op.how = if (meta.Result(cb[0].init) == void) .{ .initializer = cb } else .{ .factory = cb };
@@ -118,12 +106,6 @@ const Plan = struct {
             }
         }
 
-        // TODO: resolve providers & set to .call where applicable
-
-        // TODO: resolve overrides
-
-        // TODO: validate
-
         // TODO: reorder (DAG)
 
         const copy = ops;
@@ -132,6 +114,37 @@ const Plan = struct {
             .mods = mods,
             .ops = &copy,
         };
+    }
+
+    fn findInitializer(mod: Module, comptime T: type) ?Cb {
+        return findMethodWithPrefix(&.{mod}, "init", T);
+    }
+
+    fn findProvider(mods: []const Module, comptime T: type) ?Cb {
+        return findMethodWithPrefix(mods, "provide", T);
+    }
+
+    fn findOverride(mods: []const Module, comptime T: type) ?Cb {
+        return findMethodWithPrefix(mods, "override", T);
+    }
+
+    fn findMethodWithPrefix(mods: []const Module, comptime prefix: []const u8, comptime T: type) ?Cb {
+        for (mods) |mod| {
+            for (std.meta.declarations(mod.type)) |d| {
+                if (d.name.len > prefix.len and std.mem.startsWith(u8, d.name, prefix)) {
+                    switch (@typeInfo(@TypeOf(@field(mod.type, d.name)))) {
+                        .@"fn" => |f| {
+                            if (meta.Result(@field(mod.type, d.name)) == T or (f.params.len > 0 and f.params[0].type.? == *T)) {
+                                return .{ mod.type, d.name };
+                            }
+                        },
+                        else => {},
+                    }
+                }
+            }
+        }
+
+        return null;
     }
 
     fn init(self: Plan, ctx: anytype, parent: ?*const Injector) !Injector {
@@ -214,67 +227,49 @@ test "basic" {
     try std.testing.expectEqual(123, s2.dep.x);
 }
 
-test "T.init() factory" {
-    const Svc = struct {
+test "T.init()" {
+    const S1 = struct {
         x: u32,
 
         pub fn init() @This() {
             return .{ .x = 123 };
         }
     };
-    const App = struct { svc: Svc };
 
-    var app: App = undefined;
-    const inj = try Module.initAlone(&app, null);
-    defer Module.deinit(&app);
-
-    const svc = try inj.get(*Svc);
-    try std.testing.expectEqual(123, svc.x);
-}
-
-test "T.init() initializer" {
-    const Svc = struct {
-        x: u32,
+    const S2 = struct {
+        y: u32,
 
         pub fn init(self: *@This()) void {
-            self.x = 123;
+            self.y = 456;
         }
     };
-    const App = struct { svc: Svc };
+
+    const App = struct { s1: S1, s2: S2 };
 
     var app: App = undefined;
     const inj = try Module.initAlone(&app, null);
     defer Module.deinit(&app);
 
-    const svc = try inj.get(*Svc);
-    try std.testing.expectEqual(123, svc.x);
+    const s1 = try inj.get(*S1);
+    const s2 = try inj.get(*S2);
+
+    try std.testing.expectEqual(123, s1.x);
+    try std.testing.expectEqual(456, s2.y);
 }
 
-test "M.initXxx() factory" {
-    const Svc = struct { x: u32 };
+test "M.initXxx()" {
+    const S1 = struct { x: u32 };
+    const S2 = struct { y: u32 };
     const App = struct {
-        svc: Svc,
+        s1: S1,
+        s2: S2,
 
-        pub fn initSvc() Svc {
+        pub fn initS1() S1 {
             return .{ .x = 123 };
         }
-    };
 
-    var app: App = undefined;
-    const inj = try Module.initAlone(&app, null);
-    defer Module.deinit(&app);
-
-    const svc = try inj.get(*Svc);
-    try std.testing.expectEqual(123, svc.x);
-}
-
-test "M.initXxx() initializer" {
-    const Svc = struct { x: u32 };
-    const App = struct {
-        svc: Svc,
-
-        pub fn initSvc(svc: *Svc) void {
-            svc.x = 123;
+        pub fn initS2(s2: *S2) void {
+            s2.y = 456;
         }
     };
 
@@ -282,11 +277,14 @@ test "M.initXxx() initializer" {
     const inj = try Module.initAlone(&app, null);
     defer Module.deinit(&app);
 
-    const svc = try inj.get(*Svc);
-    try std.testing.expectEqual(123, svc.x);
+    const s1 = try inj.get(*S1);
+    const s2 = try inj.get(*S2);
+
+    try std.testing.expectEqual(123, s1.x);
+    try std.testing.expectEqual(456, s2.y);
 }
 
-test "multimod" {
+test "basic multimod" {
     const S1 = struct { x: u32 = 123 };
     const S2 = struct { dep: *S1 };
     const M1 = struct { s1: S1 };
@@ -301,4 +299,74 @@ test "multimod" {
 
     try std.testing.expectEqual(s1, s2.dep);
     try std.testing.expectEqual(123, s2.dep.x);
+}
+
+test "M.provideXxx()" {
+    const S1 = struct { x: u32 };
+    const S2 = struct { y: u32 };
+
+    const M1 = struct { s1: S1, s2: S2 };
+    const M2 = struct {
+        pub fn provideS1() S1 {
+            return .{ .x = 123 };
+        }
+
+        pub fn provideS2(s2: *S2) void {
+            s2.y = 456;
+        }
+    };
+
+    var cx: struct { M1, M2 } = undefined;
+    const inj = try Module.initTogether(&cx, null);
+    defer Module.deinit(&cx);
+
+    const s1 = try inj.get(*S1);
+    const s2 = try inj.get(*S2);
+
+    try std.testing.expectEqual(123, s1.x);
+    try std.testing.expectEqual(456, s2.y);
+}
+
+test "M.overrideXxx()" {
+    const S1 = struct { x: u32 };
+    const S2 = struct { y: u32 };
+
+    const M1 = struct {
+        s1: S1,
+        s2: S2,
+
+        pub fn initS1() S1 {
+            unreachable;
+        }
+
+        pub fn initS2(_: *S2) void {
+            unreachable;
+        }
+    };
+
+    const M2 = struct {
+        pub fn provideS1() S1 {
+            unreachable;
+        }
+    };
+
+    const M3 = struct {
+        pub fn overrideS1() S1 {
+            return .{ .x = 123 };
+        }
+
+        pub fn overrideS2(s2: *S2) void {
+            s2.y = 456;
+        }
+    };
+
+    var cx: struct { M1, M2, M3 } = undefined;
+    const inj = try Module.initTogether(&cx, null);
+    defer Module.deinit(&cx);
+
+    const s1 = try inj.get(*S1);
+    const s2 = try inj.get(*S2);
+
+    try std.testing.expectEqual(123, s1.x);
+    try std.testing.expectEqual(456, s2.y);
 }
