@@ -36,7 +36,7 @@ pub fn main() !void {
     const allocator = gpa.allocator();
     defer _ = gpa.deinit();
     
-    const server = try tk.Server.init(allocator, routes, .{ .listen = .{ .port = 8080 } });
+    var server = try tk.Server.init(allocator, routes, .{ .listen = .{ .port = 8080 } });
     try server.start();
 }
 ```
@@ -96,7 +96,7 @@ pub fn main() !void {
     var db = try sqlite.open("my.db");
     var cx = .{ &db };
 
-    const server = try tk.Server.init(allocator, routes, .{
+    var server = try tk.Server.init(allocator, routes, .{
         .injector = tk.Injector.init(&cx, null),
         .port = 8080
     });

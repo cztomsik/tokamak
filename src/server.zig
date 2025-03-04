@@ -28,10 +28,7 @@ pub const Server = struct {
     http: httpz.Server(Adapter),
 
     /// Initialize a new server.
-    pub fn init(allocator: std.mem.Allocator, routes: []const Route, options: InitOptions) !*Server {
-        const self = try allocator.create(Server);
-        errdefer allocator.destroy(self);
-
+    pub fn init(allocator: std.mem.Allocator, routes: []const Route, options: InitOptions) !Server {
         const http = try httpz.Server(Adapter).init(allocator, .{
             .address = options.listen.hostname,
             .port = options.listen.port,
@@ -41,17 +38,15 @@ pub const Server = struct {
             .timeout = options.timeout,
             .thread_pool = options.thread_pool,
             .websocket = options.websocket,
-        }, .{ .server = self });
+        }, .{});
         errdefer http.deinit();
 
-        self.* = .{
+        return .{
             .allocator = allocator,
             .routes = routes,
             .injector = options.injector,
             .http = http,
         };
-
-        return self;
     }
 
     /// Deinitialize the server.
@@ -72,18 +67,19 @@ pub const Server = struct {
 };
 
 const Adapter = struct {
-    server: *Server,
+    pub fn handle(self: *Adapter, req: *httpz.Request, res: *httpz.Response) void {
+        const offset = @offsetOf(Server, "http") + @offsetOf(httpz.Server(Adapter), "handler");
+        const server: *Server = @ptrFromInt(@intFromPtr(self) - offset);
 
-    pub fn handle(self: Adapter, req: *httpz.Request, res: *httpz.Response) void {
         var ctx: Context = undefined;
         ctx = .{
-            .server = self.server,
+            .server = server,
             .allocator = res.arena,
             .req = req,
             .res = res,
-            .current = .{ .children = self.server.routes },
+            .current = .{ .children = server.routes },
             .params = .{},
-            .injector = Injector.init(&ctx, &self.server.injector),
+            .injector = Injector.init(&ctx, &server.injector),
         };
 
         ctx.next() catch |e| {
