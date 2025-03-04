@@ -16,16 +16,14 @@ pub const Injector = struct {
 
     pub const empty: Injector = .{ .ctx = undefined, .resolver = resolveNull };
 
-    /// Create a new injector from a context ptr and an optional parent.
+    /// Create a new injector from a ptr to the context and an optional parent.
     pub fn init(ctx: anytype, parent: ?*const Injector) Injector {
         if (comptime !meta.isOnePtr(@TypeOf(ctx))) {
             @compileError("Expected pointer to a context, got " ++ @typeName(@TypeOf(ctx)));
         }
 
         const H = struct {
-            fn resolve(ptr: *anyopaque, tid: meta.TypeId) ?*anyopaque {
-                var cx: @TypeOf(ctx) = @constCast(@ptrCast(@alignCast(ptr)));
-
+            fn resolve(cx: @TypeOf(ctx), tid: meta.TypeId) ?*anyopaque {
                 inline for (std.meta.fields(@TypeOf(cx.*))) |f| {
                     const p = if (comptime meta.isOnePtr(f.type)) @field(cx, f.name) else &@field(cx, f.name);
 
@@ -36,7 +34,7 @@ pub const Injector = struct {
                 }
 
                 if (tid == meta.tid(@TypeOf(cx))) {
-                    return ptr;
+                    return @ptrCast(@constCast(cx));
                 }
 
                 return null;
@@ -45,7 +43,7 @@ pub const Injector = struct {
 
         return .{
             .ctx = @constCast(@ptrCast(ctx)), // resolver() casts back first, so this should be safe
-            .resolver = &H.resolve,
+            .resolver = @ptrCast(&H.resolve),
             .parent = parent,
         };
     }

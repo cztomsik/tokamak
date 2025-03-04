@@ -42,11 +42,28 @@ pub const Module = struct {
             Plan.forTypes(&.{@TypeOf(ctx.*)}).deinit(@as(*[1]@TypeOf(ctx.*), ctx));
         }
     }
+
+    fn findInitializer(self: Module, comptime T: type) ?Plan.Cb {
+        for (std.meta.declarations(self.type)) |d| {
+            if (d.name.len > 4 and std.mem.startsWith(u8, d.name, "init")) {
+                switch (@typeInfo(@TypeOf(@field(self.type, d.name)))) {
+                    .@"fn" => |f| {
+                        if (meta.Result(@field(self.type, d.name)) == T or (f.params.len > 0 and f.params[0].type.? == *T)) {
+                            return .{ self.type, d.name };
+                        }
+                    },
+                    else => {},
+                }
+            }
+        } else return null;
+    }
 };
 
 const Plan = struct {
     mods: []const Module,
     ops: []const Op,
+
+    const Cb = struct { type, []const u8 };
 
     const Op = struct {
         m: usize,
@@ -55,12 +72,19 @@ const Plan = struct {
         how: union(enum) {
             default,
             auto,
-            initializer: struct { type, []const u8 },
-            factory: struct { type, []const u8 },
+            initializer: Cb,
+            factory: Cb,
         },
 
         fn path(self: Op) []const u8 {
             return @typeName(self.mod.type) ++ "." ++ self.field.name;
+        }
+
+        fn desc(self: Op) []const u8 {
+            return switch (self.how) {
+                inline .initializer, .factory => |cb, t| @typeName(cb[0]) ++ "." ++ cb[1] ++ "() [" ++ @tagName(t) ++ "]",
+                inline else => |_, t| @tagName(t),
+            };
         }
     };
 
@@ -78,8 +102,18 @@ const Plan = struct {
         var i: usize = 0;
         for (mods, 0..) |mod, m| {
             for (std.meta.fields(mod.type)) |f| {
-                // TODO: decide between .default, .auto, .init(T.init), .factory(T.init)
-                ops[i] = .{ .m = m, .mod = mod, .field = f, .how = .auto };
+                var op: Op = .{ .m = m, .mod = mod, .field = f, .how = .auto };
+
+                if (mod.findInitializer(meta.Deref(f.type))) |cb| {
+                    op.how = if (meta.Result(@field(cb[0], cb[1])) == void) .{ .initializer = cb } else .{ .factory = cb };
+                } else if (f.defaultValue() != null) {
+                    op.how = .default;
+                } else if (std.meta.hasMethod(f.type, "init")) {
+                    const cb: Cb = .{ meta.Deref(f.type), "init" };
+                    op.how = if (meta.Result(cb[0].init) == void) .{ .initializer = cb } else .{ .factory = cb };
+                }
+
+                ops[i] = op;
                 i += 1;
             }
         }
@@ -103,25 +137,25 @@ const Plan = struct {
     fn init(self: Plan, ctx: anytype, parent: ?*const Injector) !Injector {
         // TODO: maybe we should change Injector too
         const H = struct {
-            fn resolve(ptr: *anyopaque, tid: meta.TypeId) ?*anyopaque {
-                var cx: @TypeOf(ctx) = @constCast(@ptrCast(@alignCast(ptr)));
-
+            fn resolve(cx: @TypeOf(ctx), tid: meta.TypeId) ?*anyopaque {
                 inline for (0..self.mods.len) |m| {
-                    if (Injector.init(&cx[m], null).resolver(&cx[m], tid)) |p| return p;
-                }
-
-                return null;
+                    if (comptime @sizeOf(self.mods[m].type) > 0) {
+                        if (Injector.init(&cx[m], null).resolver(&cx[m], tid)) |p| {
+                            return p;
+                        }
+                    }
+                } else return null;
             }
         };
 
         const injector: Injector = .{
             .ctx = @ptrCast(ctx), // TODO: require cx to be ptr AND indexable, the tuple will not work this way
-            .resolver = H.resolve,
+            .resolver = @ptrCast(&H.resolve),
             .parent = parent,
         };
 
         inline for (self.ops) |op| {
-            log.debug("{s} <- {}", .{ op.path(), op.how });
+            log.debug("{s} <- {s}", .{ op.path(), op.desc() });
 
             const target = &@field(ctx[op.m], op.field.name);
 
@@ -164,7 +198,7 @@ const Plan = struct {
     }
 };
 
-test {
+test "basic" {
     const S1 = struct { x: u32 = 123 };
     const S2 = struct { dep: *S1 };
     const App = struct { s1: S1, s2: S2 };
@@ -180,11 +214,83 @@ test {
     try std.testing.expectEqual(123, s2.dep.x);
 }
 
-test {
+test "T.init() factory" {
+    const Svc = struct {
+        x: u32,
+
+        pub fn init() @This() {
+            return .{ .x = 123 };
+        }
+    };
+    const App = struct { svc: Svc };
+
+    var app: App = undefined;
+    const inj = try Module.initAlone(&app, null);
+    defer Module.deinit(&app);
+
+    const svc = try inj.get(*Svc);
+    try std.testing.expectEqual(123, svc.x);
+}
+
+test "T.init() initializer" {
+    const Svc = struct {
+        x: u32,
+
+        pub fn init(self: *@This()) void {
+            self.x = 123;
+        }
+    };
+    const App = struct { svc: Svc };
+
+    var app: App = undefined;
+    const inj = try Module.initAlone(&app, null);
+    defer Module.deinit(&app);
+
+    const svc = try inj.get(*Svc);
+    try std.testing.expectEqual(123, svc.x);
+}
+
+test "M.initXxx() factory" {
+    const Svc = struct { x: u32 };
+    const App = struct {
+        svc: Svc,
+
+        pub fn initSvc() Svc {
+            return .{ .x = 123 };
+        }
+    };
+
+    var app: App = undefined;
+    const inj = try Module.initAlone(&app, null);
+    defer Module.deinit(&app);
+
+    const svc = try inj.get(*Svc);
+    try std.testing.expectEqual(123, svc.x);
+}
+
+test "M.initXxx() initializer" {
+    const Svc = struct { x: u32 };
+    const App = struct {
+        svc: Svc,
+
+        pub fn initSvc(svc: *Svc) void {
+            svc.x = 123;
+        }
+    };
+
+    var app: App = undefined;
+    const inj = try Module.initAlone(&app, null);
+    defer Module.deinit(&app);
+
+    const svc = try inj.get(*Svc);
+    try std.testing.expectEqual(123, svc.x);
+}
+
+test "multimod" {
     const S1 = struct { x: u32 = 123 };
     const S2 = struct { dep: *S1 };
     const M1 = struct { s1: S1 };
-    const M2 = struct { s1: S2 };
+    const M2 = struct { s2: S2 };
 
     var cx: struct { M1, M2 } = undefined;
     const inj = try Module.initTogether(&cx, null);
