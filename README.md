@@ -4,7 +4,7 @@ Tokamak is a server-side framework for Zig, built around
 [http.zig](https://github.com/karlseguin/http.zig) and a simple dependency
 injection container.
 
-Note, that it is **not designed to be used alone**, but with a reverse proxy in
+Note that it is **not designed to be used alone**, but with a reverse proxy in
 front of it, like Nginx or Cloudfront, which will handle SSL, caching,
 sanitization, etc.
 
@@ -141,7 +141,7 @@ continue with the next handler in the chain.
 ## Custom-scoping
 
 Zig doesn't have closures, so we can't just capture variables from the outer
-scope. But what we can do is to use our dependency injection context to provide
+scope. But what we can do is use our dependency injection context to provide
 some dependencies to any middleware or handler function further in the chain.
 
 > Middlewares do not support the shorthand syntax for dependency injection,
@@ -160,7 +160,7 @@ fn auth(ctx: *Context) anyerror!void {
 ## Routing
 
 There's a simple router built in, in the spirit of Express.js. It supports
-up to 16 basic path params, and `*` wildcard. The example below shows how deps
+up to 16 basic path params and the `*` wildcard. The example below shows how deps
 and params will be passed to the handler function.
 
 ```zig
