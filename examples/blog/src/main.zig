@@ -5,7 +5,7 @@ const api = @import("api.zig");
 
 const App = struct {
     blog_service: model.BlogService,
-    server: *tk.Server,
+    server: tk.Server,
     routes: []const tk.Route = &.{
         tk.logger(.{}, &.{
             tk.static.dir("public", .{}),

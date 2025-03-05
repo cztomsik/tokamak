@@ -1,5 +1,6 @@
 .{
-    .name = "hello",
+    .name = .hello,
+    .fingerprint = 0x3610a6868d3bce67,
     .version = "0.0.0",
     .dependencies = .{
         .tokamak = .{

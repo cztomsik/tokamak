@@ -11,6 +11,38 @@ jobs:
 
       - uses: mlugg/setup-zig@v1
         with:
-          version: master
+          version: 0.14.0
 
       - run: zig build test --summary all
+  
+  examples:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: mlugg/setup-zig@v1
+        with:
+          version: 0.14.0
+      
+      - name: Check examples
+        run: |
+          ROOT_DIR=$(pwd)
+          for example_dir in examples/*/; do
+            echo "Testing $example_dir"
+            cd "$ROOT_DIR/$example_dir"
+            zig build
+            zig build run &
+            SERVER_PID=$!
+            sleep 3
+            
+            HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8080 || echo "failed")
+            kill -TERM $SERVER_PID 2>/dev/null || true
+            
+            # Check the result
+            if [[ "$HTTP_STATUS" == "200" ]]; then
+              echo "$example_dir: OK"
+            else
+              echo "$example_dir: Failed with status $HTTP_STATUS"
+              exit 1
+            fi
+          done

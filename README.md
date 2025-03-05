@@ -1,21 +1,22 @@
-# tokamak
+# Tokamak
 
 Tokamak is a server-side framework for Zig, built around
 [http.zig](https://github.com/karlseguin/http.zig) and a simple dependency
 injection container.
 
-Note, that it is **not designed to be used alone**, but with a reverse proxy in
+Note that it is **not designed to be used alone**, but with a reverse proxy in
 front of it, like Nginx or Cloudfront, which will handle SSL, caching,
 sanitization, etc.
 
 > ### Recent changes
+> - WIP multi-module support (cross-module initializers, providers, overrides)
 > - Switched to [http.zig](https://github.com/karlseguin/http.zig) for improved
 >   performance over `std.http`.
 > - Implemented hierarchical and introspectable routes.
 > - Added basic Swagger support.
 > - Added `tk.static.dir()` for serving entire directories.
 
-## Getting started
+## Getting Started
 
 Simple things should be easy to do.
 
@@ -36,12 +37,12 @@ pub fn main() !void {
     const allocator = gpa.allocator();
     defer _ = gpa.deinit();
     
-    const server = try tk.Server.init(allocator, routes, .{ .listen = .{ .port = 8080 } });
+    var server = try tk.Server.init(allocator, routes, .{ .listen = .{ .port = 8080 } });
     try server.start();
 }
 ```
 
-## Dependency injection
+## Dependency Injection
 
 The framework is built around the concept of dependency injection.
 This means that your handler function can take any number of parameters, and the
@@ -86,7 +87,7 @@ fn hello(res: *tk.Response) !void {
 }
 ```
 
-## Custom dependencies
+## Custom Dependencies
 
 You can also provide your own (global) dependencies by passing your own
 `tk.Injector` to the server.
@@ -96,7 +97,7 @@ pub fn main() !void {
     var db = try sqlite.open("my.db");
     var cx = .{ &db };
 
-    const server = try tk.Server.init(allocator, routes, .{
+    var server = try tk.Server.init(allocator, routes, .{
         .injector = tk.Injector.init(&cx, null),
         .port = 8080
     });
@@ -105,13 +106,14 @@ pub fn main() !void {
 }
 ```
 
-## Middlewares
+## Middleware
 
-We don't have 1:1 middleware support like in Express.js, but given that our
-routes can be nested and that the `prefix`, `path` and `method` fields are
-optional, you can easily achieve the same effect.
+While Tokamak doesn't have Express-style middleware, it achieves the same
+functionality through nested routes. Since routes can be nested and the
+`prefix`, `path`, and `method` fields are optional, you can create powerful
+middleware patterns.
 
-For example, here's a simple function which will return a logger route:
+Here's how to create a simple logging middleware:
 
 ```zig
 fn logger(children: []const Route) tk.Route {
@@ -121,8 +123,8 @@ fn logger(children: []const Route) tk.Route {
 
             return ctx.next();
         }
-
     };
+
     return .{ .handler = &H.handleLogger, .children = children };
 }
 
@@ -133,19 +135,16 @@ const routes = []const tk.Route = &.{
 };
 ```
 
-As you can see, the handler takes a `*Context` and returns `anyerror!void`.
-It can do some pre-processing, logging, etc., and then call `ctx.next()` to
-continue with the next handler in the chain.
+Middleware handlers receive a `*Context` and return `anyerror!void`. They can
+perform pre-processing, logging, authentication, etc., and then call
+`ctx.next()` to continue to the next handler in the chain.
 
 
-## Custom-scoping
+## Request-Scoped Dependencies
 
-Zig doesn't have closures, so we can't just capture variables from the outer
-scope. But what we can do is to use our dependency injection context to provide
-some dependencies to any middleware or handler function further in the chain.
-
-> Middlewares do not support the shorthand syntax for dependency injection,
-> so you need to use `ctx.injector.get(T)` to get your dependencies manually.
+Since Zig doesn't have closures, you can't capture variables from the outer
+scope. Instead, Tokamak allows you to add request-scoped dependencies that will
+be available to downstream handlers:
 
 ```zig
 fn auth(ctx: *Context) anyerror!void {
@@ -157,11 +156,15 @@ fn auth(ctx: *Context) anyerror!void {
 }
 ```
 
+> Note: Middleware handlers need to use `ctx.injector.get(T)` to access
+> dependencies manually, as they don't support the automatic dependency
+> injection syntax.
+
 ## Routing
 
-There's a simple router built in, in the spirit of Express.js. It supports
-up to 16 basic path params, and `*` wildcard. The example below shows how deps
-and params will be passed to the handler function.
+Tokamak includes an Express-inspired router that supports path parameters and
+wildcards. It can handle up to 16 path parameters and uses the `*` character for
+wildcards.
 
 ```zig
 const tk = @import("tokamak");
@@ -177,14 +180,14 @@ const routes: []const tk.Route = &.{
 };
 ```
 
-There's also `Route.router(T)` method, which accepts special DSL-like struct,
-which allows you to define routes together with the fns in a single place.
+For more organized routing, use the `Route.router(T)` method with a DSL-like
+struct:
 
 ```zig
 const routes: []const tk.Route = &.{
     tk.logger(.{}),
-    .get("/", tk.send("Hello")),        // this is the classic, express-style routing
-    .group("/api", &.{ .router(api) }), // and this is our shorthand
+    .get("/", tk.send("Hello")),        // Classic Express-style routing
+    .group("/api", &.{ .router(api) }), // Structured routing with a module
     .send(error.NotFound),
 };
 
@@ -199,21 +202,20 @@ const api = struct {
 };
 ```
 
-## Error handling
+## Error Handling
 
-If your handler returns an error, the framework will try to serialize it to
-JSON and send it to the client.
+Tokamak handles errors gracefully by automatically serializing them to JSON:
 
 ```zig
 fn hello() !void {
-    // This will send 500 and {"error": "TODO"}
+    // This will send a 500 response with {"error": "TODO"}
     return error.TODO;
 }
 ```
 
-## Static files
+## Static Files
 
-To send a static file, you can use the `tk.static.file(path)` middleware.
+Serve static files easily with built-in helpers:
 
 ```zig
 const routes: []const tk.Route = &.{
@@ -221,7 +223,7 @@ const routes: []const tk.Route = &.{
 };
 ```
 
-You can also serve entire directories with `tk.static.dir(path)`.
+Serve entire directories:
 
 ```zig
 const routes: []const tk.Route = &.{
@@ -229,7 +231,7 @@ const routes: []const tk.Route = &.{
 };
 ```
 
-And of course, the `tk.static.dir()` also works with wildcard routes.
+Use with wildcard routes for more flexibility:
 
 ```zig
 const routes: []const tk.Route = &.{
@@ -263,7 +265,7 @@ pub const mime_types = tk.mime_types ++ .{
 };
 ```
 
-## Config
+## Configuration
 
 For a simple configuration, you can use the `tk.config.read(T, opts)` function,
 which will read the configuration from a JSON file. The `opts` parameter is
@@ -282,18 +284,11 @@ const cfg = try tk.config.read(Cfg, .{ .path = "config.json" });
 There's also experimental `tk.config.write(T, opts)` function, which will write
 the configuration back to the file.
 
-## Monitor
+## Process Monitoring
 
-The `tk.monitor(procs)` allows you to execute multiple processes in parallel and
-restart them automatically if they exit. It takes a tuple of `{ name, fn_ptr,
-args_tuple }` triples as input. It will only work on systems with `fork()`.
-
-What this means is that you can easily create a self-contained binary which will
-stay up and running, even if something crashes unexpectedly.
-
-> The function takes over the main thread, forks, and it might lead to
-> unexpected behavior if you're not careful. Only use it if you know what you're
-> doing.
+The `tk.monitor(procs)` function runs multiple processes in parallel and
+automatically restarts them if they crash. This creates a self-healing
+application that stays running even after unexpected failures.
 
 ```zig
 monitor(.{
@@ -302,6 +297,12 @@ monitor(.{
     ...
 });
 ```
+
+It takes a tuple of `{ name, fn_ptr, args_tuple }` triples as input.
+
+> **Note:** This feature requires a system with `fork()` support. It takes over
+> the main thread and forks processes, which may lead to unexpected behavior if
+> used incorrectly. Use with caution.
 
 ## License
 

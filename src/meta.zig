@@ -47,6 +47,17 @@ pub fn Result(comptime fun: anytype) type {
     };
 }
 
+pub fn isStruct(comptime T: type) bool {
+    return @typeInfo(T) == .@"struct";
+}
+
+pub fn isTuple(comptime T: type) bool {
+    return switch (@typeInfo(T)) {
+        .@"struct" => |s| s.is_tuple,
+        else => false,
+    };
+}
+
 pub fn isGeneric(comptime fun: anytype) bool {
     return @typeInfo(@TypeOf(fun)).@"fn".is_generic;
 }
@@ -76,5 +87,15 @@ pub fn hasDecl(comptime T: type, comptime name: []const u8) bool {
     return switch (@typeInfo(T)) {
         .@"struct", .@"union", .@"enum", .@"opaque" => @hasDecl(T, name),
         else => false,
+    };
+}
+
+pub fn fieldTypes(comptime T: type) []const type {
+    return comptime blk: {
+        const fields = std.meta.fields(T);
+        var types: [fields.len]type = undefined;
+        for (&types, fields) |*t, f| t.* = f.type;
+        const copy = types;
+        break :blk &copy;
     };
 }

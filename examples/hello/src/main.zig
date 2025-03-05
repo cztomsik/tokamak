@@ -13,7 +13,7 @@ pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
 
-    const server = try tk.Server.init(gpa.allocator(), routes, .{});
+    var server = try tk.Server.init(gpa.allocator(), routes, .{});
     defer server.deinit();
 
     try server.start();

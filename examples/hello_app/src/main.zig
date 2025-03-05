@@ -2,7 +2,7 @@ const std = @import("std");
 const tk = @import("tokamak");
 
 const App = struct {
-    server: *tk.Server,
+    server: tk.Server,
     routes: []const tk.Route = &.{
         .get("/", hello),
     },

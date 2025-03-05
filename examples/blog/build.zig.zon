@@ -1,5 +1,6 @@
 .{
-    .name = "example",
+    .name = .example,
+    .fingerprint = 0x6eec9b9fbe88312b,
     .version = "0.0.0",
     .dependencies = .{ .tokamak = .{ .path = "../.." } },
     .paths = .{
