@@ -9,6 +9,7 @@ front of it, like Nginx or Cloudfront, which will handle SSL, caching,
 sanitization, etc.
 
 > ### Recent changes
+> - WIP multi-module support (cross-module initializers, providers, overrides)
 > - Switched to [http.zig](https://github.com/karlseguin/http.zig) for improved
 >   performance over `std.http`.
 > - Implemented hierarchical and introspectable routes.
