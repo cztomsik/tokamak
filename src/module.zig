@@ -227,6 +227,23 @@ test "basic" {
     try std.testing.expectEqual(123, s2.dep.x);
 }
 
+test "reordering" {
+    const App = struct {
+        first: u32,
+        nums: []const u32 = &.{ 1, 2, 3 },
+
+        pub fn initFirst(nums: []const u32) u32 {
+            return nums[0]; // This should segfault without re-order
+        }
+    };
+
+    var app: App = undefined;
+    const inj = try Module.initAlone(&app, null);
+    defer Module.deinit(&app);
+
+    try std.testing.expectEqual(1, inj.get(u32));
+}
+
 test "T.init()" {
     const S1 = struct {
         x: u32,
