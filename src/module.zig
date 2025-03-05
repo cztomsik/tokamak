@@ -58,6 +58,10 @@ const Plan = struct {
             auto,
             initializer: Cb,
             factory: Cb,
+
+            fn useMethod(meth: Cb) @This() {
+                return if (meta.Result(@field(meth[0], meth[1])) == void) .{ .initializer = meth } else .{ .factory = meth };
+            }
         },
 
         fn path(self: Op) []const u8 {
@@ -88,17 +92,16 @@ const Plan = struct {
             for (std.meta.fields(mod.type)) |f| {
                 var op: Op = .{ .m = m, .mod = mod, .field = f, .how = .auto };
 
-                if (findOverride(mods, f.type)) |cb| {
-                    op.how = if (meta.Result(@field(cb[0], cb[1])) == void) .{ .initializer = cb } else .{ .factory = cb };
-                } else if (findInitializer(mod, f.type)) |cb| {
-                    op.how = if (meta.Result(@field(cb[0], cb[1])) == void) .{ .initializer = cb } else .{ .factory = cb };
+                if (findOverride(mods, f.type)) |meth| {
+                    op.how = .useMethod(meth);
+                } else if (findInitializer(mod, f.type)) |meth| {
+                    op.how = .useMethod(meth);
                 } else if (f.defaultValue() != null) {
                     op.how = .default;
-                } else if (findProvider(mods, f.type)) |cb| {
-                    op.how = if (meta.Result(@field(cb[0], cb[1])) == void) .{ .initializer = cb } else .{ .factory = cb };
+                } else if (findProvider(mods, f.type)) |meth| {
+                    op.how = .useMethod(meth);
                 } else if (std.meta.hasMethod(f.type, "init")) {
-                    const cb: Cb = .{ meta.Deref(f.type), "init" };
-                    op.how = if (meta.Result(cb[0].init) == void) .{ .initializer = cb } else .{ .factory = cb };
+                    op.how = .useMethod(.{ meta.Deref(f.type), "init" });
                 }
 
                 ops[i] = op;
@@ -106,7 +109,38 @@ const Plan = struct {
             }
         }
 
-        // TODO: reorder (DAG)
+        // Push dependent ops further down
+        // TODO: find a better way
+        var changed = true;
+        while (changed) {
+            changed = false;
+            for (0..ops.len - 1) |j| {
+                const op = ops[j];
+                const next = ops[j + 1];
+
+                const swap = switch (op.how) {
+                    .initializer, .factory => |cb| blk: {
+                        // Check for dependency on next field's type
+                        const params = @typeInfo(@TypeOf(@field(cb[0], cb[1]))).@"fn".params;
+                        for (params) |param| {
+                            const param_type = param.type orelse continue;
+                            if (param_type == next.field.type or
+                                (meta.isOnePtr(param_type) and meta.Deref(param_type) == next.field.type))
+                            {
+                                break :blk true;
+                            }
+                        }
+                        break :blk false;
+                    },
+                    else => false,
+                };
+
+                if (swap) {
+                    std.mem.swap(Op, &ops[j], &ops[j + 1]);
+                    changed = true;
+                }
+            }
+        }
 
         const copy = ops;
 
