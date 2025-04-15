@@ -79,7 +79,13 @@ const Adapter = struct {
             .res = res,
             .current = .{ .children = server.routes },
             .params = .{},
-            .injector = Injector.init(&ctx, &server.injector),
+            .injector = Injector.init(&.{
+                .from(&ctx),
+                .from(server),
+                .from(&res.arena),
+                .from(req),
+                .from(res),
+            }, &server.injector),
         };
 
         ctx.next() catch |e| {

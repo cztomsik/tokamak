@@ -2,6 +2,20 @@ const std = @import("std");
 const meta = @import("meta.zig");
 const t = std.testing;
 
+pub const Ref = struct {
+    tid: meta.TypeId,
+    ptr: *anyopaque,
+    is_const: bool,
+
+    pub fn from(ptr: anytype) Ref {
+        return .{
+            .tid = meta.tid(@TypeOf(ptr.*)),
+            .ptr = @ptrCast(@constCast(@alignCast(ptr))),
+            .is_const = @typeInfo(@TypeOf(ptr)).pointer.is_const,
+        };
+    }
+};
+
 /// Injector serves as a custom runtime scope for retrieving dependencies.
 /// It can be passed around, enabling any code to request a value or reference
 /// to a given type. Additionally, it can invoke arbitrary functions and supply
@@ -10,40 +24,14 @@ const t = std.testing;
 /// Injectors can be nested. If a dependency is not found, the parent context
 /// is searched. If the dependency is still not found, an error is returned.
 pub const Injector = struct {
-    ctx: *anyopaque,
-    resolver: *const fn (*anyopaque, meta.TypeId) ?*anyopaque,
+    refs: []const Ref = &.{},
     parent: ?*const Injector = null,
 
-    pub const empty: Injector = .{ .ctx = undefined, .resolver = resolveNull };
+    pub const empty: Injector = .{};
 
-    /// Create a new injector from a ptr to the context and an optional parent.
-    pub fn init(ctx: anytype, parent: ?*const Injector) Injector {
-        if (comptime !meta.isOnePtr(@TypeOf(ctx))) {
-            @compileError("Expected pointer to a context, got " ++ @typeName(@TypeOf(ctx)));
-        }
-
-        const H = struct {
-            fn resolve(cx: @TypeOf(ctx), tid: meta.TypeId) ?*anyopaque {
-                inline for (std.meta.fields(@TypeOf(cx.*))) |f| {
-                    const p = if (comptime meta.isOnePtr(f.type)) @field(cx, f.name) else &@field(cx, f.name);
-
-                    if (tid == meta.tid(@TypeOf(p))) {
-                        std.debug.assert(@intFromPtr(p) != 0xaaaaaaaaaaaaaaaa);
-                        return @ptrCast(@constCast(p));
-                    }
-                }
-
-                if (tid == meta.tid(@TypeOf(cx))) {
-                    return @ptrCast(@constCast(cx));
-                }
-
-                return null;
-            }
-        };
-
+    pub fn init(refs: []const Ref, parent: ?*const Injector) Injector {
         return .{
-            .ctx = @constCast(@ptrCast(ctx)), // resolver() casts back first, so this should be safe
-            .resolver = @ptrCast(&H.resolve),
+            .refs = refs,
             .parent = parent,
         };
     }
@@ -57,13 +45,9 @@ pub const Injector = struct {
             return if (self.find(*const T)) |p| p.* else null;
         }
 
-        if (self.resolver(self.ctx, meta.tid(T))) |ptr| {
-            return @ptrCast(@constCast(@alignCast(ptr)));
-        }
-
-        if (comptime @typeInfo(T).pointer.is_const) {
-            if (self.resolver(self.ctx, meta.tid(*@typeInfo(T).pointer.child))) |ptr| {
-                return @ptrCast(@constCast(@alignCast(ptr)));
+        for (self.refs) |r| {
+            if (r.tid == meta.tid(meta.Deref(T)) and (!r.is_const or @typeInfo(T).pointer.is_const)) {
+                return @ptrCast(@constCast(@alignCast(r.ptr)));
             }
         }
 
@@ -80,8 +64,7 @@ pub const Injector = struct {
 
     test get {
         var num: u32 = 123;
-        var cx = .{ .num = &num };
-        const inj = Injector.init(&cx, null);
+        const inj = Injector.init(&.{.from(&num)}, null);
 
         try t.expectEqual(inj, inj.get(Injector));
         try t.expectEqual(&num, inj.get(*u32));
