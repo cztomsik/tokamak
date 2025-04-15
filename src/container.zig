@@ -165,7 +165,7 @@ const Bundle = struct {
     }
 
     fn markDep(ops: []Op, target: *Op, comptime T: type) void {
-        // Builtin
+        // Builtins
         if (T == *Container or T == Injector or T == std.mem.Allocator) return;
 
         for (ops) |op| {
@@ -173,7 +173,11 @@ const Bundle = struct {
                 target.deps |= 1 << op.id;
                 return;
             }
-        } else @compileError("Unknown dependency: " ++ @typeName(T) ++ "\n> " ++ target.desc());
+        } else {
+            if (@typeInfo(T) != .optional) {
+                @compileError("Unknown dependency: " ++ @typeName(T) ++ "\n> " ++ target.desc());
+            }
+        }
     }
 
     fn reorder(ops: []Op) void {

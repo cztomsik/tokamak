@@ -92,7 +92,16 @@ pub const Injector = struct {
         };
 
         var args: std.meta.Tuple(types) = undefined;
-        inline for (0..args.len) |i| args[i] = if (i < extra_start) try self.get(@TypeOf(args[i])) else extra_args[i - extra_start];
+        inline for (0..args.len) |i| {
+            if (i < extra_start) {
+                args[i] = switch (comptime @typeInfo(types[i])) {
+                    .optional => |o| self.find(o.child),
+                    else => try self.get(types[i]),
+                };
+            } else {
+                args[i] = extra_args[i - extra_start];
+            }
+        }
 
         return @call(.auto, fun, args);
     }
