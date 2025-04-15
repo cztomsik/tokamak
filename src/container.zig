@@ -110,12 +110,12 @@ const Bundle = struct {
                     }
                 } else {
                     // Look for any initXxx() in order (the first one wins)
-                if (findInitializer(mods, f.type)) |meth| {
-                    op.how = .useMethod(meth);
+                    if (findInitializer(mods, f.type)) |meth| {
+                        op.how = .useMethod(meth);
                     }
                     // Otherwise, try T.init() or keep it as .auto
                     else if (std.meta.hasMethod(f.type, "init")) {
-                    op.how = .useMethod(.{ meta.Deref(f.type), "init" });
+                        op.how = .useMethod(.{ meta.Deref(f.type), "init" });
                     }
                 }
 
@@ -354,4 +354,59 @@ test "M.initXxx()" {
 
     try std.testing.expectEqual(123, s1.x);
     try std.testing.expectEqual(456, s2.y);
+}
+
+test "M.initXxx() precedence" {
+    const S1 = struct { x: u32 };
+    const S2 = struct { y: u32 };
+    const S3 = struct { z: u32 };
+
+    const App = struct {
+        s1: S1,
+        s2: S2,
+        s3: S3,
+
+        pub fn initS1() S1 {
+            unreachable;
+        }
+
+        pub fn initS2(_: *S2) void {
+            unreachable;
+        }
+    };
+
+    const Fallbacks = struct {
+        pub fn initS1() S1 {
+            unreachable;
+        }
+
+        pub fn initS2(_: *S2) void {
+            unreachable;
+        }
+
+        pub fn initS3(s3: *S3) void {
+            s3.z = 789;
+        }
+    };
+
+    const Mocks = struct {
+        pub fn initS1() S1 {
+            return .{ .x = 123 };
+        }
+
+        pub fn initS2(s2: *S2) void {
+            s2.y = 456;
+        }
+    };
+
+    const ct = try Container.init(std.testing.allocator, &.{ Mocks, App, Fallbacks });
+    defer ct.deinit();
+
+    const s1 = try ct.injector.get(*S1);
+    const s2 = try ct.injector.get(*S2);
+    const s3 = try ct.injector.get(*S3);
+
+    try std.testing.expectEqual(123, s1.x);
+    try std.testing.expectEqual(456, s2.y);
+    try std.testing.expectEqual(789, s3.z);
 }
