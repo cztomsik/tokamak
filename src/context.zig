@@ -155,7 +155,7 @@ pub const Context = struct {
     pub fn nextScoped(self: *Context, ctx: anytype) !void {
         const prev = self.injector;
         defer self.injector = prev;
-        self.injector = Injector.init(ctx, &prev);
+        self.injector = Injector.init(&.{.from(&ctx[0])}, &prev);
 
         try self.next();
     }
