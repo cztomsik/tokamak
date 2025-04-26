@@ -47,6 +47,8 @@ pub const Container = struct {
     }
 
     pub fn registerDeinit(self: *Container, comptime fun: anytype) !void {
+        comptime std.debug.assert(meta.Return(fun) == void);
+
         const H = struct {
             fn deinit(ct: *Container) void {
                 ct.injector.call(fun, .{}) catch unreachable;
