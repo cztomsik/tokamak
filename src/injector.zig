@@ -45,6 +45,10 @@ pub const Injector = struct {
 
     pub fn find(self: *Injector, comptime T: type) ?T {
         if (comptime T == Injector) {
+            // NOTE: This is for safety reasons. Previously, the shape was more
+            //       or less static. However, with dynamic containers, taking or
+            //       saving the Injector by value could result in unexpected or
+            //       invalid memory access.
             @compileError("use *Injector instead");
         }
 
