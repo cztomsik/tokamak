@@ -2,15 +2,12 @@ const std = @import("std");
 
 // https://github.com/ziglang/zig/issues/19858#issuecomment-2370673253
 pub const TypeId = *const struct {
-    _: u8 = undefined,
+    name: [*:0]const u8,
 };
 
 pub inline fn tid(comptime T: type) TypeId {
     const H = struct {
-        comptime {
-            _ = T;
-        }
-        var id: Deref(TypeId) = .{};
+        const id: Deref(TypeId) = .{ .name = @typeName(T) };
     };
     return &H.id;
 }
