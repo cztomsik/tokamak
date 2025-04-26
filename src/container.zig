@@ -205,6 +205,8 @@ const Bundle = struct {
     }
 
     fn connect(ops: []Op, exts: *Buf(meta.TypeId)) void {
+        @setEvalBranchQuota(100 * ops.len);
+
         for (ops) |*op| {
             switch (op.how) {
                 .default => {},
