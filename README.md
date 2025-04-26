@@ -9,7 +9,8 @@ front of it, like Nginx or Cloudfront, which will handle SSL, caching,
 sanitization, etc.
 
 > ### Recent changes
-> - WIP multi-module support (cross-module initializers, providers, overrides)
+> - injecting `tk.Injector` is deprecated, use `*tk.Injector`
+> - multi-module support (cross-module initializers, providers, overrides)
 > - Switched to [http.zig](https://github.com/karlseguin/http.zig) for improved
 >   performance over `std.http`.
 > - Implemented hierarchical and introspectable routes.
@@ -53,7 +54,7 @@ Notable types you can inject are:
 - `std.mem.Allocator` (request-scoped arena allocator)
 - `*tk.Request` (current request, including headers, body reader, etc.)
 - `*tk.Response` (current response, with methods to send data, set headers, etc.)
-- `tk.Injector` (the injector itself, see below)
+- `*tk.Injector` (the injector itself, see below)
 - and everything you provide yourself
 
 For example, you can easily write a handler function which will create a
@@ -90,15 +91,15 @@ fn hello(res: *tk.Response) !void {
 ## Custom Dependencies
 
 You can also provide your own (global) dependencies by passing your own
-`tk.Injector` to the server.
+`*tk.Injector` to the server.
 
 ```zig
 pub fn main() !void {
     var db = try sqlite.open("my.db");
-    var cx = .{ &db };
+    var inj = tk.Injector.init(&.{ .ref(&db) }, null)
 
     var server = try tk.Server.init(allocator, routes, .{
-        .injector = tk.Injector.init(&cx, null),
+        .injector = &inj,
         .port = 8080
     });
 

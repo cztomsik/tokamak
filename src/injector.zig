@@ -10,7 +10,7 @@ pub const Ref = struct {
     //       trying to prevent using @typeName(T).ptr in comptime
     is_const: bool,
 
-    pub fn from(ptr: anytype) Ref {
+    pub fn ref(ptr: anytype) Ref {
         return .{
             .tid = meta.tid(@TypeOf(ptr.*)),
             .ptr = @ptrCast(@constCast(@alignCast(ptr))),
@@ -32,19 +32,23 @@ pub const Ref = struct {
 /// is searched. If the dependency is still not found, an error is returned.
 pub const Injector = struct {
     refs: []const Ref = &.{},
-    parent: ?*const Injector = null,
+    parent: ?*Injector = null,
 
     pub const empty: Injector = .{};
 
-    pub fn init(refs: []const Ref, parent: ?*const Injector) Injector {
+    pub fn init(refs: []const Ref, parent: ?*Injector) Injector {
         return .{
             .refs = refs,
             .parent = parent,
         };
     }
 
-    pub fn find(self: Injector, comptime T: type) ?T {
+    pub fn find(self: *Injector, comptime T: type) ?T {
         if (comptime T == Injector) {
+            @compileError("use *Injector instead");
+        }
+
+        if (comptime T == *Injector) {
             return self;
         }
 
@@ -62,7 +66,7 @@ pub const Injector = struct {
     }
 
     /// Get a dependency from the context.
-    pub fn get(self: Injector, comptime T: type) !T {
+    pub fn get(self: *Injector, comptime T: type) !T {
         return self.find(T) orelse {
             std.log.debug("Missing dependency: {s}", .{@typeName(T)});
             return error.MissingDependency;
@@ -71,9 +75,9 @@ pub const Injector = struct {
 
     test get {
         var num: u32 = 123;
-        const inj = Injector.init(&.{.from(&num)}, null);
+        var inj = Injector.init(&.{.ref(&num)}, null);
 
-        try t.expectEqual(inj, inj.get(Injector));
+        try t.expectEqual(&inj, inj.get(*Injector));
         try t.expectEqual(&num, inj.get(*u32));
         try t.expectEqual(@as(*const u32, &num), inj.get(*const u32));
         try t.expectEqual(123, inj.get(u32));
@@ -83,7 +87,7 @@ pub const Injector = struct {
     /// Call a function with dependencies. The `extra_args` tuple is used to
     /// pass additional arguments to the function. Function with anytype can
     /// be called as long as the concrete value is provided in the `extra_args`.
-    pub fn call(self: Injector, comptime fun: anytype, extra_args: anytype) anyerror!meta.Result(fun) {
+    pub fn call(self: *Injector, comptime fun: anytype, extra_args: anytype) anyerror!meta.Result(fun) {
         if (comptime @typeInfo(@TypeOf(extra_args)) != .@"struct") {
             @compileError("Expected a tuple of arguments");
         }

@@ -6,7 +6,7 @@ const Route = @import("route.zig").Route;
 
 pub const InitOptions = struct {
     listen: ListenOptions = .{},
-    injector: Injector = Injector.empty,
+    injector: ?*Injector = null,
     workers: httpz.Config.Worker = .{},
     request: httpz.Config.Request = .{},
     response: httpz.Config.Response = .{},
@@ -24,7 +24,7 @@ pub const ListenOptions = struct {
 pub const Server = struct {
     allocator: std.mem.Allocator,
     routes: []const Route,
-    injector: Injector,
+    injector: ?*Injector,
     http: httpz.Server(Adapter),
 
     /// Initialize a new server.
@@ -72,6 +72,15 @@ const Adapter = struct {
         const server: *Server = @ptrFromInt(@intFromPtr(self) - offset);
 
         var ctx: Context = undefined;
+
+        var inj: Injector = .init(&.{
+            .ref(&ctx),
+            .ref(server),
+            .ref(&res.arena),
+            .ref(req),
+            .ref(res),
+        }, server.injector);
+
         ctx = .{
             .server = server,
             .allocator = res.arena,
@@ -79,13 +88,7 @@ const Adapter = struct {
             .res = res,
             .current = .{ .children = server.routes },
             .params = .{},
-            .injector = Injector.init(&.{
-                .from(&ctx),
-                .from(server),
-                .from(&res.arena),
-                .from(req),
-                .from(res),
-            }, &server.injector),
+            .injector = &inj,
         };
 
         ctx.next() catch |e| {

@@ -42,7 +42,7 @@ pub const Container = struct {
     }
 
     pub fn register(self: *Container, ptr: anytype) !void {
-        try self.refs.append(self.allocator, .from(ptr));
+        try self.refs.append(self.allocator, .ref(ptr));
         self.injector = .init(self.refs.items, self.injector.parent);
     }
 
@@ -232,7 +232,7 @@ const Bundle = struct {
 
     fn markDep(ops: []Op, exts: *Buf(meta.TypeId), target: *Op, comptime T: type) void {
         // Builtins
-        if (T == *Container or T == Injector or T == std.mem.Allocator) return;
+        if (T == *Container or T == *Injector or T == std.mem.Allocator) return;
 
         for (ops) |op| {
             if (meta.Deref(op.field.type) == meta.Deref(T)) {

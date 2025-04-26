@@ -17,7 +17,7 @@ pub const Context = struct {
     res: *httpz.Response,
     current: Route,
     params: Params,
-    injector: Injector,
+    injector: *Injector,
     responded: bool = false,
 
     /// Get value from a string.
@@ -155,7 +155,9 @@ pub const Context = struct {
     pub fn nextScoped(self: *Context, ctx: anytype) !void {
         const prev = self.injector;
         defer self.injector = prev;
-        self.injector = Injector.init(&.{.from(&ctx[0])}, &prev);
+
+        var inj = Injector.init(&.{.ref(&ctx[0])}, prev);
+        self.injector = &inj;
 
         try self.next();
     }
