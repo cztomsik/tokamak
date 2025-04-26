@@ -32,11 +32,10 @@ pub const Container = struct {
     }
 
     pub fn deinit(self: *Container) void {
-        for (self.deinit_fns.items) |f| {
-            f(self);
-        }
-
+        const fns = self.deinit_fns.items;
+        for (1..fns.len + 1) |i| fns[fns.len - i](self);
         self.deinit_fns.deinit(self.allocator);
+
         self.refs.deinit(self.allocator);
         self.allocator.destroy(self);
     }
