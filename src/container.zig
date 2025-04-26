@@ -366,6 +366,10 @@ test "basic single-mod" {
     const ct = try Container.init(std.testing.allocator, &.{App});
     defer ct.deinit();
 
+    const app = try ct.injector.get(*App);
+    try std.testing.expectEqual(&app.s1, app.s2.dep);
+    try std.testing.expectEqual(123, app.s2.dep.x);
+
     const s1 = try ct.injector.get(*S1);
     const s2 = try ct.injector.get(*S2);
 
