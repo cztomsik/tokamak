@@ -2,11 +2,13 @@ const std = @import("std");
 const meta = @import("meta.zig");
 const Injector = @import("injector.zig").Injector;
 const Ref = @import("injector.zig").Ref;
+const Buf = @import("vec.zig").Buf;
 
 pub const Container = struct {
     allocator: std.mem.Allocator,
-    refs: std.ArrayListUnmanaged(Ref),
     injector: Injector,
+    refs: std.ArrayListUnmanaged(Ref),
+    deinit_fns: std.ArrayListUnmanaged(*const fn (*Container) void),
 
     pub fn init(allocator: std.mem.Allocator, comptime mods: []const type) !*Container {
         const self = try allocator.create(Container);
@@ -14,8 +16,9 @@ pub const Container = struct {
 
         self.* = .{
             .allocator = allocator,
-            .refs = .empty,
             .injector = .empty,
+            .refs = .empty,
+            .deinit_fns = .empty,
         };
 
         try self.register(self);
@@ -29,7 +32,11 @@ pub const Container = struct {
     }
 
     pub fn deinit(self: *Container) void {
-        // TODO: cleanup
+        for (self.deinit_fns.items) |f| {
+            f(self);
+        }
+
+        self.deinit_fns.deinit(self.allocator);
         self.refs.deinit(self.allocator);
         self.allocator.destroy(self);
     }
@@ -38,57 +45,112 @@ pub const Container = struct {
         try self.refs.append(self.allocator, .from(ptr));
         self.injector = .init(self.refs.items, self.injector.parent);
     }
+
+    pub fn registerDeinit(self: *Container, comptime fun: anytype) !void {
+        const H = struct {
+            fn deinit(ct: *Container) void {
+                ct.injector.call(fun, .{}) catch unreachable;
+            }
+        };
+
+        try self.deinit_fns.append(self.allocator, &H.deinit);
+    }
 };
 
-/// Comptime-resolved strategy for initializing multiple modules together.
+/// Comptime-assisted strategy for initializing multiple modules together.
 const Bundle = struct {
     mods: []const type,
     ops: []const Op,
+    ext: []const meta.TypeId,
 
     fn init(self: Bundle, ct: *Container) !void {
-        const inst = try ct.allocator.create(std.meta.Tuple(self.mods));
-        errdefer ct.allocator.destroy(inst);
+        const bundle = try ct.allocator.create(std.meta.Tuple(self.mods));
+        errdefer {
+            // TODO: ct.deinitUpTo(prev_deinit_count)
+            ct.allocator.destroy(bundle);
+        }
 
-        inline for (self.ops) |op| {
-            const target = &@field(inst[op.mid], op.field.name);
-            try ct.register(if (comptime meta.isOnePtr(op.field.type)) target.* else target);
+        const H = struct {
+            fn deinit(ct2: *Container, bundle2: *std.meta.Tuple(self.mods)) void {
+                ct2.allocator.destroy(bundle2);
+            }
+        };
+        try ct.register(bundle);
+        try ct.registerDeinit(H.deinit);
 
-            switch (op.how) {
-                .default => target.* = op.field.defaultValue().?,
-                .auto => {
-                    if (comptime !meta.isStruct(op.field.type)) @compileError(op.path() ++ ": Only plain structs can be auto-initialized");
+        var done: u64 = 0; // Eagerly-initialized module fields
+        var ready: u64 = 0; // All the deps we might need
+        var ticks: usize = 0;
 
-                    inline for (std.meta.fields(op.field.type)) |f| {
-                        if (f.defaultValue()) |def| {
-                            @field(target, f.name) = ct.injector.find(f.type) orelse def;
-                        } else {
-                            @field(target, f.name) = try ct.injector.get(f.type);
+        while (@popCount(done) < self.ops.len) : (ticks += 1) {
+            inline for (self.ops, 0..) |op, i| {
+                if (done & (1 << i) == 0 and op.deps & ready == op.deps) {
+                    try op.init(ct, bundle);
+
+                    switch (op.how) {
+                        .auto => {},
+                        else => {
+                            if (comptime std.meta.hasMethod(op.field.type, "deinit")) {
+                                try ct.registerDeinit(meta.Deref(op.field.type).deinit);
+                            }
+                        },
+                    }
+
+                    done |= 1 << i;
+                    ready |= done;
+
+                    if (ct.refs.items.len > @popCount(ready)) {
+                        for (ct.refs.items[ct.refs.items.len - (ct.refs.items.len - @popCount(ready)) ..]) |ref| {
+                            if (std.mem.indexOfScalar(meta.TypeId, self.ext, ref.tid)) |j| {
+                                ready |= @as(u64, 1) << @as(u6, @intCast((self.ops.len + j)));
+                            }
                         }
                     }
-                },
-                .initializer => |cb| try ct.injector.call(@field(cb[0], cb[1]), .{}),
-                .factory => |cb| target.* = try ct.injector.call(@field(cb[0], cb[1]), .{}),
+                }
+            }
+
+            if (ticks > self.ops.len) {
+                std.log.debug("-- Ext deps:", .{});
+                inline for (self.ext, 0..) |tid, i| {
+                    const x: u8 = if ((ready >> self.ops.len) & (1 << i) != 0) 'x' else ' ';
+                    std.log.debug("[{c}] {s}", .{ x, tid.name });
+                }
+
+                std.log.debug("-- Pending tasks:", .{});
+                inline for (self.ops, 0..) |op, i| {
+                    const x: u8 = if (done & (1 << i) != 0) 'x' else ' ';
+                    std.log.debug("[{c}] {s}", .{ x, comptime op.desc() });
+                }
+
+                @panic("Init failed");
+            }
+        }
+
+        inline for (self.mods, 0..) |M, mid| {
+            if (comptime @sizeOf(M) > 0) {
+                try ct.register(&bundle[mid]);
+            } else {
+                try ct.register(@as(*M, @ptrFromInt(0xaaaaaaaaaaaaaaaa)));
             }
         }
     }
 
     fn compile(comptime mods: []const type) Bundle {
-        var len: usize = 0;
-        for (mods) |M| len += std.meta.fields(M).len;
-        var ops: [len]Op = undefined;
+        var ops: Buf(Op) = .initComptime(64);
+        var ext: Buf(meta.TypeId) = .initComptime(64);
 
         collect(&ops, mods);
-        connect(&ops);
-        reorder(&ops);
-        const copy = ops;
+        connect(ops.items(), &ext);
+        reorder(ops.items());
 
         return .{
             .mods = mods,
-            .ops = &copy,
+            .ops = ops.finish(),
+            .ext = ext.finish(),
         };
     }
 
-    fn collect(ops: []Op, comptime mods: []const type) void {
+    fn collect(ops: *Buf(Op), comptime mods: []const type) void {
         var i: usize = 0;
         for (mods, 0..) |M, mid| {
             for (std.meta.fields(M)) |f| {
@@ -119,7 +181,7 @@ const Bundle = struct {
                     }
                 }
 
-                ops[i] = op;
+                ops.push(op);
                 i += 1;
             }
         }
@@ -142,14 +204,14 @@ const Bundle = struct {
         } else return null;
     }
 
-    fn connect(ops: []Op) void {
+    fn connect(ops: []Op, exts: *Buf(meta.TypeId)) void {
         for (ops) |*op| {
             switch (op.how) {
                 .default => {},
                 .auto => {
                     for (std.meta.fields(op.field.type)) |f| {
                         if (f.default_value_ptr == null) {
-                            markDep(ops, op, f.type);
+                            markDep(ops, exts, op, f.type);
                         }
                     }
                 },
@@ -157,14 +219,14 @@ const Bundle = struct {
                     const params = @typeInfo(@TypeOf(@field(cb[0], cb[1]))).@"fn".params;
 
                     for (params[@intFromBool(tag == .initializer)..]) |p| {
-                        markDep(ops, op, p.type.?);
+                        markDep(ops, exts, op, p.type.?);
                     }
                 },
             }
         }
     }
 
-    fn markDep(ops: []Op, target: *Op, comptime T: type) void {
+    fn markDep(ops: []Op, exts: *Buf(meta.TypeId), target: *Op, comptime T: type) void {
         // Builtins
         if (T == *Container or T == Injector or T == std.mem.Allocator) return;
 
@@ -175,14 +237,15 @@ const Bundle = struct {
             }
         } else {
             if (@typeInfo(T) != .optional) {
-                @compileError("Unknown dependency: " ++ @typeName(T) ++ "\n> " ++ target.desc());
+                target.deps |= 1 << (ops.len + exts.len);
+                exts.push(meta.tid(meta.Deref(T)));
             }
         }
     }
 
     fn reorder(ops: []Op) void {
         var i: usize = 0;
-        var ready: u64 = 0;
+        var ready: u64 = ~@as(u64, 0) >> ops.len; // Ops are pending but everything else is "ready"
 
         while (i < ops.len) {
             for (ops[i..]) |*t| {
@@ -193,11 +256,10 @@ const Bundle = struct {
                     break;
                 }
             } else {
-                // TODO: Consider DAG + stack because then we could also say where the cycle is
                 var dump: []const u8 = "";
                 for (ops[i..]) |op| dump = dump ++ op.desc() ++ "\n";
 
-                @compileError("Cycle or missing dep:\n" ++ dump);
+                @compileError("Cycle detected:\n" ++ dump);
             }
         }
     }
@@ -231,6 +293,28 @@ const Op = struct {
             inline .initializer, .factory => |cb, t| @typeName(cb[0]) ++ "." ++ cb[1] ++ "() [" ++ @tagName(t) ++ "]",
             inline else => |_, t| @tagName(t),
         };
+    }
+
+    fn init(self: Op, ct: *Container, bundle: anytype) !void {
+        const target = &@field(bundle[self.mid], self.field.name);
+        try ct.register(if (comptime meta.isOnePtr(self.field.type)) target.* else target);
+
+        switch (self.how) {
+            .default => target.* = self.field.defaultValue().?,
+            .auto => {
+                if (comptime !meta.isStruct(self.field.type)) @compileError(self.path() ++ ": Only plain structs can be auto-initialized");
+
+                inline for (std.meta.fields(self.field.type)) |f| {
+                    if (f.defaultValue()) |def| {
+                        @field(target, f.name) = ct.injector.find(f.type) orelse def;
+                    } else {
+                        @field(target, f.name) = try ct.injector.get(f.type);
+                    }
+                }
+            },
+            .initializer => |cb| try ct.injector.call(@field(cb[0], cb[1]), .{}),
+            .factory => |cb| target.* = try ct.injector.call(@field(cb[0], cb[1]), .{}),
+        }
     }
 };
 
