@@ -5,6 +5,9 @@ const t = std.testing;
 pub const Ref = struct {
     tid: meta.TypeId,
     ptr: *anyopaque,
+    // TODO: TypeId is align(>1) so maybe we could use the least-significant bit
+    //       BUT I am not sure if that would be safe given how much Zig is
+    //       trying to prevent using @typeName(T).ptr in comptime
     is_const: bool,
 
     pub fn from(ptr: anytype) Ref {
@@ -13,6 +16,10 @@ pub const Ref = struct {
             .ptr = @ptrCast(@constCast(@alignCast(ptr))),
             .is_const = @typeInfo(@TypeOf(ptr)).pointer.is_const,
         };
+    }
+
+    fn match(self: Ref, comptime P: type) bool {
+        return self.tid == meta.tid(meta.Deref(P)) and (!self.is_const or @typeInfo(P).pointer.is_const);
     }
 };
 
@@ -46,7 +53,7 @@ pub const Injector = struct {
         }
 
         for (self.refs) |r| {
-            if (r.tid == meta.tid(meta.Deref(T)) and (!r.is_const or @typeInfo(T).pointer.is_const)) {
+            if (r.match(T)) {
                 return @ptrCast(@constCast(@alignCast(r.ptr)));
             }
         }
@@ -106,7 +113,3 @@ pub const Injector = struct {
         return @call(.auto, fun, args);
     }
 };
-
-fn resolveNull(_: *anyopaque, _: meta.TypeId) ?*anyopaque {
-    return null;
-}
