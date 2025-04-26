@@ -193,7 +193,7 @@ const Bundle = struct {
                 if (d.name.len > 4 and std.mem.startsWith(u8, d.name, "init")) {
                     switch (@typeInfo(@TypeOf(@field(M, d.name)))) {
                         .@"fn" => |f| {
-                            if (meta.Result(@field(M, d.name)) == T or (f.params.len > 0 and f.params[0].type.? == *T)) {
+                            if (meta.Result(@field(M, d.name)) == T or (meta.Result(@field(M, d.name)) == void and f.params.len > 0 and f.params[0].type.? == *T)) {
                                 return .{ M, d.name };
                             }
                         },
