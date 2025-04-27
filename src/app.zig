@@ -18,7 +18,7 @@ pub fn run(comptime App: type) !void {
     defer ct.deinit();
 
     if (ct.injector.find(*Server)) |server| {
-        server.injector = ct.injector;
+        server.injector = &ct.injector;
         try server.start();
     }
 }
