@@ -11,7 +11,7 @@ pub const sax = @import("sax.zig");
 pub const tpl = @import("tpl.zig");
 
 pub const Injector = @import("injector.zig").Injector;
-pub const Module = @import("module.zig").Module;
+pub const Container = @import("container.zig").Container;
 
 pub const Server = @import("server.zig").Server;
 pub const ServerOptions = @import("server.zig").InitOptions;
