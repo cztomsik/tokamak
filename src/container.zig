@@ -141,7 +141,7 @@ const Bundle = struct {
         var ext: Buf(meta.TypeId) = .initComptime(64);
 
         collect(&ops, mods);
-        connect(ops.items(), &ext);
+        markDeps(ops.items(), &ext);
         reorder(ops.items());
 
         return .{
@@ -205,7 +205,7 @@ const Bundle = struct {
         } else return null;
     }
 
-    fn connect(ops: []Op, exts: *Buf(meta.TypeId)) void {
+    fn markDeps(ops: []Op, exts: *Buf(meta.TypeId)) void {
         @setEvalBranchQuota(100 * ops.len);
 
         for (ops) |*op| {
@@ -222,7 +222,7 @@ const Bundle = struct {
                     const params = @typeInfo(@TypeOf(@field(cb[0], cb[1]))).@"fn".params;
 
                     for (params[@intFromBool(tag == .initializer)..]) |p| {
-                        markDep(ops, exts, op, p.type.?);
+                        markDep(ops, exts, op, p.type orelse continue);
                     }
                 },
             }
