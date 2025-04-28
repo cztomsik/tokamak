@@ -52,7 +52,6 @@ pub const Server = struct {
     /// Deinitialize the server.
     pub fn deinit(self: *Server) void {
         self.http.deinit();
-        self.allocator.destroy(self);
     }
 
     /// Start listening for incoming connections.
