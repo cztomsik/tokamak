@@ -1,4 +1,5 @@
 const std = @import("std");
+const tokamak = @import("tokamak");
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
@@ -10,7 +11,10 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
-    exe.root_module.addImport("tokamak", b.dependency("tokamak", .{}).module("tokamak"));
+
+    // Add tokamak
+    tokamak.setup(exe, .{});
+
     b.installArtifact(exe);
 
     const run_cmd = b.addRunArtifact(exe);

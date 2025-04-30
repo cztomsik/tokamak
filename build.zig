@@ -1,6 +1,13 @@
 const std = @import("std");
 const log = std.log.scoped(.tokamak);
 
+pub const SetupOptions = struct {};
+
+pub fn setup(step: *std.Build.Step.Compile, _: SetupOptions) void {
+    const tokamak = step.step.owner.dependencyFromBuildZig(@This(), .{});
+    step.root_module.addImport("tokamak", tokamak.module("tokamak"));
+}
+
 pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
