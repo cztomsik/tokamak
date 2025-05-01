@@ -1,5 +1,13 @@
 # Todo example API
 
+Uses [fridge](https://github.com/cztomsik/fridge) as ORM to persist the data with SQLite3.
+
+Change `sqlite_filename` in [src/main.zig](./src/main.zig) from `:memory:` to e.g. `db.sqlite` to persist the database on disk.
+
+```
+const sqlite_filename = "db.sqlite";
+```
+
 ## Run
 
 ```sh

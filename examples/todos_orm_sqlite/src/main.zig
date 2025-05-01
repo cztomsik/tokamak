@@ -17,13 +17,14 @@ pub const PatchTodoReq = struct {
 pub fn main() !void {
     const stdout = std.io.getStdOut().writer();
     const port = 8080;
+    const sqlite_filename = ":memory:";
     const sqlite_max_worker_count = 4;
 
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
     defer _ = gpa.deinit();
 
-    var pool = try fr.Pool(fr.SQLite3).init(allocator, .{ .max_count = sqlite_max_worker_count }, .{ .filename = ":memory:" });
+    var pool = try fr.Pool(fr.SQLite3).init(allocator, .{ .max_count = sqlite_max_worker_count }, .{ .filename = sqlite_filename });
     defer pool.deinit();
 
     var db = try pool.getSession(allocator);
