@@ -24,8 +24,10 @@ curl -X POST -H "content-type: application/json" \
 http://localhost:8080/todo
 ```
 
+Status: 201
+
 ```json
-{ "id": 1 }
+{ "id": 1, "title": "my todo", "is_done": false }
 ```
 
 ### Read one
@@ -33,6 +35,8 @@ http://localhost:8080/todo
 ```sh
 curl http://localhost:8080/todo/1
 ```
+
+Status: 200
 
 ```json
 { "id": 1, "title": "my todo", "is_done": false }
@@ -43,6 +47,8 @@ curl http://localhost:8080/todo/1
 ```sh
 curl http://localhost:8080/todo
 ```
+
+Status: 200
 
 ```json
 [{ "id": 1, "title": "my todo", "is_done": false }]
@@ -56,6 +62,8 @@ curl -X PUT -H "content-type: application/json" \
 http://localhost:8080/todo/1
 ```
 
+Status: 204
+
 ### Patch one
 
 ```sh
@@ -64,12 +72,12 @@ curl -X PATCH -H "content-type: application/json" \
 http://localhost:8080/todo/1
 ```
 
-```json
-{ "id": 1, "title": "new title only", "is_done": true }
-```
+Status: 204
 
 ### Delete one
 
 ```
 curl -X DELETE http://localhost:8080/todo/1
 ```
+
+Status: 204

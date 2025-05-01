@@ -67,26 +67,28 @@ fn readAll(db: *fr.Session) ![]const Todo {
     return try db.query(Todo).findAll();
 }
 
-fn create(res: *tk.Response, db: *fr.Session, body: Todo) !void {
-    const id = try db.insert(Todo, body);
+fn create(res: *tk.Response, db: *fr.Session, body: Todo) !Todo {
     res.status = 201;
-    try res.json(.{ .id = id }, .{});
+    return try db.query(Todo).insert(body).returning("*").fetchOne(Todo) orelse return error.InternalServerError;
 }
 
-fn update(db: *fr.Session, id: u32, body: Todo) !void {
+fn update(res: *tk.Response, db: *fr.Session, id: u32, body: Todo) !void {
+    res.status = 204;
     return try db.update(Todo, id, body);
 }
 
-fn patch(db: *fr.Session, id: u32, body: PatchTodoReq) !Todo {
+fn patch(res: *tk.Response, db: *fr.Session, id: u32, body: PatchTodoReq) !void {
+    res.status = 204;
     return try patchSetFields(db, Todo, PatchTodoReq, id, body);
 }
 
-fn delete(db: *fr.Session, id: u32) !void {
+fn delete(res: *tk.Response, db: *fr.Session, id: u32) !void {
+    res.status = 204;
     try db.query(Todo).where("id", id).delete().exec();
 }
 
 // helper for updating all fields which are set in the body and not null / undefined
-fn patchSetFields(db: *fr.Session, comptime RowType: type, comptime BodyType: type, id: u32, body: BodyType) !RowType {
+fn patchSetFields(db: *fr.Session, comptime RowType: type, comptime BodyType: type, id: u32, body: BodyType) !void {
     var row = try db.query(RowType).find(id) orelse return error.NotFound;
 
     inline for (
@@ -108,6 +110,4 @@ fn patchSetFields(db: *fr.Session, comptime RowType: type, comptime BodyType: ty
     }
 
     try db.update(RowType, id, row);
-
-    return row;
 }
