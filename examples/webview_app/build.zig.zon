@@ -1,0 +1,20 @@
+.{
+    .name = .webview_app,
+    .version = "0.0.0",
+    .fingerprint = 0x3b5e15b4220a9002,
+    .minimum_zig_version = "0.14.0",
+    .dependencies = .{
+        .tokamak = .{
+            .path = "../..",
+        },
+        .webview = .{
+            .url = "https://github.com/webview/webview/archive/f1a9d6b.tar.gz",
+            .hash = "N-V-__8AAFXpCgDf9CFaoMSic23MgE7_O01X9Nz6JGTh2AY3",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}
