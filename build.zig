@@ -1,10 +1,12 @@
 const std = @import("std");
 const log = std.log.scoped(.tokamak);
 
-pub const SetupOptions = struct {};
+pub const SetupOptions = struct {
+    embed: []const []const u8 = &.{},
+};
 
-pub fn setup(step: *std.Build.Step.Compile, _: SetupOptions) void {
-    const tokamak = step.step.owner.dependencyFromBuildZig(@This(), .{});
+pub fn setup(step: *std.Build.Step.Compile, opts: SetupOptions) void {
+    const tokamak = step.step.owner.dependencyFromBuildZig(@This(), .{ .embed = opts.embed });
     step.root_module.addImport("tokamak", tokamak.module("tokamak"));
 }
 
@@ -32,7 +34,7 @@ pub fn build(b: *std.Build) !void {
 
 // TODO: This is simple and it works, it even recompiles if the files change.
 //       However, it's impossible to control when the files are read. So ie. it
-//       fails for `npm run build`
+//       would fail if we had `npm run build` as a step in the build.zig
 fn embedFiles(b: *std.Build, root: *std.Build.Module, files: []const []const u8) !void {
     const options = b.addOptions();
     root.addOptions("embed", options);

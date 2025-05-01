@@ -220,7 +220,7 @@ Serve static files easily with built-in helpers:
 
 ```zig
 const routes: []const tk.Route = &.{
-    .get("/", tk.static.file("static/index.html")),
+    .get("/", tk.static.file("public/index.html")),
 };
 ```
 
@@ -241,15 +241,18 @@ const routes: []const tk.Route = &.{
 ```
 
 If you want to embed some files into the binary, you can specify such paths to
-the `tokamak` module in your `build.zig` file.
+the `tokamak.setup()` call in your `build.zig` file.
 
 ```zig
-const embed: []const []const u8 = &.{
-    "static/index.html",
-};
+const tokamak = @import("tokamak");
 
-const tokamak = b.dependency("tokamak", .{ .embed = embed });
-exe.root_module.addImport("tokamak", tokamak.module("tokamak"));
+...
+
+tokamak.setup(exe, .{
+    .embed = &.{
+        "public/index.html",
+    },
+});
 ```
 
 In this case, only the files listed in the `embed` array will be embedded into
