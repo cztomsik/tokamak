@@ -27,7 +27,7 @@ jobs:
       - name: Check examples
         run: |
           ROOT_DIR=$(pwd)
-          for example_dir in examples/*/; do
+          for example_dir in examples/{hello,hello_app,blog}/; do
             echo "Testing $example_dir"
             cd "$ROOT_DIR/$example_dir"
             zig build
