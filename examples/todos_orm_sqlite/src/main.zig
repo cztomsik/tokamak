@@ -9,11 +9,6 @@ const Todo = struct {
     is_done: bool = false,
 };
 
-pub const UpdateTodoReq = struct {
-    title: []const u8,
-    is_done: bool,
-};
-
 pub const PatchTodoReq = struct {
     title: ?[]const u8 = null,
     is_done: ?bool = null,
@@ -77,7 +72,7 @@ fn create(res: *tk.Response, db: *fr.Session, body: Todo) !void {
     try res.json(.{ .id = id }, .{});
 }
 
-fn update(db: *fr.Session, id: u32, body: UpdateTodoReq) !void {
+fn update(db: *fr.Session, id: u32, body: Todo) !void {
     return try db.update(Todo, id, body);
 }
 

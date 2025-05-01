@@ -34,7 +34,7 @@ zig build run
 
 ### Update one
 
-`curl -X PUT -H "content-type: application/json" -d '{ "is_done": true, "title": "my todo" }' http://localhost:8080/todo/1`
+`curl -X PUT -H "content-type: application/json" -d '{ "id": 1, "is_done": true, "title": "my todo" }' http://localhost:8080/todo/1`
 
 ### Patch one
 
