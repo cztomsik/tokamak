@@ -36,7 +36,7 @@ pub fn main() !void {
     , .{});
     db.deinit();
 
-    try stdout.print("Starting tokamak on port: http://localhost:{d}\n", .{port});
+    try stdout.print("Starting tokamak on: http://localhost:{d}\n", .{port});
 
     var inj = tk.Injector.init(&.{.ref(&pool)}, null);
     var server = try tk.Server.init(allocator, routes, .{ .injector = &inj, .listen = .{ .port = port } });
@@ -78,7 +78,7 @@ fn delete(db: *fr.Session, id: u32) !void {
 }
 
 // helper for updating all fields which are set in the body / not null
-pub fn updateSetFields(db: *fr.Session, comptime RowType: type, comptime BodyType: type, id: u32, body: BodyType) !RowType {
+fn updateSetFields(db: *fr.Session, comptime RowType: type, comptime BodyType: type, id: u32, body: BodyType) !RowType {
     var row = try db.query(RowType).find(id) orelse return error.NotFound;
 
     inline for (
