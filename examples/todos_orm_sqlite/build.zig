@@ -16,7 +16,7 @@ pub fn build(b: *std.Build) void {
     tokamak.setup(exe, .{});
 
     // Add fridge, use .bundle = false if you want to link system SQLite3
-    const sqlite = b.dependency("fridge", .{ .bundle = false });
+    const sqlite = b.dependency("fridge", .{ .bundle = true });
     exe.root_module.addImport("fridge", sqlite.module("fridge"));
 
     b.installArtifact(exe);
