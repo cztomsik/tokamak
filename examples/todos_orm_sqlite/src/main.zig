@@ -1,6 +1,7 @@
 const std = @import("std");
 const tk = @import("tokamak");
 const fr = @import("fridge");
+const Status = std.http.Status;
 
 const Todo = struct {
     pub const sql_table_name = "todos";
@@ -68,22 +69,22 @@ fn readAll(db: *fr.Session) ![]const Todo {
 }
 
 fn create(res: *tk.Response, db: *fr.Session, body: Todo) !Todo {
-    res.status = 201;
-    return try db.query(Todo).insert(body).returning("*").fetchOne(Todo) orelse return error.InternalServerError;
+    res.status = @intFromEnum(Status.created);
+    return try db.query(Todo).insert(body).returning("*").fetchOne(Todo) orelse error.InternalServerError;
 }
 
 fn update(res: *tk.Response, db: *fr.Session, id: u32, body: Todo) !void {
-    res.status = 204;
+    res.status = @intFromEnum(Status.no_content);
     return try db.update(Todo, id, body);
 }
 
 fn patch(res: *tk.Response, db: *fr.Session, id: u32, body: PatchTodoReq) !void {
-    res.status = 204;
+    res.status = @intFromEnum(Status.no_content);
     return try patchSetFields(db, Todo, PatchTodoReq, id, body);
 }
 
 fn delete(res: *tk.Response, db: *fr.Session, id: u32) !void {
-    res.status = 204;
+    res.status = @intFromEnum(Status.no_content);
     try db.query(Todo).where("id", id).delete().exec();
 }
 
