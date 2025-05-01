@@ -82,15 +82,15 @@ fn update(db: *fr.Session, id: u32, body: UpdateTodoReq) !void {
 }
 
 fn patch(db: *fr.Session, id: u32, body: PatchTodoReq) !Todo {
-    return try updateSetFields(db, Todo, PatchTodoReq, id, body);
+    return try patchSetFields(db, Todo, PatchTodoReq, id, body);
 }
 
 fn delete(db: *fr.Session, id: u32) !void {
     try db.query(Todo).where("id", id).delete().exec();
 }
 
-// helper for updating all fields which are set in the body / not null
-fn updateSetFields(db: *fr.Session, comptime RowType: type, comptime BodyType: type, id: u32, body: BodyType) !RowType {
+// helper for updating all fields which are set in the body and not null / undefined
+fn patchSetFields(db: *fr.Session, comptime RowType: type, comptime BodyType: type, id: u32, body: BodyType) !RowType {
     var row = try db.query(RowType).find(id) orelse return error.NotFound;
 
     inline for (
