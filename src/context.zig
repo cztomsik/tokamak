@@ -112,12 +112,13 @@ pub const Context = struct {
         }
 
         return switch (@TypeOf(res)) {
+            void => self.res.status = 204,
+            std.http.Status => self.res.status = @intFromEnum(res),
             []const u8 => {
                 if (self.res.content_type == null) self.res.content_type = .TEXT;
                 self.res.body = res;
             },
             else => |T| switch (@typeInfo(T)) {
-                .void => return,
                 .error_set => {
                     self.res.status = getErrorStatus(res);
                     try self.send(.{ .@"error" = res });
