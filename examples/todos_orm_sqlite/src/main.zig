@@ -73,18 +73,15 @@ fn create(res: *tk.Response, db: *fr.Session, body: Todo) !Todo {
     return try db.query(Todo).insert(body).returning("*").fetchOne(Todo) orelse error.InternalServerError;
 }
 
-fn update(res: *tk.Response, db: *fr.Session, id: u32, body: Todo) !void {
-    res.status = @intFromEnum(Status.no_content);
+fn update(db: *fr.Session, id: u32, body: Todo) !void {
     return try db.update(Todo, id, body);
 }
 
-fn patch(res: *tk.Response, db: *fr.Session, id: u32, body: PatchTodoReq) !void {
-    res.status = @intFromEnum(Status.no_content);
+fn patch(db: *fr.Session, id: u32, body: PatchTodoReq) !void {
     return try patchSetFields(db, Todo, PatchTodoReq, id, body);
 }
 
-fn delete(res: *tk.Response, db: *fr.Session, id: u32) !void {
-    res.status = @intFromEnum(Status.no_content);
+fn delete(db: *fr.Session, id: u32) !void {
     try db.query(Todo).where("id", id).delete().exec();
 }
 
