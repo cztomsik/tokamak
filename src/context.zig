@@ -112,7 +112,7 @@ pub const Context = struct {
         }
 
         return switch (@TypeOf(res)) {
-            void => self.res.status = 204,
+            void => self.res.status = if (self.res.body.len == 0) 204 else 200,
             std.http.Status => self.res.status = @intFromEnum(res),
             []const u8 => {
                 if (self.res.content_type == null) self.res.content_type = .TEXT;
