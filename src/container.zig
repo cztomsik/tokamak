@@ -127,11 +127,23 @@ const Bundle = struct {
             }
         }
 
+        // Register all the modules too
         inline for (self.mods, 0..) |M, mid| {
             if (comptime @sizeOf(M) > 0) {
                 try ct.register(&bundle[mid]);
             } else {
                 try ct.register(@as(*M, @ptrFromInt(0xaaaaaaaaaaaaaaaa)));
+            }
+        }
+
+        // Every module can define init/deinit hooks
+        inline for (self.mods) |M| {
+            if (std.meta.hasFn(M, "afterBundleInit")) {
+                try ct.injector.call(M.afterBundleInit, .{});
+            }
+
+            if (std.meta.hasFn(M, "beforeBundleDeinit")) {
+                try ct.registerDeinit(M.beforeBundleDeinit);
             }
         }
     }
