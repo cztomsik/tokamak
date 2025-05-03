@@ -1,0 +1,19 @@
+.{
+    .name = .todos_orm_sqlite,
+    .fingerprint = 0x9c89f8b192301741,
+    .version = "0.0.0",
+    .dependencies = .{
+        .tokamak = .{
+            .path = "../..",
+        },
+        .fridge = .{
+            .url = "https://github.com/cztomsik/fridge/archive/refs/heads/main.tar.gz",
+            .hash = "fridge-0.9.5-3GyIikVYAQAo_R8sHa31-wARIkSRO0DQFHdnWENsvY3B",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}
