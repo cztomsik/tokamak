@@ -5,20 +5,38 @@ const Server = @import("server.zig").Server;
 const ServerOptions = @import("server.zig").InitOptions;
 
 const Base = struct {
-    pub fn initServer(allocator: std.mem.Allocator, routes: []const @import("route.zig").Route, options: ?ServerOptions) !Server {
-        return Server.init(allocator, routes, options orelse .{});
+    pub fn initServer(ct: *Container, routes: []const @import("route.zig").Route, options: ?ServerOptions) !Server {
+        var opts: ServerOptions = options orelse .{};
+        opts.injector = &ct.injector;
+
+        return .init(ct.allocator, routes, opts);
     }
 };
 
-pub fn run(comptime App: type) !void {
+pub fn run(comptime mods: []const type) !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
 
-    const ct = try Container.init(gpa.allocator(), &.{ App, Base });
+    try runAlloc(gpa.allocator(), mods);
+}
+
+pub fn runAlloc(allocator: std.mem.Allocator, comptime mods: []const type) !void {
+    const ct = try Container.init(allocator, mods ++ &[_]type{Base});
     defer ct.deinit();
 
+    // Every module can define app init/deinit hooks
+    inline for (mods) |M| {
+        if (std.meta.hasFn(M, "afterAppInit")) {
+            try ct.injector.call(M.afterAppInit, .{});
+        }
+
+        if (std.meta.hasFn(M, "beforeAppDeinit")) {
+            try ct.registerDeinit(M.beforeAppDeinit);
+        }
+    }
+
+    // TODO: I am not very happy about this
     if (ct.injector.find(*Server)) |server| {
-        server.injector = &ct.injector;
         try server.start();
     }
 }
