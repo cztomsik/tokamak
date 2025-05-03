@@ -2,10 +2,10 @@
 
 Uses [fridge](https://github.com/cztomsik/fridge) as ORM to persist the data with SQLite3.
 
-Change `sqlite_filename` in [src/main.zig](./src/main.zig) from `:memory:` to e.g. `db.sqlite` to persist the database on disk.
+Change `App.db_opts.filename` in [src/main.zig](./src/main.zig) from `:memory:` to e.g. `db.sqlite` to persist the database on disk.
 
 ```zig
-const sqlite_filename = "db.sqlite";
+db_opts: fr.SQLite3.Options = .{ .filename = "db.sqlite" },
 ```
 
 ## Run

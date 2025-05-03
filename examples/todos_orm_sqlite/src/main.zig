@@ -15,50 +15,46 @@ pub const PatchTodoReq = struct {
     is_done: ?bool = null,
 };
 
-pub fn main() !void {
-    const stdout = std.io.getStdOut().writer();
-    const port = 8080;
-    const sqlite_filename = ":memory:";
-    const sqlite_max_worker_count = 4;
+const App = struct {
+    db_pool: fr.Pool(fr.SQLite3),
+    db_opts: fr.SQLite3.Options = .{ .filename = ":memory:" },
+    db_pool_opts: fr.PoolOptions = .{ .max_count = 4 },
+    server: tk.Server,
+    server_opts: tk.ServerOptions = .{ .listen = .{ .port = 8080 } },
+    routes: []const tk.Route = &.{
+        // add debug logging
+        tk.logger(.{}, &.{
+            // provide the db session, group endpoints under /todo
+            .provide(fr.Pool(fr.SQLite3).getSession, &.{.group("/todo", &.{
+                .get("/", readAll),
+                .get("/:id", readOne),
+                .post("/", create),
+                .put("/:id", update),
+                .patch("/:id", patch),
+                .delete("/:id", delete),
+            })}),
+        }),
+    },
 
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-    defer _ = gpa.deinit();
+    pub fn afterAppInit(allocator: std.mem.Allocator, db_pool: *fr.Pool(fr.SQLite3), server: *tk.Server) !void {
+        var db = try db_pool.getSession(allocator);
+        defer db.deinit();
 
-    var pool = try fr.Pool(fr.SQLite3).init(allocator, .{ .max_count = sqlite_max_worker_count }, .{ .filename = sqlite_filename });
-    defer pool.deinit();
+        try db.exec(
+            \\ CREATE TABLE IF NOT EXISTS todos (
+            \\   id INTEGER PRIMARY KEY AUTOINCREMENT,
+            \\   title TEXT NOT NULL,
+            \\   is_done BOOLEAN NOT NULL
+            \\ );
+        , .{});
 
-    var db = try pool.getSession(allocator);
-    try db.exec(
-        \\ CREATE TABLE IF NOT EXISTS todos (
-        \\   id INTEGER PRIMARY KEY AUTOINCREMENT,
-        \\   title TEXT NOT NULL,
-        \\   is_done BOOLEAN NOT NULL
-        \\ );
-    , .{});
-    db.deinit();
-
-    try stdout.print("Starting tokamak on: http://localhost:{d}\n", .{port});
-
-    var inj = tk.Injector.init(&.{.ref(&pool)}, null);
-    var server = try tk.Server.init(allocator, routes, .{ .injector = &inj, .listen = .{ .port = port } });
-    try server.start();
-}
-
-const routes: []const tk.Route = &.{
-    // add debug logging
-    tk.logger(.{}, &.{
-        // provide the db session, group endpoints under /todo
-        .provide(fr.Pool(fr.SQLite3).getSession, &.{.group("/todo", &.{
-            .get("/", readAll),
-            .get("/:id", readOne),
-            .post("/", create),
-            .put("/:id", update),
-            .patch("/:id", patch),
-            .delete("/:id", delete),
-        })}),
-    }),
+        std.debug.print("Starting tokamak on: http://localhost:{d}\n", .{server.http.config.port.?});
+    }
 };
+
+pub fn main() !void {
+    try tk.app.run(&.{App});
+}
 
 fn readOne(db: *fr.Session, id: u32) !Todo {
     return try db.query(Todo).find(id) orelse error.NotFound;
