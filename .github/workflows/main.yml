@@ -34,7 +34,11 @@ jobs:
             zig build run &
             SERVER_PID=$!
             sleep 3
-            URL=$([ "$example_dir" == "examples/todos_orm_sqlite/" ] && echo "http://127.0.0.1:8080/todo" || echo "http://127.0.0.1:8080") 
+
+            URL=http://127.0.0.1:8080
+            if [[ "$example_dir" == "examples/todos_orm_sqlite/" ]]; then
+                URL="http://127.0.0.1:8080/todo"
+            fi
             HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" $URL || echo "failed")
             kill -TERM $SERVER_PID 2>/dev/null || true
             
