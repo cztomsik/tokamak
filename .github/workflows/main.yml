@@ -40,7 +40,7 @@ jobs:
                   sleep 1
                   timeout=$((timeout - 1))
                   if [ $timeout -le 0 ]; then
-                      echo "$EXAMPLE_DIR did not start within $timeout seconds."
+                      echo "$EXAMPLE_DIR did not start within 15 seconds."
                       exit 1
                   fi
               done
