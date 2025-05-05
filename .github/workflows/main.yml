@@ -53,7 +53,7 @@ jobs:
               HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" $URL || echo "failed")
 
               echo "Killing process for $example..."
-              pkill $example
+              kill `ps -ef| grep -i $example | grep -v grep | awk '{print $2}'`
               sleep 3
 
               # Check the result
