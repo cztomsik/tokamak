@@ -26,27 +26,35 @@ jobs:
       
       - name: Check examples
         run: |
-          ROOT_DIR=$(pwd)
-          for example_dir in examples/{hello,hello_app,blog,todos_orm_sqlite}/; do
-            echo "Testing $example_dir"
-            cd "$ROOT_DIR/$example_dir"
-            zig build
-            zig build run &
-            SERVER_PID=$!
-            sleep 3
+         ROOT_DIR=$(pwd)
+          for example in {hello,hello_app,blog,todos_orm_sqlite}; do
+              EXAMPLE_DIR="$ROOT_DIR/examples/$example/"
+              echo "Testing $EXAMPLE_DIR"
+              cd "$EXAMPLE_DIR"
 
-            URL=http://127.0.0.1:8080
-            if [[ "$example_dir" == "examples/todos_orm_sqlite/" ]]; then
-                URL="http://127.0.0.1:8080/todo"
-            fi
-            HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" $URL || echo "failed")
-            kill -TERM $SERVER_PID 2>/dev/null || true
-            
-            # Check the result
-            if [[ "$HTTP_STATUS" == "200" ]]; then
-              echo "$example_dir: OK"
-            else
-              echo "$example_dir: Failed with status $HTTP_STATUS"
-              exit 1
-            fi
+              zig build
+              zig build run &
+              until nc -z localhost 8080; do
+                  echo "Waiting for server..."
+                  sleep 1
+              done
+
+              URL="http://127.0.0.1:8080"
+              if [[ "$example" == "todos_orm_sqlite" ]]; then
+                  URL="http://127.0.0.1:8080/todo"
+              fi
+              echo "GET $URL"
+              HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" $URL || echo "failed")
+
+              echo "Killing process for $example..."
+              kill `ps -ef| grep -i $example | grep -v grep | awk '{print $2}'`
+              sleep 3
+
+              # Check the result
+              if [[ "$HTTP_STATUS" == "200" ]]; then
+                  echo "$EXAMPLE_DIR: OK"
+              else
+                  echo "$EXAMPLE_DIR: Failed with status $HTTP_STATUS"
+                  exit 1
+              fi
           done

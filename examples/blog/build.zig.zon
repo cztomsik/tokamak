@@ -1,6 +1,6 @@
 .{
-    .name = .example,
-    .fingerprint = 0x6eec9b9fbe88312b,
+    .name = .blog,
+    .fingerprint = 0xc0155143f78c2d6c,
     .version = "0.0.0",
     .dependencies = .{ .tokamak = .{ .path = "../.." } },
     .paths = .{
