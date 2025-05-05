@@ -33,7 +33,7 @@ jobs:
               cd "$EXAMPLE_DIR"
 
               zig build
-              zig build run &
+              ./zig-out/bin/$example &
               timeout=15
               while ! nc -z 127.0.0.1 8080; do
                   echo "Waiting for server..."
