@@ -27,15 +27,19 @@ jobs:
       - name: Check examples
         run: |
           ROOT_DIR=$(pwd)
-          for example_dir in examples/{hello,hello_app,blog}/; do
+          for example_dir in examples/{hello,hello_app,blog,todos_orm_sqlite}/; do
             echo "Testing $example_dir"
             cd "$ROOT_DIR/$example_dir"
             zig build
             zig build run &
             SERVER_PID=$!
             sleep 3
-            
-            HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8080 || echo "failed")
+
+            URL=http://127.0.0.1:8080
+            if [[ "$example_dir" == "examples/todos_orm_sqlite/" ]]; then
+                URL="http://127.0.0.1:8080/todo"
+            fi
+            HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" $URL || echo "failed")
             kill -TERM $SERVER_PID 2>/dev/null || true
             
             # Check the result
