@@ -26,7 +26,7 @@ jobs:
       
       - name: Check examples
         run: |
-         ROOT_DIR=$(pwd)
+          ROOT_DIR=$(pwd)
           for example in {hello,hello_app,blog,todos_orm_sqlite}; do
               EXAMPLE_DIR="$ROOT_DIR/examples/$example/"
               echo "Testing $EXAMPLE_DIR"
@@ -34,9 +34,15 @@ jobs:
 
               zig build
               zig build run &
-              until nc -z localhost 8080; do
+              timeout=15
+              while ! nc -z 127.0.0.1 8080; do
                   echo "Waiting for server..."
                   sleep 1
+                  timeout=$((timeout - 1))
+                  if [ $timeout -le 0 ]; then
+                      echo "$EXAMPLE_DIR did not start within $timeout seconds."
+                      exit 1
+                  fi
               done
 
               URL="http://127.0.0.1:8080"
@@ -58,3 +64,4 @@ jobs:
                   exit 1
               fi
           done
+
