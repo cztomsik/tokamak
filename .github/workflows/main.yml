@@ -29,7 +29,7 @@ jobs:
           ROOT_DIR=$(pwd)
           for example in {hello,hello_app,blog,todos_orm_sqlite}; do
               EXAMPLE_DIR="$ROOT_DIR/examples/$example/"
-              echo "Testing $EXAMPLE_DIR"
+              echo "Testing $example"
               cd "$EXAMPLE_DIR"
 
               zig build
@@ -58,9 +58,9 @@ jobs:
 
               # Check the result
               if [[ "$HTTP_STATUS" == "200" ]]; then
-                  echo "$EXAMPLE_DIR: OK"
+                  echo "$example: OK"
               else
-                  echo "$EXAMPLE_DIR: Failed with status $HTTP_STATUS"
+                  echo "$example: Failed with status $HTTP_STATUS"
                   exit 1
               fi
           done
