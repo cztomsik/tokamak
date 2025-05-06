@@ -34,6 +34,8 @@ jobs:
 
               zig build
               ./zig-out/bin/$example &
+              SERVER_PID=$!
+              
               timeout=15
               while ! nc -z 127.0.0.1 8080; do
                   echo "Waiting for server..."
@@ -53,8 +55,7 @@ jobs:
               HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" $URL || echo "failed")
 
               echo "Killing process for $example..."
-              kill `ps -ef| grep -i $example | grep -v grep | awk '{print $2}'`
-              sleep 3
+              kill -TERM $SERVER_PID 2>/dev/null || true
 
               # Check the result
               if [[ "$HTTP_STATUS" == "200" ]]; then
