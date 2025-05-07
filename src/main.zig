@@ -5,6 +5,7 @@ pub const app = @import("app.zig");
 pub const config = @import("config.zig");
 pub const cron = @import("cron.zig");
 pub const crypto = @import("crypto.zig");
+pub const csv = @import("csv.zig");
 pub const meta = @import("meta.zig");
 pub const monitor = @import("monitor.zig").monitor;
 pub const sax = @import("sax.zig");
