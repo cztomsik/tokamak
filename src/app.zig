@@ -4,7 +4,7 @@ const Container = @import("container.zig").Container;
 const Server = @import("server.zig").Server;
 const ServerOptions = @import("server.zig").InitOptions;
 
-const Base = struct {
+pub const Base = struct {
     pub fn initServer(ct: *Container, routes: []const @import("route.zig").Route, options: ?ServerOptions) !Server {
         var opts: ServerOptions = options orelse .{};
         opts.injector = &ct.injector;
