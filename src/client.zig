@@ -11,6 +11,7 @@ pub const Options = struct {
     headers: []const std.http.Header = &.{},
     body: ?Body = null,
     max_len: usize = 64 * 1024,
+    // timeout: ?usize = 60, // TODO: given how std.http.Client reads, it's better to wait for async + timers
 };
 
 pub const Body = struct {
@@ -121,7 +122,7 @@ test {
     var server = try tk.Server.init(std.testing.allocator, routes, .{});
     defer server.deinit();
 
-    var thread = try std.Thread.spawn(.{}, tk.Server.start, .{server});
+    var thread = try std.Thread.spawn(.{}, tk.Server.start, .{&server});
     defer thread.join();
     defer server.stop();
 
