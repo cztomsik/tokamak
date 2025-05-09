@@ -1,19 +1,27 @@
 const std = @import("std");
 const httpz = @import("httpz");
 
+// Stand-alone namespaces
 pub const app = @import("app.zig");
+// pub const cdp = @import("cdp.zig");
+// pub const client = @import("client.zig");
 pub const config = @import("config.zig");
-pub const cron = @import("cron.zig");
+// pub const cron = @import("cron.zig");
 pub const crypto = @import("crypto.zig");
 pub const csv = @import("csv.zig");
+pub const event = @import("event.zig");
+// pub const mail = @import("mail.zig");
 pub const meta = @import("meta.zig");
 pub const monitor = @import("monitor.zig").monitor;
+// pub const openai = @import("openai.zig");
 pub const sax = @import("sax.zig");
 pub const tpl = @import("tpl.zig");
 
+// Core types (DI)
 pub const Injector = @import("injector.zig").Injector;
 pub const Container = @import("container.zig").Container;
 
+// Core types (Server)
 pub const Server = @import("server.zig").Server;
 pub const ServerOptions = @import("server.zig").InitOptions;
 pub const ListenOptions = @import("server.zig").ListenOptions;
