@@ -111,22 +111,41 @@ pub const Context = struct {
             return res.sendResponse(self);
         }
 
-        return switch (@TypeOf(res)) {
-            void => self.res.status = if (self.res.body.len == 0) 204 else 200,
-            std.http.Status => self.res.status = @intFromEnum(res),
+        switch (@TypeOf(res)) {
+            void => {
+                self.res.status = if (self.res.body.len == 0) 204 else 200;
+            },
+            std.http.Status => {
+                self.res.status = @intFromEnum(res);
+            },
             []const u8 => {
                 if (self.res.content_type == null) self.res.content_type = .TEXT;
                 self.res.body = res;
             },
-            else => |T| switch (@typeInfo(T)) {
-                .error_set => {
-                    self.res.status = getErrorStatus(res);
-                    try self.send(.{ .@"error" = res });
-                },
-                .error_union => if (res) |r| self.send(r) else |e| self.send(e),
-                else => self.res.json(res, .{}),
+            else => |T| {
+                // Comptime string
+                if (comptime meta.isString(T)) {
+                    return self.send(@as([]const u8, res));
+                }
+
+                switch (@typeInfo(T)) {
+                    .error_set => {
+                        self.res.status = getErrorStatus(res);
+                        try self.send(.{ .@"error" = res });
+                    },
+                    .error_union => {
+                        if (res) |r| {
+                            try self.send(r);
+                        } else |e| {
+                            try self.send(e);
+                        }
+                    },
+                    else => {
+                        try self.res.json(res, .{});
+                    },
+                }
             },
-        };
+        }
     }
 
     /// Redirects the client to a different URL with an optional status code.
