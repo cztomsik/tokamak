@@ -31,7 +31,7 @@ pub const BlogService = struct {
 
     pub fn createPost(self: *BlogService, data: Post) !u32 {
         const post = try dupe(self.posts.allocator, .{
-            .id = self.next.fetchAdd(1, .seq_cst),
+            .id = self.next.fetchAdd(1, .monotonic),
             .title = data.title,
             .body = data.body,
         });
