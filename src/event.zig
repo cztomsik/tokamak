@@ -11,7 +11,7 @@ const Listener = struct {
 };
 
 pub const Bus = struct {
-    mutex: std.Thread.Mutex,
+    mutex: std.Thread.Mutex = .{},
     listeners: std.ArrayList(Listener),
     injector: *Injector,
 
@@ -20,7 +20,6 @@ pub const Bus = struct {
 
     pub fn init(allocator: std.mem.Allocator, injector: *Injector) Bus {
         return .{
-            .mutex = .{},
             .listeners = .init(allocator),
             .injector = injector,
         };
