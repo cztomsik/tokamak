@@ -1,4 +1,6 @@
 const std = @import("std");
+const Queue = @import("queue.zig").Queue;
+const log = std.log.scoped(.cron);
 const time = std.time.timestamp;
 const c = @cImport({
     @cInclude("stdlib.h");
@@ -7,8 +9,7 @@ const c = @cImport({
 
 // TODO: avoid libc
 fn localtime(epoch: i64) std.enums.EnumFieldStruct(std.meta.FieldEnum(Expr), u8, null) {
-    const t = epoch;
-    const tm = c.localtime(&t).*;
+    const tm = c.localtime(&epoch).*;
 
     return .{
         .minute = @intCast(tm.tm_min),
@@ -19,6 +20,114 @@ fn localtime(epoch: i64) std.enums.EnumFieldStruct(std.meta.FieldEnum(Expr), u8,
     };
 }
 
+// pub const Config = struct {
+//     /// How many seconds in the past to start ticking from
+//     catchup_window: i64 = 30,
+// };
+
+pub const Job = struct {
+    name: []const u8,
+    data: []const u8,
+    schedule: Expr,
+    next: i64,
+};
+
+pub const Cron = struct {
+    queue: *Queue,
+    jobs: std.ArrayList(Job),
+    mutex: std.Thread.Mutex = .{},
+    wait: std.Thread.Condition = .{},
+
+    pub fn init(allocator: std.mem.Allocator, queue: *Queue) Cron {
+        return .{
+            .queue = queue,
+            .jobs = .init(allocator),
+        };
+    }
+
+    pub fn deinit(self: *Cron) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        self.jobs.deinit();
+    }
+
+    // TODO: return id
+    pub fn schedule(self: *Cron, name: []const u8, data: []const u8, expr: []const u8) !void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        const exp = try Expr.parse(expr);
+        const next = exp.next(time());
+
+        try self.jobs.append(.{
+            .name = name,
+            .data = data,
+            .schedule = exp,
+            .next = next,
+        });
+    }
+
+    // TODO: unschedule(id)
+
+    pub fn run(self: *Cron) !void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        var step = time(); // - self.config.catchup_window;
+
+        while (step < time()) {
+            log.debug("catching up to {}", .{step});
+            step = try self.tick(step);
+        }
+
+        while (true) {
+            step = try self.tick(step);
+
+            // Wait until the next tick
+            const wait: u64 = @intCast(@max(0, step - time()));
+            log.debug("sleeping for {}", .{wait});
+            self.wait.timedWait(&self.mutex, wait * std.time.ns_per_s) catch break;
+        }
+    }
+
+    pub fn tick(self: *Cron, now: i64) !i64 {
+        var next_tick: i64 = 60;
+
+        for (self.jobs.items) |*job| {
+            if (job.next < now) {
+                var buf: [20]u8 = undefined;
+
+                try self.queue.enqueue(job.name, job.data, .{
+                    .key = std.fmt.bufPrintIntToSlice(&buf, job.next, 10, .lower, .{}),
+                    .schedule_at = job.next,
+                });
+
+                job.next = job.schedule.next(now);
+                next_tick = @min(next_tick, job.next);
+            }
+        }
+
+        return next_tick;
+    }
+};
+
+const t = std.testing;
+
+test Cron {
+    var queue = Queue.init(t.allocator);
+    defer queue.deinit();
+
+    var cron = Cron.init(t.allocator, &queue);
+    defer cron.deinit();
+
+    try cron.schedule("bar", "baz", "* * * * *");
+    try t.expect(cron.jobs.items.len == 1);
+
+    _ = try cron.tick(time() + 60);
+    try t.expect(queue.pending.items.len == 1);
+}
+
 pub const Expr = struct {
     minute: std.StaticBitSet(60), // 0-59
     hour: std.StaticBitSet(24), // 0-23
@@ -27,10 +136,10 @@ pub const Expr = struct {
     weekday: std.StaticBitSet(7), // 0-6
 
     pub fn match(self: *const Expr, epoch: i64) bool {
-        const t = localtime(epoch);
+        const tm = localtime(epoch);
 
         inline for (std.meta.fields(Expr)) |f| {
-            if (!@field(self, f.name).isSet(@field(t, f.name))) {
+            if (!@field(self, f.name).isSet(@field(tm, f.name))) {
                 return false;
             }
         }
