@@ -9,12 +9,7 @@ const Vec = @import("vec.zig").Vec;
 
 pub fn raw(allocator: std.mem.Allocator, comptime template: []const u8, data: anytype) ![]const u8 {
     const tpl = comptime Template.parseComptime(template);
-
-    var buf = std.ArrayList(u8).init(allocator);
-    errdefer buf.deinit();
-
-    try tpl.render(data, buf.writer());
-    return buf.toOwnedSlice();
+    return tpl.renderAlloc(allocator, data);
 }
 
 test raw {
@@ -36,7 +31,7 @@ test raw {
     );
 }
 
-const Template = struct {
+pub const Template = struct {
     tokens: []const Token,
 
     pub fn parse(allocator: std.mem.Allocator, input: []const u8) !Template {
@@ -87,7 +82,15 @@ const Template = struct {
     }
 
     pub fn render(self: *const Template, data: anytype, writer: anytype) !void {
-        try renderPart(self.tokens, .fromStruct(@TypeOf(data), &data), writer);
+        try renderPart(self.tokens, .fromPtr(&data), writer);
+    }
+
+    pub fn renderAlloc(self: *const Template, allocator: std.mem.Allocator, data: anytype) ![]const u8 {
+        var buf = std.ArrayList(u8).init(allocator);
+        errdefer buf.deinit();
+
+        try self.render(data, buf.writer());
+        return buf.toOwnedSlice();
     }
 
     fn renderPart(tokens: []const Token, data: Value, writer: anytype) !void {
@@ -180,11 +183,15 @@ pub const Value = union(enum) {
     fn fromPtr(ptr: anytype) Value {
         const T = @TypeOf(ptr.*);
 
+        if (T == std.json.Value) {
+            return .fromJsonValue(ptr);
+        }
+
         return switch (@typeInfo(T)) {
-            .null => .null,
+            .void, .null => .null,
             .bool => .{ .bool = ptr.* },
             .int, .comptime_int => .{ .int = @intCast(ptr.*) },
-            .float, .comptime_float => .{ .int = @floatCast(ptr.*) },
+            .float, .comptime_float => .{ .float = @floatCast(ptr.*) },
             .optional => if (ptr.*) |*p| .fromPtr(p) else .null,
             .@"struct" => |s| if (s.is_tuple) .fromTuple(T, ptr) else .fromStruct(T, ptr),
             .array => |a| .fromSlice(a.child, ptr),
@@ -255,6 +262,41 @@ pub const Value = union(enum) {
 
         return .{
             .indexable = .{ @ptrCast(items), items.len, &H.get },
+        };
+    }
+
+    fn fromJsonValue(ptr: *const std.json.Value) Value {
+        return switch (ptr.*) {
+            // TODO: .number_string
+            .object => |*v| .fromJsonObject(v),
+            .array => |*v| .fromJsonArray(v),
+            inline else => |*v| .fromPtr(v),
+        };
+    }
+
+    fn fromJsonObject(ptr: *const std.json.ObjectMap) Value {
+        const H = struct {
+            fn resolve(cx: *const anyopaque, name: []const u8) Value {
+                const obj: *const std.json.ObjectMap = @ptrCast(@alignCast(cx));
+                return if (obj.getPtr(name)) |v| .fromJsonValue(v) else .null;
+            }
+        };
+
+        return .{
+            .@"struct" = .{ @ptrCast(ptr), &H.resolve },
+        };
+    }
+
+    fn fromJsonArray(ptr: *const std.json.Array) Value {
+        const H = struct {
+            fn get(cx: *const anyopaque, index: usize) Value {
+                const arr: *const std.json.Array = @ptrCast(@alignCast(cx));
+                return .fromJsonValue(&arr.items[index]);
+            }
+        };
+
+        return .{
+            .indexable = .{ @ptrCast(ptr), ptr.items.len, &H.get },
         };
     }
 
