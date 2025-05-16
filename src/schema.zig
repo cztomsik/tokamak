@@ -10,6 +10,7 @@ pub const Schema = union(enum) {
     object: []const Property,
     array: *const Schema,
     oneOf: []const Schema, // inentional camelCase (ident)
+    tuple: []const Schema,
 
     pub fn forType(comptime T: type) Schema {
         if (comptime meta.hasDecl(T, "jsonSchema")) {
@@ -26,7 +27,13 @@ pub const Schema = union(enum) {
                 .@"enum" => .string,
                 .optional => |o| .{ .oneOf = &.{ .null, Schema.forType(o.child) } },
                 .@"union" => .{ .object = &.{} }, // TODO
-                .@"struct" => .{
+                .@"struct" => |s| if (s.is_tuple) .{ .tuple = comptime brk: {
+                    const fields = std.meta.fields(T);
+                    var kinds: [fields.len]Schema = undefined;
+                    for (fields, 0..) |f, i| kinds[i] = Schema.forType(f.type);
+                    const res = kinds;
+                    break :brk &res;
+                } } else .{
                     .object = comptime brk: {
                         const fields = std.meta.fields(T);
                         var props: [fields.len]Property = undefined;
@@ -52,6 +59,7 @@ pub const Schema = union(enum) {
         switch (self) {
             .oneOf => |schemas| try w.write(.{ .oneOf = schemas }),
             .array => |schema| try w.write(.{ .type = .array, .items = schema }),
+            .tuple => |items| try w.write(.{ .type = .array, .items = items }),
             .object => |props| {
                 try w.beginObject();
 
@@ -78,3 +86,59 @@ pub const Property = struct {
     name: []const u8,
     schema: *const Schema,
 };
+
+fn expectSchema(comptime T: type, schema: Schema) !void {
+    try std.testing.expectEqualDeep(schema, Schema.forType(T));
+}
+
+test "Schema.forType()" {
+    try expectSchema(bool, .boolean);
+    try expectSchema(u32, .integer);
+    try expectSchema(i32, .integer);
+    try expectSchema(f32, .number);
+    try expectSchema([]const u8, .string);
+    try expectSchema(struct { a: u32 }, .{ .object = &.{.{ .name = "a", .schema = &.integer }} });
+    try expectSchema(struct { u32, f32 }, .{ .tuple = &.{ .integer, .number } });
+}
+
+fn expectJsonSchema(comptime T: type, json: []const u8) !void {
+    const fmt = std.json.fmt(Schema.forType(T), .{
+        .whitespace = .indent_2,
+    });
+
+    try std.testing.expectFmt(json, "{}", .{fmt});
+}
+
+test "schema.jsonStringify()" {
+    try expectJsonSchema(u32,
+        \\{
+        \\  "type": "integer"
+        \\}
+    );
+
+    try expectJsonSchema(struct { a: u32 },
+        \\{
+        \\  "type": "object",
+        \\  "properties": {
+        \\    "a": {
+        \\      "type": "integer"
+        \\    }
+        \\  }
+        \\}
+    );
+
+    // TODO: this is from Draft 4 - 2019-09 which is still used a lot
+    try expectJsonSchema(struct { u32, f32 },
+        \\{
+        \\  "type": "array",
+        \\  "items": [
+        \\    {
+        \\      "type": "integer"
+        \\    },
+        \\    {
+        \\      "type": "number"
+        \\    }
+        \\  ]
+        \\}
+    );
+}
