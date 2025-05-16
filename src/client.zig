@@ -11,7 +11,7 @@ pub const Options = struct {
     headers: []const std.http.Header = &.{},
     body: ?Body = null,
     max_len: usize = 64 * 1024,
-    // timeout: ?usize = 60, // TODO: given how std.http.Client reads, it's better to wait for async + timers
+    timeout: ?usize = 60, // TODO: given how std.http.Client reads, it's better to wait for async + timers
 };
 
 pub const Body = struct {
