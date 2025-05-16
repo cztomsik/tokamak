@@ -1,0 +1,15 @@
+.{
+    .name = .hello_ai,
+    .fingerprint = 0xd07b5f8a7c0999c3,
+    .version = "0.0.0",
+    .dependencies = .{
+        .tokamak = .{
+            .path = "../..",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}
