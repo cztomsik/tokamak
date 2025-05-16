@@ -1,4 +1,5 @@
 const std = @import("std");
+const schema = @import("schema.zig");
 const HttpClient = @import("client.zig").HttpClient;
 const Options = @import("client.zig").Options;
 const Response = @import("client.zig").Response;
@@ -13,6 +14,7 @@ pub const Config = struct {
 pub const CompletionReq = struct {
     model: []const u8,
     messages: []const Message,
+    tools: []const Tool = &.{},
     response_format: ?struct {
         type: []const u8,
     } = null,
@@ -22,7 +24,9 @@ pub const CompletionReq = struct {
 
 pub const Message = struct {
     role: []const u8,
-    content: []const u8,
+    content: ?[]const u8,
+    tool_calls: ?[]const ToolCall = null,
+    tool_call_id: ?[]const u8 = null,
 
     pub fn system(content: []const u8) Message {
         return .{ .role = "system", .content = content };
@@ -35,6 +39,50 @@ pub const Message = struct {
     pub fn assistant(content: []const u8) Message {
         return .{ .role = "assistant", .content = content };
     }
+
+    pub fn tool(call_id: []const u8, content: []const u8) Message {
+        return .{ .role = "tool", .content = content, .tool_call_id = call_id };
+    }
+
+    pub fn jsonStringify(self: Message, jws: anytype) !void {
+        // TODO: this is ugly hack but zig only allows omitting null fields, which is not what we want
+        //       (what we want is to omit them only if they also have null as default value)
+        try jws.print("{}", .{std.json.fmt(.{
+            .role = self.role,
+            .content = self.content,
+            .tool_calls = self.tool_calls,
+            .tool_call_id = self.tool_call_id,
+        }, .{ .emit_null_optional_fields = false })});
+    }
+};
+
+pub const Tool = struct {
+    type: []const u8, // "function"
+    function: struct {
+        name: []const u8,
+        description: ?[]const u8,
+        parameters: schema.Schema,
+    },
+
+    pub fn tool(name: []const u8, description: ?[]const u8, comptime Args: type) Tool {
+        return .{
+            .type = "function",
+            .function = .{
+                .name = name,
+                .description = description,
+                .parameters = schema.Schema.forType(Args),
+            },
+        };
+    }
+};
+
+pub const ToolCall = struct {
+    id: []const u8,
+    type: []const u8, // "function"
+    function: struct {
+        name: []const u8,
+        arguments: []const u8, // JSON
+    },
 };
 
 pub const CompletionRes = struct {
@@ -45,7 +93,7 @@ pub const CompletionRes = struct {
     choices: []const struct {
         index: u32,
         message: Message,
-        logprobs: ?struct {},
+        logprobs: struct {} = .{},
         finish_reason: []const u8,
     },
     usage: struct {
@@ -54,6 +102,35 @@ pub const CompletionRes = struct {
         total_tokens: u32,
     },
     system_fingerprint: ?[]const u8,
+
+    pub fn text(self: CompletionRes) ?[]const u8 {
+        for (self.choices) |choice| {
+            if (std.mem.eql(u8, choice.finish_reason, "stop")) {
+                return choice.message.content;
+            }
+        }
+
+        return null;
+    }
+
+    pub fn toolCalls(self: CompletionRes) ?[]const ToolCall {
+        for (self.choices) |choice| {
+            if (std.mem.eql(u8, choice.finish_reason, "tool_calls")) {
+                return choice.message.tool_calls.?;
+            }
+        }
+
+        return null;
+    }
+
+    pub fn json(self: CompletionRes, arena: std.mem.Allocator, comptime T: type) !T {
+        return std.json.parseFromSliceLeaky(
+            T,
+            arena,
+            try self.text(),
+            .{ .ignore_unknown_fields = true },
+        );
+    }
 };
 
 pub const JsonReq = struct {
@@ -113,12 +190,7 @@ pub const Client = struct {
             .temperature = params.temperature,
         });
 
-        return std.json.parseFromSliceLeaky(
-            T,
-            arena,
-            res.choices[0].message.content,
-            .{ .ignore_unknown_fields = true },
-        ) catch |e| {
+        return res.json(T) catch |e| {
             if (e == error.AllocError) {
                 return e;
             }
