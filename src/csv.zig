@@ -11,11 +11,7 @@ pub fn Response(comptime T: type) type {
             const w = Writer.init(ctx.res.writer(), self.options);
             ctx.responded = true;
 
-            try w.writeHeader(T);
-
-            for (self.items) |it| {
-                try w.writeRow(it);
-            }
+            try w.writeAll(T, self.items);
         }
     };
 }
@@ -45,6 +41,14 @@ pub const Writer = struct {
             .inner = inner,
             .options = options,
         };
+    }
+
+    pub fn writeAll(self: *Writer, comptime T: type, items: []const T) !void {
+        try self.writeHeader(T);
+
+        for (items) |it| {
+            try self.writeRow(it);
+        }
     }
 
     pub fn writeHeader(self: *Writer, comptime T: type) !void {
