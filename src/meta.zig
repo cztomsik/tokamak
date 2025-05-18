@@ -66,6 +66,13 @@ pub fn isOnePtr(comptime T: type) bool {
     };
 }
 
+pub fn isSlice(comptime T: type) bool {
+    return switch (@typeInfo(T)) {
+        .pointer => |p| p.size == .slice,
+        else => false,
+    };
+}
+
 pub fn isString(comptime T: type) bool {
     return switch (@typeInfo(T)) {
         .pointer => |ptr| ptr.child == u8 or switch (@typeInfo(ptr.child)) {
