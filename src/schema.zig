@@ -1,6 +1,14 @@
 const std = @import("std");
 const meta = @import("meta.zig");
 
+/// Returns a formatter which will print a JSON-schema for the given type.
+pub fn fmt(comptime T: type) std.json.Formatter(Schema) {
+    return .{
+        .value = .forType(T),
+        .options = .{ .whitespace = .indent_2 },
+    };
+}
+
 pub const Schema = union(enum) {
     null,
     boolean,
@@ -101,12 +109,8 @@ test "Schema.forType()" {
     try expectSchema(struct { u32, f32 }, .{ .tuple = &.{ .integer, .number } });
 }
 
-fn expectJsonSchema(comptime T: type, json: []const u8) !void {
-    const fmt = std.json.fmt(Schema.forType(T), .{
-        .whitespace = .indent_2,
-    });
-
-    try std.testing.expectFmt(json, "{}", .{fmt});
+fn expectJsonSchema(comptime T: type, expected: []const u8) !void {
+    try std.testing.expectFmt(expected, "{}", .{fmt(T)});
 }
 
 test "schema.jsonStringify()" {
