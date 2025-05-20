@@ -76,13 +76,22 @@ pub const Schema = union(enum) {
 
                 try w.objectField("properties");
                 try w.beginObject();
-
                 for (props) |p| {
                     try w.objectField(p.name);
                     try w.write(p.schema);
                 }
-
                 try w.endObject();
+
+                try w.objectField("required");
+                try w.beginArray();
+                for (props) |p| {
+                    try w.write(p.name);
+                }
+                try w.endArray();
+
+                try w.objectField("additionalProperties");
+                try w.write(false);
+
                 try w.endObject();
             },
             inline else => |_, t| try w.write(.{ .type = t }),
@@ -127,7 +136,33 @@ test "schema.jsonStringify()" {
         \\    "a": {
         \\      "type": "integer"
         \\    }
-        \\  }
+        \\  },
+        \\  "required": [
+        \\    "a"
+        \\  ],
+        \\  "additionalProperties": false
+        \\}
+    );
+
+    try expectJsonSchema(struct { a: ?u32 },
+        \\{
+        \\  "type": "object",
+        \\  "properties": {
+        \\    "a": {
+        \\      "oneOf": [
+        \\        {
+        \\          "type": "null"
+        \\        },
+        \\        {
+        \\          "type": "integer"
+        \\        }
+        \\      ]
+        \\    }
+        \\  },
+        \\  "required": [
+        \\    "a"
+        \\  ],
+        \\  "additionalProperties": false
         \\}
     );
 
