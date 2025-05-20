@@ -45,7 +45,7 @@ const App = struct {
         try messages.append(.user("Can you tell how much is 2 * (3 + 4)?"));
 
         for (messages.items) |msg| {
-            std.debug.print("{s}: {s}\n", .{ msg.role, msg.content.? });
+            std.debug.print("{s}: {s}\n", .{ @tagName(msg.role), msg.content.? });
         }
 
         var res = try ai.createCompletion(arena.allocator(), .{
