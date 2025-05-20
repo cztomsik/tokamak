@@ -81,7 +81,7 @@ pub const Template = struct {
         allocator.free(self.tokens);
     }
 
-    pub fn render(self: *const Template, data: anytype, writer: anytype) !void {
+    pub fn render(self: *const Template, data: anytype, writer: std.io.AnyWriter) !void {
         try renderPart(self.tokens, .fromPtr(&data), writer);
     }
 
@@ -89,11 +89,11 @@ pub const Template = struct {
         var buf = std.ArrayList(u8).init(allocator);
         errdefer buf.deinit();
 
-        try self.render(data, buf.writer());
+        try self.render(data, buf.writer().any());
         return buf.toOwnedSlice();
     }
 
-    fn renderPart(tokens: []const Token, data: Value, writer: anytype) !void {
+    fn renderPart(tokens: []const Token, data: Value, writer: std.io.AnyWriter) !void {
         var i: usize = 0;
 
         while (i < tokens.len) {
@@ -145,11 +145,10 @@ pub const Template = struct {
 };
 
 fn expectRender(tpl: Template, data: anytype, expected: []const u8) !void {
-    var buf = std.ArrayList(u8).init(std.testing.allocator);
-    defer buf.deinit();
+    const actual = try tpl.renderAlloc(std.testing.allocator, data);
+    defer std.testing.allocator.free(actual);
 
-    try tpl.render(data, buf.writer());
-    try std.testing.expectEqualStrings(expected, buf.items);
+    try std.testing.expectEqualStrings(expected, actual);
 }
 
 test "Template" {
