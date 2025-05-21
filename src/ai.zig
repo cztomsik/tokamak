@@ -4,7 +4,7 @@ const schema = @import("schema.zig");
 const HttpClient = @import("client.zig").HttpClient;
 const Options = @import("client.zig").Options;
 const Response = @import("client.zig").Response;
-const log = std.log.scoped(.openai);
+const log = std.log.scoped(.ai);
 
 pub const Config = struct {
     base_url: []const u8 = "https://api.openai.com/v1/",

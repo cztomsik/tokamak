@@ -2,6 +2,7 @@ const std = @import("std");
 const httpz = @import("httpz");
 
 // Stand-alone namespaces
+pub const ai = @import("ai.zig");
 pub const app = @import("app.zig");
 // pub const cdp = @import("cdp.zig");
 pub const client = @import("client.zig");
@@ -15,7 +16,6 @@ pub const github = @import("github.zig");
 pub const mem = @import("mem.zig");
 pub const meta = @import("meta.zig");
 pub const monitor = @import("monitor.zig").monitor;
-pub const openai = @import("openai.zig");
 pub const queue = @import("queue.zig");
 pub const sax = @import("sax.zig");
 pub const tpl = @import("tpl.zig");

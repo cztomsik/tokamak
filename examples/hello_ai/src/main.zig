@@ -5,7 +5,7 @@ const tk = @import("tokamak");
 
 const Config = struct {
     client: tk.client.Config = .{},
-    openai: tk.openai.Config = .{
+    ai: tk.ai.Config = .{
         .base_url = "http://localhost:8080/v1/",
     },
 };
@@ -26,16 +26,16 @@ const MathService = struct {
 
 const App = struct {
     client: tk.client.HttpClient,
-    openai: tk.openai.Client,
+    ai: tk.ai.Client,
     math: MathService,
 
-    pub fn hello_ai(gpa: std.mem.Allocator, ai: *tk.openai.Client, math: *MathService) !void {
-        const tools: []const tk.openai.Tool = &.{
+    pub fn hello_ai(gpa: std.mem.Allocator, ai: *tk.ai.Client, math: *MathService) !void {
+        const tools: []const tk.ai.Tool = &.{
             .tool("add", "Add two numbers", struct { i32, i32 }),
             .tool("mul", "Multiply two numbers", struct { i32, i32 }),
         };
 
-        var messages = std.ArrayList(tk.openai.Message).init(gpa);
+        var messages = std.ArrayList(tk.ai.Message).init(gpa);
         defer messages.deinit();
 
         var arena = std.heap.ArenaAllocator.init(gpa);
