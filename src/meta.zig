@@ -44,6 +44,11 @@ pub fn Result(comptime fun: anytype) type {
     };
 }
 
+pub fn LastArg(comptime fun: anytype) type {
+    const params = @typeInfo(@TypeOf(fun)).@"fn".params;
+    return params[params.len - 1].type.?;
+}
+
 pub fn isStruct(comptime T: type) bool {
     return @typeInfo(T) == .@"struct";
 }
