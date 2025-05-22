@@ -88,13 +88,8 @@ const Bundle = struct {
                 if (done & (1 << i) == 0 and op.deps & ready == op.deps) {
                     try op.init(ct, bundle);
 
-                    switch (op.how) {
-                        .auto => {},
-                        else => {
-                            if (comptime std.meta.hasMethod(op.field.type, "deinit")) {
-                                try ct.registerDeinit(meta.Deref(op.field.type).deinit);
-                            }
-                        },
+                    if (comptime std.meta.hasMethod(op.field.type, "deinit")) {
+                        try ct.registerDeinit(meta.Deref(op.field.type).deinit);
                     }
 
                     done |= 1 << i;
