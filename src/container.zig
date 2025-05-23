@@ -118,7 +118,8 @@ const Bundle = struct {
                     std.log.debug("[{c}] {s}", .{ x, comptime op.desc() });
                 }
 
-                @panic("Init failed");
+                // NOTE: Cycles should still be detected in comptime
+                @panic("Init failed (missing ext)");
             }
         }
 
@@ -255,7 +256,7 @@ const Bundle = struct {
 
     fn reorder(ops: []Op) void {
         var i: usize = 0;
-        var ready: u64 = ~@as(u64, 0) >> ops.len; // Ops are pending but everything else is "ready"
+        var ready: u64 = (~@as(u64, 0)) << ops.len; // Ops are pending but everything else is "ready"
 
         while (i < ops.len) {
             for (ops[i..]) |*t| {
@@ -347,6 +348,15 @@ test {
     inline for (b.ops, 0..) |op, i| {
         std.debug.print("{} {s} \n", .{ i, op.path() });
     }
+
+    // This should @compileError:
+    // const Invalid = struct {
+    //     const A = struct { b: *B };
+    //     const B = struct { a: *A };
+    //     a: A,
+    //     b: B,
+    // };
+    // _ = comptime Bundle.compile(&.{Invalid});
 }
 
 test "empty" {
