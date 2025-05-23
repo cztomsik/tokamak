@@ -11,6 +11,7 @@ pub const cron = @import("cron.zig");
 pub const crypto = @import("crypto.zig");
 pub const csv = @import("csv.zig");
 pub const event = @import("event.zig");
+pub const hackernews = @import("hackernews.zig");
 pub const github = @import("github.zig");
 // pub const mail = @import("mail.zig");
 pub const mem = @import("mem.zig");
