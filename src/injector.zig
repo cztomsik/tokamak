@@ -1,6 +1,5 @@
 const std = @import("std");
 const meta = @import("meta.zig");
-const t = std.testing;
 
 pub const Ref = struct {
     tid: meta.TypeId,
@@ -77,17 +76,6 @@ pub const Injector = struct {
         };
     }
 
-    test get {
-        var num: u32 = 123;
-        var inj = Injector.init(&.{.ref(&num)}, null);
-
-        try t.expectEqual(&inj, inj.get(*Injector));
-        try t.expectEqual(&num, inj.get(*u32));
-        try t.expectEqual(@as(*const u32, &num), inj.get(*const u32));
-        try t.expectEqual(123, inj.get(u32));
-        try t.expectEqual(error.MissingDependency, inj.get(u64));
-    }
-
     /// Call a function with dependencies. The `extra_args` tuple is used to
     /// pass additional arguments to the function. Function with anytype can
     /// be called as long as the concrete value is provided in the `extra_args`.
@@ -121,3 +109,14 @@ pub const Injector = struct {
         return @call(.auto, fun, args);
     }
 };
+
+test "basic usage" {
+    var num: u32 = 123;
+    var inj = Injector.init(&.{.ref(&num)}, null);
+
+    try std.testing.expectEqual(&inj, inj.get(*Injector));
+    try std.testing.expectEqual(&num, inj.get(*u32));
+    try std.testing.expectEqual(@as(*const u32, &num), inj.get(*const u32));
+    try std.testing.expectEqual(123, inj.get(u32));
+    try std.testing.expectEqual(error.MissingDependency, inj.get(u64));
+}
