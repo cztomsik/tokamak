@@ -26,8 +26,35 @@ const MathService = struct {
     }
 };
 
+const MailMessage = struct {
+    from: []const u8,
+    title: []const u8,
+    date: []const u8,
+    status: enum { read, unread },
+
+    fn init(from: []const u8, title: []const u8, date: []const u8, read: bool) MailMessage {
+        return .{ .from = from, .title = title, .date = date, .status = if (read) .read else .unread };
+    }
+};
+
+const MailService = struct {
+    const items: []const MailMessage = &.{
+        .init("Sarah Chen", "Project Alpha Kick-off Meeting Notes", "2025-05-25", false),
+        .init("Marketing Team", "Your Monthly Newsletter - May 2025", "2025-05-25", true),
+        .init("DevOps Alerts", "High CPU Usage on Server 1", "2025-05-25", false),
+        .init("Finance Department", "Important: Upcoming Payroll Changes", "2025-05-25", false),
+        .init("Jessica", "Love you", "2025-05-24", true),
+        .init("John Wick", "We need to talk.", "2025-05-24", false),
+    };
+
+    pub fn listMessages(_: *MailService, params: struct { limit: u32 = 10 }) []const MailMessage {
+        return items[0..@min(params.limit, items.len)];
+    }
+};
+
 const App = struct {
     math: MathService,
+    mail: MailService,
     sendmail: tk.sendmail.Sendmail,
     client: tk.client.HttpClient,
     ai_client: tk.ai.Client,
@@ -37,15 +64,21 @@ const App = struct {
     pub fn afterBundleInit(tbox: *tk.ai.AgentToolbox) !void {
         try tbox.addTool("add", "Add two numbers", MathService.add);
         try tbox.addTool("mul", "Multiply two numbers", MathService.mul);
+        try tbox.addTool("checkMailbox", "List email messages (limit = 10)", MailService.listMessages);
         try tbox.addTool("sendMail", "Send email (from can be null)", tk.sendmail.Sendmail.sendMail);
     }
 
     pub fn hello_ai(gpa: std.mem.Allocator, agr: *tk.ai.AgentRuntime) !void {
-        var agent = try agr.createAgent(gpa, .{ .model = "", .tools = &.{ "add", "mul", "sendMail" } });
+        try runAgent(gpa, agr, "Can you tell how much is 12 * (32 + 4) and send the answer to foo@bar.com?", &.{ "add", "mul", "sendMail" });
+        try runAgent(gpa, agr, "Is there anything important in my mailbox? Show me table, sorted on priority", &.{"checkMailbox"});
+    }
+
+    fn runAgent(gpa: std.mem.Allocator, agr: *tk.ai.AgentRuntime, prompt: []const u8, tools: []const []const u8) !void {
+        var agent = try agr.createAgent(gpa, .{ .model = "", .tools = tools });
         defer agent.deinit();
 
         try agent.addMessage(.system("You are a helpful assistant./no_think"));
-        try agent.addMessage(.user("Can you tell how much is 12 * (32 + 4) and send the answer to foo@bar.com?"));
+        try agent.addMessage(.user(prompt));
 
         const res = try agent.run();
         std.debug.print("{s}\n", .{res});
