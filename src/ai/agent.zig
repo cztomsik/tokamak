@@ -173,6 +173,7 @@ pub const AgentRuntime = struct {
         }
 
         return switch (@typeInfo(T)) {
+            .void => "success", // TODO: is this enough encouraging?
             .error_set => self.stringify(arena, .{ .@"error" = res }),
             .error_union => if (res) |r| self.stringify(arena, r) else |e| self.stringify(arena, e),
             else => std.json.stringifyAlloc(arena, res, .{}),
