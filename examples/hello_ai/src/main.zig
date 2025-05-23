@@ -38,7 +38,7 @@ const App = struct {
     }
 
     pub fn hello_ai(gpa: std.mem.Allocator, agr: *tk.ai.AgentRuntime) !void {
-        var agent = try agr.createAgent(gpa, .{ .model = "" });
+        var agent = try agr.createAgent(gpa, .{ .model = "", .tools = &.{ "add", "mul" } });
         defer agent.deinit();
 
         try agent.addMessage(.system("You are a helpful assistant."));
