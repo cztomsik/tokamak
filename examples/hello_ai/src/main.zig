@@ -4,6 +4,7 @@ const std = @import("std");
 const tk = @import("tokamak");
 
 const Config = struct {
+    sendmail: tk.sendmail.Config = .{},
     client: tk.client.Config = .{},
     ai: tk.ai.ClientConfig = .{
         .base_url = "http://localhost:8080/v1/",
@@ -27,6 +28,7 @@ const MathService = struct {
 
 const App = struct {
     math: MathService,
+    sendmail: tk.sendmail.Sendmail,
     client: tk.client.HttpClient,
     ai_client: tk.ai.Client,
     agent_toolbox: tk.ai.AgentToolbox,
@@ -35,14 +37,15 @@ const App = struct {
     pub fn afterBundleInit(tbox: *tk.ai.AgentToolbox) !void {
         try tbox.addTool("add", "Add two numbers", MathService.add);
         try tbox.addTool("mul", "Multiply two numbers", MathService.mul);
+        try tbox.addTool("sendMail", "Send email (from can be null)", tk.sendmail.Sendmail.sendMail);
     }
 
     pub fn hello_ai(gpa: std.mem.Allocator, agr: *tk.ai.AgentRuntime) !void {
-        var agent = try agr.createAgent(gpa, .{ .model = "", .tools = &.{ "add", "mul" } });
+        var agent = try agr.createAgent(gpa, .{ .model = "", .tools = &.{ "add", "mul", "sendMail" } });
         defer agent.deinit();
 
-        try agent.addMessage(.system("You are a helpful assistant."));
-        try agent.addMessage(.user("Can you tell how much is 2 * (3 + 4)?"));
+        try agent.addMessage(.system("You are a helpful assistant./no_think"));
+        try agent.addMessage(.user("Can you tell how much is 12 * (32 + 4) and send the answer to foo@bar.com?"));
 
         const res = try agent.run();
         std.debug.print("{s}\n", .{res});
