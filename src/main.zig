@@ -18,6 +18,7 @@ pub const meta = @import("meta.zig");
 pub const monitor = @import("monitor.zig").monitor;
 pub const queue = @import("queue.zig");
 pub const sax = @import("sax.zig");
+pub const sendmail = @import("sendmail.zig");
 pub const tpl = @import("tpl.zig");
 
 // Core types (DI)
