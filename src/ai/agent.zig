@@ -4,6 +4,7 @@ const event = @import("../event.zig");
 const chat = @import("chat.zig");
 const Injector = @import("../injector.zig").Injector;
 const Client = @import("client.zig").Client;
+const stringifyAlloc = @import("fmt.zig").stringifyAlloc;
 const log = std.log.scoped(.ai_agent);
 
 pub const AgentOptions = struct {
@@ -112,7 +113,7 @@ pub const Agent = struct {
     }
 
     pub fn respond(self: *Agent, tc: chat.ToolCall, res: anytype) !void {
-        const msg = chat.Message.tool(tc.id, try self.runtime.stringify(self.arena, res));
+        const msg = chat.Message.tool(tc.id, try stringifyAlloc(self.arena, res));
         try self.addMessage(msg);
     }
 
@@ -155,43 +156,22 @@ pub const AgentRuntime = struct {
             // TODO: try bus.dispatch(Xxx);
         }
 
-        const res = self.toolbox.execTool(agent, tool.function.name, tool.function.arguments);
-        return try self.stringify(agent.arena, res);
-    }
-
-    // TODO: pluggable formatting?
-    fn stringify(self: *AgentRuntime, arena: std.mem.Allocator, res: anytype) ![]const u8 {
-        // TODO: custom T.xxx() hook
-        const T = @TypeOf(res);
-
-        if (comptime meta.isString(T)) {
-            return res;
-        }
-
-        if (comptime meta.isSlice(T)) {
-            // TODO: markdown table? CSV?
-        }
-
-        return switch (@typeInfo(T)) {
-            .void => "success", // TODO: is this enough encouraging?
-            .error_set => self.stringify(arena, .{ .@"error" = res }),
-            .error_union => if (res) |r| self.stringify(arena, r) else |e| self.stringify(arena, e),
-            else => std.json.stringifyAlloc(arena, res, .{}),
-        };
+        const res = self.toolbox.execTool(agent.arena, tool.function.name, tool.function.arguments);
+        return try stringifyAlloc(agent.arena, res);
     }
 };
 
 pub const AgentTool = struct {
     tool: chat.Tool,
-    handler: *const fn (agent: *Agent, args: []const u8) anyerror![]const u8,
+    handler: *const fn (inj: *Injector, arena: std.mem.Allocator, args: []const u8) anyerror![]const u8,
 
     fn init(comptime name: []const u8, comptime description: []const u8, comptime handler: anytype) AgentTool {
         const H = struct {
-            fn handleTool(agent: *Agent, args: []const u8) anyerror![]const u8 {
-                const arg = try std.json.parseFromSliceLeaky(meta.LastArg(handler), agent.arena, args, .{});
+            fn handleTool(inj: *Injector, arena: std.mem.Allocator, args: []const u8) anyerror![]const u8 {
+                const arg = try std.json.parseFromSliceLeaky(meta.LastArg(handler), arena, args, .{});
 
-                const res = try agent.runtime.toolbox.injector.call(handler, .{arg});
-                return agent.runtime.stringify(agent.arena, res);
+                const res = try inj.call(handler, .{arg});
+                return stringifyAlloc(arena, res);
             }
         };
 
@@ -253,14 +233,14 @@ pub const AgentToolbox = struct {
         return buf.toOwnedSlice();
     }
 
-    fn execTool(self: *AgentToolbox, agent: *Agent, name: []const u8, args: []const u8) ![]const u8 {
+    fn execTool(self: *AgentToolbox, arena: std.mem.Allocator, name: []const u8, args: []const u8) ![]const u8 {
         // NOTE: we assume that tool handlers are always comptime
         //       so we can just copy the pointer and release the lock
         self.mutex.lock();
 
         if (self.tools.get(name)) |tool| {
             self.mutex.unlock();
-            return tool.handler(agent, args);
+            return tool.handler(self.injector, arena, args);
         }
 
         self.mutex.unlock();
@@ -279,8 +259,12 @@ test AgentToolbox {
         }
     };
 
-    const tid = try tbox.addTool("add", "Add two numbers", H.add);
-    defer tbox.removeTool(tid);
+    try tbox.addTool("add", "Add two numbers", H.add);
+    defer _ = tbox.removeTool("add");
 
-    // const res = try tbox.execTool(agent: *Agent, name: []const u8, args: []const u8)
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    const res = try tbox.execTool(arena.allocator(), "add", "{\"a\":1,\"b\":2}");
+    try std.testing.expectEqualStrings("3", res);
 }

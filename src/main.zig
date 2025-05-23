@@ -49,4 +49,5 @@ pub const redirect = Route.redirect;
 
 test {
     std.testing.refAllDecls(@This());
+    std.testing.refAllDecls(ai);
 }
