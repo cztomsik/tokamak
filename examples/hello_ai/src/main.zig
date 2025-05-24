@@ -5,8 +5,8 @@ const tk = @import("tokamak");
 
 const Config = struct {
     sendmail: tk.sendmail.Config = .{},
-    client: tk.client.Config = .{},
-    ai: tk.ai.ClientConfig = .{
+    http_client: tk.http.ClientConfig = .{},
+    ai_client: tk.ai.ClientConfig = .{
         .base_url = "http://localhost:8080/v1/",
     },
 };
@@ -56,7 +56,7 @@ const App = struct {
     math: MathService,
     mail: MailService,
     sendmail: tk.sendmail.Sendmail,
-    client: tk.client.HttpClient,
+    http_client: tk.http.Client,
     ai_client: tk.ai.Client,
     agent_toolbox: tk.ai.AgentToolbox,
     agent_runtime: tk.ai.AgentRuntime,

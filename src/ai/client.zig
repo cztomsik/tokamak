@@ -1,5 +1,5 @@
 const std = @import("std");
-const http = @import("../client.zig");
+const http = @import("../http.zig");
 const chat = @import("chat.zig");
 const embedding = @import("embedding.zig");
 const log = std.log.scoped(.ai_client);
@@ -11,7 +11,7 @@ pub const Config = struct {
 };
 
 pub const Client = struct {
-    client: *http.HttpClient,
+    http_client: *http.Client,
     config: Config,
 
     pub fn createChatCompletion(self: *Client, arena: std.mem.Allocator, params: chat.Request) !chat.Response {
@@ -34,7 +34,7 @@ pub const Client = struct {
         return res.json(embedding.Response);
     }
 
-    fn request(self: *Client, arena: std.mem.Allocator, options: http.Options) !http.Response {
+    fn request(self: *Client, arena: std.mem.Allocator, options: http.RequestOptions) !http.ClientResponse {
         var opts = options;
         opts.base_url = opts.base_url orelse self.config.base_url;
         opts.timeout = opts.timeout orelse self.config.timeout;
@@ -48,6 +48,6 @@ pub const Client = struct {
             };
         }
 
-        return self.client.request(arena, opts);
+        return self.http_client.request(arena, opts);
     }
 };

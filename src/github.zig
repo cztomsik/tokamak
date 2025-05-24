@@ -1,7 +1,5 @@
 const std = @import("std");
-const HttpClient = @import("client.zig").HttpClient;
-const Options = @import("client.zig").Options;
-const Response = @import("client.zig").Response;
+const http = @import("http.zig");
 const log = std.log.scoped(.github);
 
 pub const Config = struct {
@@ -62,7 +60,7 @@ const IssueLabel = struct {
 };
 
 pub const Client = struct {
-    client: *HttpClient,
+    http_client: *http.Client,
     config: Config,
 
     pub fn listRepoIssues(self: *Client, arena: std.mem.Allocator, owner: []const u8, repo: []const u8) ![]const Issue {
@@ -74,7 +72,7 @@ pub const Client = struct {
         return res.json([]const Issue);
     }
 
-    fn request(self: *Client, arena: std.mem.Allocator, options: Options) !Response {
+    fn request(self: *Client, arena: std.mem.Allocator, options: http.RequestOptions) !http.ClientResponse {
         var opts = options;
         opts.base_url = opts.base_url orelse self.config.base_url;
         opts.timeout = opts.timeout orelse self.config.timeout;
@@ -88,6 +86,6 @@ pub const Client = struct {
             };
         }
 
-        return self.client.request(arena, opts);
+        return self.http_client.request(arena, opts);
     }
 };

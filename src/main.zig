@@ -5,13 +5,13 @@ const httpz = @import("httpz");
 pub const ai = @import("ai.zig");
 pub const app = @import("app.zig");
 // pub const cdp = @import("cdp.zig");
-pub const client = @import("client.zig");
 pub const config = @import("config.zig");
 pub const cron = @import("cron.zig");
 pub const crypto = @import("crypto.zig");
 pub const csv = @import("csv.zig");
 pub const event = @import("event.zig");
 pub const hackernews = @import("hackernews.zig");
+pub const http = @import("http.zig");
 pub const github = @import("github.zig");
 // pub const mail = @import("mail.zig");
 pub const mem = @import("mem.zig");
@@ -20,6 +20,7 @@ pub const monitor = @import("monitor.zig").monitor;
 pub const queue = @import("queue.zig");
 pub const sax = @import("sax.zig");
 pub const sendmail = @import("sendmail.zig");
+pub const testing = @import("testing.zig");
 pub const tpl = @import("tpl.zig");
 
 // Core types (DI)
@@ -51,4 +52,5 @@ pub const redirect = Route.redirect;
 test {
     std.testing.refAllDecls(@This());
     std.testing.refAllDecls(ai);
+    std.testing.refAllDecls(http);
 }
