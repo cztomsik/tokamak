@@ -4,21 +4,21 @@ pub const Config = struct {
     base_url: ?[]const u8 = null,
 };
 
-pub const Options = struct {
+pub const ReqOptions = struct {
     base_url: ?[]const u8 = null,
     method: std.http.Method = .GET,
     url: []const u8 = "",
     headers: []const std.http.Header = &.{},
-    body: ?Body = null,
+    body: ?ReqBody = null,
     max_len: usize = 64 * 1024,
     timeout: ?usize = 60, // TODO: given how std.http.Client reads, it's better to wait for async + timers
 };
 
-pub const Body = struct {
+pub const ReqBody = struct {
     ctx: *const anyopaque,
     render: *const fn (ctx: *const anyopaque, writer: std.io.AnyWriter) anyerror!void,
 
-    pub fn json(ptr: anytype) Body {
+    pub fn json(ptr: anytype) ReqBody {
         const H = struct {
             fn stringify(ctx: @TypeOf(ptr), writer: std.io.AnyWriter) anyerror!void {
                 try std.json.stringify(ctx, .{}, writer);
@@ -32,22 +32,22 @@ pub const Body = struct {
     }
 };
 
-pub const HttpClient = struct {
+pub const Client = struct {
     config: Config,
     inner: std.http.Client,
 
-    pub fn init(allocator: std.mem.Allocator, config: Config) !HttpClient {
+    pub fn init(allocator: std.mem.Allocator, config: Config) !Client {
         return .{
             .config = config,
             .inner = .{ .allocator = allocator },
         };
     }
 
-    pub fn deinit(self: *HttpClient) void {
+    pub fn deinit(self: *Client) void {
         self.inner.deinit();
     }
 
-    pub fn request(self: *HttpClient, arena: std.mem.Allocator, options: Options) !Response {
+    pub fn request(self: *Client, arena: std.mem.Allocator, options: ReqOptions) !Response {
         var buf: [4 * 1024]u8 = undefined;
         var remaining: []u8 = &buf;
 
@@ -112,7 +112,7 @@ pub const Response = struct {
 
 // TODO: beforeAll/afterAll?
 test {
-    const tk = @import("main.zig");
+    const tk = @import("../main.zig");
 
     const routes: []const tk.Route = &.{
         .get("/ping", tk.send("pong")),
@@ -126,7 +126,7 @@ test {
     defer thread.join();
     defer server.stop();
 
-    var client = try HttpClient.init(std.testing.allocator, .{ .base_url = "http://localhost:8080/" });
+    var client = try Client.init(std.testing.allocator, .{ .base_url = "http://localhost:8080/" });
     defer client.deinit();
 
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);

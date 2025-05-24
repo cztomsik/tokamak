@@ -1,5 +1,5 @@
 const std = @import("std");
-const HttpClient = @import("client.zig").HttpClient;
+const http = @import("http.zig");
 
 pub const Config = struct {
     base_url: []const u8 = "https://hacker-news.firebaseio.com/v0/",
@@ -21,7 +21,7 @@ pub const Story = struct {
 };
 
 pub const Client = struct {
-    http_client: *HttpClient,
+    http_client: *http.Client,
     config: Config = .{},
 
     pub fn getTopStories(self: *Client, arena: std.mem.Allocator, limit: u9) ![]const Story {
@@ -61,17 +61,18 @@ pub const Client = struct {
     }
 };
 
-// test {
-//     var http_client = try HttpClient.init(std.testing.allocator, .{});
-//     defer http_client.deinit();
+test {
+    // TODO: mock.http() or mock.any()
+    var http_client = try http.Client.init(std.testing.allocator, .{});
+    defer http_client.deinit();
 
-//     var hn_client = Client{ .http_client = &http_client };
+    var hn_client = Client{ .http_client = &http_client };
 
-//     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-//     defer arena.deinit();
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
 
-//     const stories = try hn_client.getTopStories(arena.allocator(), 3);
-//     for (stories) |story| {
-//         std.debug.print("Story: {s}\n", .{story.title orelse ""});
-//     }
-// }
+    const stories = try hn_client.getTopStories(arena.allocator(), 3);
+    for (stories) |story| {
+        std.debug.print("Story: {s}\n", .{story.title orelse ""});
+    }
+}
