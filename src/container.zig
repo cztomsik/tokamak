@@ -105,7 +105,7 @@ const Bundle = struct {
                 }
             }
 
-            if (ticks > self.ops.len) {
+            if (ticks > 2 * self.ops.len) {
                 std.log.debug("-- Ext deps:", .{});
                 inline for (self.ext, 0..) |tid, i| {
                     const x: u8 = if ((ready >> self.ops.len) & (1 << i) != 0) 'x' else ' ';
@@ -150,7 +150,7 @@ const Bundle = struct {
 
         collect(&ops, mods);
         markDeps(ops.items(), &ext);
-        reorder(ops.items());
+        // reorder(ops.items());
 
         return .{
             .mods = mods,
