@@ -2,7 +2,7 @@ const std = @import("std");
 const meta = @import("meta.zig");
 const Injector = @import("injector.zig").Injector;
 const Ref = @import("injector.zig").Ref;
-const Buf = @import("vec.zig").Buf;
+const Buf = @import("util.zig").Buf;
 
 pub const Container = struct {
     allocator: std.mem.Allocator,

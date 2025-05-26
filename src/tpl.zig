@@ -5,7 +5,7 @@
 
 const std = @import("std");
 const meta = @import("meta.zig");
-const Vec = @import("vec.zig").Vec;
+const Buf = @import("util.zig").Buf;
 
 pub fn raw(allocator: std.mem.Allocator, comptime template: []const u8, data: anytype) ![]const u8 {
     const tpl = comptime Template.parseComptime(template);
@@ -39,16 +39,16 @@ pub const Template = struct {
 
         const len, const depth = try tokenizer.count();
 
-        var tokens = try Vec(Token).initCapacity(allocator, len);
-        errdefer tokens.deinit(allocator);
+        var tokens: Buf(Token) = if (@inComptime()) .initComptime(len) else try .initAlloc(allocator, len);
+        errdefer if (!@inComptime()) tokens.deinit(allocator);
 
-        var stack = try Vec(usize).initCapacity(allocator, depth);
-        defer stack.deinit(allocator);
+        var stack: Buf(usize) = if (@inComptime()) .initComptime(depth) else try .initAlloc(allocator, depth);
+        defer if (!@inComptime()) stack.deinit(allocator);
 
         while (tokenizer.next()) |tok| {
             switch (tok) {
                 .section_open => {
-                    stack.push(tokens.i);
+                    stack.push(tokens.len);
                     tokens.push(tok);
                 },
 
@@ -60,7 +60,7 @@ pub const Template = struct {
                         return error.MismatchedSection;
                     }
 
-                    open.outer_len = tokens.i - start;
+                    open.outer_len = tokens.len - start;
                 },
 
                 else => tokens.push(tok),
