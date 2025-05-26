@@ -84,15 +84,15 @@ const Bundle = struct {
         var ticks: usize = 0;
 
         while (@popCount(done) < self.ops.len) : (ticks += 1) {
-            inline for (self.ops, 0..) |op, i| {
-                if (done & (1 << i) == 0 and op.deps & ready == op.deps) {
+            inline for (self.ops) |op| {
+                if (done & (1 << op.id) == 0 and op.deps & ready == op.deps) {
                     try op.init(ct, bundle);
 
                     if (comptime std.meta.hasMethod(op.field.type, "deinit")) {
                         try ct.registerDeinit(meta.Deref(op.field.type).deinit);
                     }
 
-                    done |= 1 << i;
+                    done |= 1 << op.id;
                     ready |= done;
 
                     if (ct.refs.items.len > @popCount(ready)) {
@@ -150,7 +150,7 @@ const Bundle = struct {
 
         collect(&ops, mods);
         markDeps(ops.items(), &ext);
-        // reorder(ops.items());
+        reorder(ops.items());
 
         return .{
             .mods = mods,
