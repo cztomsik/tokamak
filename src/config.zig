@@ -28,7 +28,7 @@ pub fn read(comptime T: type, allocator: std.mem.Allocator, options: ReadOptions
 
 const WriteOptions = struct {
     path: []const u8 = DEFAULT_PATH,
-    cwd: ?std.fw.Dir = null,
+    cwd: ?std.fs.Dir = null,
     stringify: std.json.StringifyOptions = .{ .whitespace = .indent_2 },
 };
 
