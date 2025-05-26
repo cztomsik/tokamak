@@ -9,7 +9,7 @@ const UiOptions = struct {
     url: []const u8,
 };
 
-pub fn ui(options: UiOptions) Route {
+pub fn ui(comptime options: UiOptions) Route {
     const H = struct {
         fn handler(ctx: *Context) anyerror!void {
             const header =
@@ -51,7 +51,7 @@ const SchemaOptions = struct {
     routes: ?[]const Route = null,
 };
 
-pub fn json(options: SchemaOptions) Route {
+pub fn json(comptime options: SchemaOptions) Route {
     const H = struct {
         fn handler(ctx: *Context) anyerror!void {
             var paths: PathMap = .{};
