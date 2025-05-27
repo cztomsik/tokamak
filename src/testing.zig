@@ -1,6 +1,33 @@
 const std = @import("std");
 const http = @import("http.zig");
 
+// pub fn expectTable(items: anytype, comptime expected: []const u8) !void {
+//     _ = .{ items, expected };
+//     return error.NotImplemented;
+
+//     // TODO: parse format from header (first row)
+
+//     // TODO: call debug.printTable() or something like that
+
+//     // TODO: try expectEqualStrings
+// }
+
+// test expectTable {
+//     const Person = struct { name: []const u8, age: u32 };
+
+//     const items: []const Person = &.{
+//         .{ .name = "John", .age = 21 },
+//         .{ .name = "Jane", .age = 23 },
+//     };
+
+//     try expectTable(items,
+//         \\| name | age |
+//         \\|------|-----|
+//         \\| John | 21  |
+//         \\| Jane | 23  |
+//     );
+// }
+
 pub fn httpClient() !struct { http.Client, *MockClientBackend } {
     const http_client = try http.Client.initWithBackend(MockClientBackend, std.testing.allocator, .{});
 
