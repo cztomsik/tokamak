@@ -17,7 +17,7 @@ pub fn SlotMap(comptime T: type) type {
         };
 
         pub const Page = struct {
-            used: u64,
+            used: u64, // bitset
             slots: [64]Slot,
         };
 
@@ -44,11 +44,13 @@ pub fn SlotMap(comptime T: type) type {
 
         pub fn insert(self: *@This(), value: T) !Id {
             for (self.pages, 0..) |*p, pi| {
+                // Skip full
                 if (p.used == ~@as(u64, 0)) continue;
 
                 for (0..64) |si| {
                     const mask = @as(u64, 1) << @as(u6, @intCast(si));
 
+                    // Check if slot is free and not exhausted (gen != 0)
                     if (p.used & mask == 0 and p.slots[si].gen != 0) {
                         p.used |= mask;
                         p.slots[si].value = value;
@@ -79,6 +81,12 @@ pub fn SlotMap(comptime T: type) type {
                     slot.gen +%= 1; // overflow to zero means the slot is exhausted and can't be used anymore
                 }
             }
+        }
+
+        pub fn iter(self: *const @This()) Iterator {
+            return Iterator{
+                .map = self,
+            };
         }
 
         fn findSlot(self: *@This(), index: u32) ?*Slot {
@@ -122,12 +130,12 @@ pub fn Buf(comptime T: type) type {
         buf: []T = &.{},
         len: usize = 0,
 
-        /// Init with already existing slice
+        /// Init with an already existing slice
         pub fn init(buf: []T) @This() {
             return .{ .buf = buf };
         }
 
-        /// Init in comptime (capacity needs to be known in advance)
+        /// Init at comptime (capacity needs to be known in advance)
         pub fn initComptime(comptime capacity: usize) @This() {
             var buf: [capacity]T = undefined;
             return .{ .buf = &buf };
@@ -150,14 +158,14 @@ pub fn Buf(comptime T: type) type {
             self.len += 1;
         }
 
-        /// Remove and return last item.
+        /// Remove and return the last item.
         pub fn pop(self: *@This()) ?T {
             if (self.len == 0) return null;
             self.len -= 1;
             return self.buf[self.len];
         }
 
-        /// Get current slice
+        /// Get the current slice
         pub fn items(self: *@This()) []T {
             return self.buf[0..self.len];
         }
