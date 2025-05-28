@@ -28,6 +28,20 @@ pub fn dupe(allocator: std.mem.Allocator, value: anytype) !@TypeOf(value) {
     };
 }
 
+pub fn free(allocator: std.mem.Allocator, value: anytype) void {
+    switch (@typeInfo(@TypeOf(value))) {
+        .optional => if (value) |v| free(allocator, v),
+        .@"struct" => |s| {
+            inline for (s.fields) |f| free(allocator, @field(value, f.name));
+        },
+        .pointer => |p| switch (p.size) {
+            .slice => if (p.child == u8) allocator.free(value),
+            else => {},
+        },
+        else => {},
+    }
+}
+
 pub fn Return(comptime fun: anytype) type {
     return switch (@typeInfo(@TypeOf(fun))) {
         .@"fn" => |f| f.return_type.?,
