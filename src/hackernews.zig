@@ -71,7 +71,7 @@ test {
     try mock.expectNext("200 GET item/2.json", "{\"id\":2,\"type\":\"ask\",\"by\":\"bar\"}");
     var hn_client = Client{ .http_client = &http_client };
 
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
 
     const stories = try hn_client.getTopStories(arena.allocator(), 3);

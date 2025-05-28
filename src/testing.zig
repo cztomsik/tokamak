@@ -3,6 +3,11 @@ const meta = @import("meta.zig");
 const mem = @import("mem.zig");
 const http = @import("http.zig");
 
+// re-export (without name clashing)
+pub usingnamespace struct {
+    pub const allocator = std.testing.allocator;
+};
+
 // TODO: This is similar to the writeTable() fn in ai/fmt.zig but let's take
 //       this as an opportunity to get the requirements right first
 //       and then maybe it will be easier to come up with good abstraction
@@ -102,29 +107,40 @@ const TableWriter = struct {
         if (self.col > 0) try self.inner.writeAll(" | ");
         defer self.col += 1;
 
-        if (comptime meta.isString(@TypeOf(value))) {
-            if (value.len > width) {
-                try self.inner.writeAll(value[0 .. width - 1]);
-                try self.inner.writeByte('.');
-            } else {
-                try self.inner.writeAll(value[0..@min(value.len, width)]);
-            }
-            if (value.len < width) try self.inner.writeByteNTimes(' ', width - value.len);
+        const chunk = try self.bufPrint(value);
+
+        if (chunk.len > width) {
+            try self.inner.writeAll(chunk[0 .. width - 1]);
+            try self.inner.writeByte('.');
         } else {
-            @memset(self.buf[0..width], ' ');
-            _ = try std.fmt.bufPrint(self.buf, "{}", .{value});
-            try self.inner.writeAll(self.buf[0..width]);
+            try self.inner.writeAll(chunk[0..@min(chunk.len, width)]);
+
+            if (chunk.len < width) {
+                try self.inner.writeByteNTimes(' ', width - chunk.len);
+            }
         }
+    }
+
+    fn bufPrint(self: *TableWriter, value: anytype) ![]const u8 {
+        if (comptime meta.isString(@TypeOf(value))) {
+            return value;
+        }
+
+        return switch (@typeInfo(@TypeOf(value))) {
+            .optional => if (value) |v| self.bufPrint(v) else "",
+            .@"enum" => @tagName(value),
+            else => std.fmt.bufPrint(self.buf, "{}", .{value}),
+        };
     }
 };
 
 test expectTable {
-    const Person = struct { name: []const u8, age: u32, salary: u32 };
+    const Person = struct { name: []const u8, age: u32, salary: ?u32 };
 
     const items: []const Person = &.{
         .{ .name = "John", .age = 21, .salary = 1000 },
         .{ .name = "Jane", .age = 23, .salary = 2000 },
-        .{ .name = "James", .age = 25, .salary = 3000 },
+        .{ .name = "James", .age = 25, .salary = null },
     };
 
     try expectTable(items,
@@ -148,7 +164,7 @@ test expectTable {
         \\|------|--------|
         \\| John | 1000   |
         \\| Jane | 2000   |
-        \\| Jam. | 3000   |
+        \\| Jam. |        |
     );
 }
 

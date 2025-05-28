@@ -71,7 +71,7 @@ test {
 
     var reddit_client = Client{ .http_client = &http_client };
 
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
 
     try mock.expectNext("200 GET r/foo/hot.json?limit=10",
