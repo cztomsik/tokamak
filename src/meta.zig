@@ -42,6 +42,22 @@ pub fn free(allocator: std.mem.Allocator, value: anytype) void {
     }
 }
 
+pub fn upcast(context: anytype, comptime T: type) T {
+    return .{
+        .context = context,
+        .vtable = comptime brk: {
+            const Impl = Deref(@TypeOf(context));
+            var vtable: T.VTable = undefined;
+            for (std.meta.fields(T.VTable)) |f| {
+                @field(vtable, f.name) = @ptrCast(&@field(Impl, f.name));
+            }
+
+            const copy = vtable;
+            break :brk &copy;
+        },
+    };
+}
+
 pub fn Return(comptime fun: anytype) type {
     return switch (@typeInfo(@TypeOf(fun))) {
         .@"fn" => |f| f.return_type.?,

@@ -1,4 +1,5 @@
 const std = @import("std");
+const meta = @import("../meta.zig");
 
 pub const Config = struct {
     base_url: ?[]const u8 = null,
@@ -60,13 +61,7 @@ pub const Client = struct {
 
         return .{
             .config = config,
-            .backend = .{
-                .ctx = @ptrCast(backend),
-                .vtable = &.{
-                    .request = @ptrCast(&B.request),
-                    .deinit = @ptrCast(&B.deinit),
-                },
-            },
+            .backend = meta.upcast(backend, ClientBackend),
         };
     }
 
@@ -83,7 +78,7 @@ pub const Client = struct {
 };
 
 pub const ClientBackend = struct {
-    ctx: *anyopaque,
+    context: *anyopaque,
     vtable: *const VTable,
 
     pub const Error = std.http.Client.ConnectError || std.http.Client.RequestError;
@@ -94,11 +89,11 @@ pub const ClientBackend = struct {
     };
 
     pub fn request(self: *ClientBackend, arena: std.mem.Allocator, options: RequestOptions) !Response {
-        return self.vtable.request(self.ctx, arena, options);
+        return self.vtable.request(self.context, arena, options);
     }
 
     pub fn deinit(self: *ClientBackend) void {
-        self.vtable.deinit(self.ctx);
+        self.vtable.deinit(self.context);
     }
 };
 
@@ -115,15 +110,13 @@ pub const DefaultBackend = struct {
         return self;
     }
 
-    pub fn deinit(cx: *anyopaque) void {
-        const self: *DefaultBackend = @ptrCast(@alignCast(cx));
+    pub fn deinit(self: *DefaultBackend) void {
         const allocator = self.std_client.allocator;
         self.std_client.deinit();
         allocator.destroy(self);
     }
 
-    pub fn request(cx: *anyopaque, arena: std.mem.Allocator, options: RequestOptions) !Response {
-        const self: *DefaultBackend = @ptrCast(@alignCast(cx));
+    pub fn request(self: *DefaultBackend, arena: std.mem.Allocator, options: RequestOptions) !Response {
         var buf: [4 * 1024]u8 = undefined;
         var remaining: []u8 = &buf;
 
