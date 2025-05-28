@@ -21,6 +21,36 @@ pub fn SlotMap(comptime T: type) type {
             slots: [64]Slot,
         };
 
+        pub const Iterator = struct {
+            map: *const SlotMap(T),
+            index: u32 = 0,
+
+            pub const Entry = struct {
+                id: Id,
+                value: *const T,
+            };
+
+            pub fn next(self: *Iterator) ?Entry {
+                for (self.map.pages[(self.index / 64)..]) |*page| {
+                    for ((self.index % 64)..64) |si| {
+                        defer self.index += 1;
+
+                        if (page.used & @as(u64, 1) << @as(u6, @intCast(si)) != 0) {
+                            return .{
+                                .id = .{
+                                    .gen = page.slots[si].gen,
+                                    .index = self.index,
+                                },
+                                .value = &page.slots[si].value,
+                            };
+                        }
+                    } else self.index += 64;
+                }
+
+                return null;
+            }
+        };
+
         pub fn init(pages: []Page) @This() {
             for (pages) |*p| {
                 p.used = 0;
@@ -120,6 +150,12 @@ test SlotMap {
         const id2 = try map.insert(i);
         // Test fails here: attempt to use null
         try std.testing.expectEqual(i, map.find(id2).?.*);
+    }
+
+    var it = map.iter();
+    var j: usize = 0;
+    while (it.next()) |entry| : (j += 1) {
+        try std.testing.expectEqual(j, entry.value.*);
     }
 
     try std.testing.expectError(error.Overflow, map.insert(128));
