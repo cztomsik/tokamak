@@ -68,16 +68,18 @@ test {
 
     try mock.expectNext("200 GET topstories.json", "[1,2]");
     try mock.expectNext("200 GET item/1.json", "{\"id\":1,\"type\":\"story\",\"by\":\"foo\"}");
-    try mock.expectNext("200 GET item/2.json", "{\"id\":1,\"type\":\"ask\",\"by\":\"bar\"}");
+    try mock.expectNext("200 GET item/2.json", "{\"id\":2,\"type\":\"ask\",\"by\":\"bar\"}");
     var hn_client = Client{ .http_client = &http_client };
 
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
 
     const stories = try hn_client.getTopStories(arena.allocator(), 3);
-    try std.testing.expectEqual(2, stories.len);
-    try std.testing.expectEqualStrings("story", stories[0].type);
-    try std.testing.expectEqualStrings("foo", stories[0].by);
-    try std.testing.expectEqualStrings("ask", stories[1].type);
-    try std.testing.expectEqualStrings("bar", stories[1].by);
+
+    try testing.expectTable(stories,
+        \\| id | type  | by   |
+        \\|----|-------|------|
+        \\| 1  | story | foo  |
+        \\| 2  | ask   | bar  |
+    );
 }

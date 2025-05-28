@@ -81,13 +81,25 @@ test {
         \\      {
         \\        "data": {
         \\          "id": "123",
-        \\          "title": "Foo",
-        \\          "author": "bar",
-        \\          "subreddit": "foo",
-        \\          "score": 0,
-        \\          "num_comments": 0,
+        \\          "title": "First",
+        \\          "author": "usr1",
+        \\          "subreddit": "Zig",
+        \\          "score": 1,
+        \\          "num_comments": 123,
         \\          "permalink": "/r/foo/xxx",
         \\          "is_self": true
+        \\        }
+        \\      },
+        \\      {
+        \\        "data": {
+        \\          "id": "456",
+        \\          "title": "Second",
+        \\          "author": "usr2",
+        \\          "subreddit": "Zig",
+        \\          "score": 2,
+        \\          "num_comments": 456,
+        \\          "permalink": "/r/foo/yyy",
+        \\          "is_self": false
         \\        }
         \\      }
         \\    ]
@@ -96,6 +108,10 @@ test {
     );
     const posts = try reddit_client.getHotPosts(arena.allocator(), "foo", 10);
 
-    try std.testing.expectEqual(1, posts.len);
-    try std.testing.expectEqualStrings("123", posts[0].id);
+    try testing.expectTable(posts,
+        \\| id   | title  | author | subreddit | score | num_comments | is_self |
+        \\|------|--------|--------|-----------|-------|--------------|---------|
+        \\| 123  | First  | usr1   | Zig       | 1     | 123          | true    |
+        \\| 456  | Second | usr2   | Zig       | 2     | 456          | false   |
+    );
 }
