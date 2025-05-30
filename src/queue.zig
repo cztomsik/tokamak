@@ -111,11 +111,20 @@ pub const Queue = struct {
     }
 
     pub fn handleSuccess(self: *Queue, id: JobId, res: anytype) !void {
-        return self.backend.handleSuccess(id, res, self.time());
+        var buf: [512]u8 = undefined;
+        var fbs = std.io.fixedBufferStream(&buf);
+        const result_str: []const u8 = switch (@TypeOf(res)) {
+            void => "",
+            else => blk: {
+                try std.json.stringify(res, .{}, fbs.writer());
+                break :blk fbs.getWritten();
+            },
+        };
+        return self.backend.handleResult(id, result_str, self.time());
     }
 
     pub fn handleFailure(self: *Queue, id: JobId, err: anyerror) !void {
-        return self.backend.handleFailure(id, err, self.time());
+        return self.backend.handleResult(id, err, self.time());
     }
 };
 
@@ -133,8 +142,7 @@ pub const QueueBackend = struct {
         startJob: *const fn (context: *anyopaque, id: JobId) Error!bool,
         retryJob: *const fn (context: *anyopaque, id: JobId) Error!void,
         removeJob: *const fn (context: *anyopaque, id: JobId) Error!void,
-        handleSuccess: *const fn (context: *anyopaque, id: JobId, res: []const u8, time: i64) Error!void,
-        handleFailure: *const fn (context: *anyopaque, id: JobId, err: anyerror, time: i64) Error!void,
+        handleResult: *const fn (context: *anyopaque, id: JobId, result: anyerror![]const u8, time: i64) Error!void,
         deinit: *const fn (context: *anyopaque) void,
     };
 
@@ -166,21 +174,8 @@ pub const QueueBackend = struct {
         return self.vtable.removeJob(self.context, id);
     }
 
-    pub fn handleSuccess(self: *QueueBackend, id: JobId, res: anytype, time: i64) !void {
-        var buf: [512]u8 = undefined;
-        var fbs = std.io.fixedBufferStream(&buf);
-        const result_str: []const u8 = switch (@TypeOf(res)) {
-            void => "",
-            else => blk: {
-                try std.json.stringify(res, .{}, fbs.writer());
-                break :blk fbs.getWritten();
-            },
-        };
-        return self.vtable.handleSuccess(self.context, id, result_str, time);
-    }
-
-    pub fn handleFailure(self: *QueueBackend, id: JobId, err: anyerror, time: i64) !void {
-        return self.vtable.handleFailure(self.context, id, err, time);
+    pub fn handleResult(self: *QueueBackend, id: JobId, result: anyerror![]const u8, time: i64) !void {
+        return self.vtable.handleResult(self.context, id, result, time);
     }
 
     pub fn deinit(self: *QueueBackend) void {
@@ -370,7 +365,7 @@ pub const DefaultBackend = struct {
         self.jobs.remove(@bitCast(id));
     }
 
-    pub fn handleSuccess(self: *DefaultBackend, id: JobId, result: []const u8, time: i64) !void {
+    pub fn handleResult(self: *DefaultBackend, id: JobId, result: anyerror![]const u8, time: i64) !void {
         self.mutex.lock();
         defer self.mutex.unlock();
 
@@ -378,52 +373,45 @@ pub const DefaultBackend = struct {
             return error.JobNotFound;
         };
 
-        const new_result = try self.allocator.dupe(u8, result);
-        errdefer self.allocator.free(new_result);
+        if (result) |res| {
+            const new_result = try self.allocator.dupe(u8, res);
+            errdefer self.allocator.free(new_result);
 
-        // Free old
-        if (job.result) |old| {
-            self.allocator.free(old);
-        }
+            // Free old
+            if (job.result) |old| {
+                self.allocator.free(old);
+            }
 
-        job.state = .completed;
-        job.result = new_result;
-        job.@"error" = null;
-        job.completed_at = time;
-    }
-
-    pub fn handleFailure(self: *DefaultBackend, id: JobId, err: anyerror, time: i64) !void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
-
-        const job = self.jobs.find(@bitCast(id)) orelse {
-            return error.JobNotFound;
-        };
-
-        // NOTE: @errorName is static lifetime so we don't need to free old job.error
-        //       BUT we are using meta.free() in deinit() and we MIGHT want to do save/load one day
-        const new_error = try self.allocator.dupe(u8, @errorName(err));
-        errdefer self.allocator.free(new_error);
-
-        // Free old
-        if (job.@"error") |old_error| {
-            self.allocator.free(old_error);
-        }
-
-        if (job.attempts >= job.max_attempts) {
-            job.state = .failed;
-            job.@"error" = new_error;
+            job.state = .completed;
+            job.result = new_result;
+            job.@"error" = null;
             job.completed_at = time;
-        } else {
-            job.state = .pending;
-            job.@"error" = new_error;
-            job.scheduled_at = time + std.math.pow(i64, 2, job.attempts) * 60; // exponential backoff
+        } else |err| {
+            // NOTE: @errorName is static lifetime so we don't need to free old job.error
+            //       BUT we are using meta.free() in deinit() and we MIGHT want to do save/load one day
+            const new_error = try self.allocator.dupe(u8, @errorName(err));
+            errdefer self.allocator.free(new_error);
 
-            // Re-submit
-            try self.upcoming.add(.{
-                .id = id,
-                .scheduled_at = job.scheduled_at,
-            });
+            // Free old
+            if (job.@"error") |old_error| {
+                self.allocator.free(old_error);
+            }
+
+            if (job.attempts >= job.max_attempts) {
+                job.state = .failed;
+                job.@"error" = new_error;
+                job.completed_at = time;
+            } else {
+                job.state = .pending;
+                job.@"error" = new_error;
+                job.scheduled_at = time + std.math.pow(i64, 2, job.attempts) * 60; // exponential backoff
+
+                // Re-submit
+                try self.upcoming.add(.{
+                    .id = id,
+                    .scheduled_at = job.scheduled_at,
+                });
+            }
         }
     }
 
