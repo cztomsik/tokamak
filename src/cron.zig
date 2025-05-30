@@ -1,7 +1,7 @@
 const std = @import("std");
+const testing = @import("testing.zig");
 const Queue = @import("queue.zig").Queue;
 const log = std.log.scoped(.cron);
-const time = std.time.timestamp;
 const c = @cImport({
     @cInclude("stdlib.h");
     @cInclude("time.h");
@@ -35,6 +35,7 @@ pub const Job = struct {
 pub const Cron = struct {
     queue: *Queue,
     jobs: std.ArrayList(Job),
+    time: *const fn () i64 = std.time.timestamp,
     mutex: std.Thread.Mutex = .{},
     wait: std.Thread.Condition = .{},
 
@@ -58,7 +59,7 @@ pub const Cron = struct {
         defer self.mutex.unlock();
 
         const exp = try Expr.parse(expr);
-        const next = exp.next(time());
+        const next = exp.next(self.time());
 
         try self.jobs.append(.{
             .name = name,
@@ -74,9 +75,9 @@ pub const Cron = struct {
         self.mutex.lock();
         defer self.mutex.unlock();
 
-        var step = time(); // - self.config.catchup_window;
+        var step = self.time(); // - self.config.catchup_window;
 
-        while (step < time()) {
+        while (step < self.time()) {
             log.debug("catching up to {}", .{step});
             step = try self.tick(step);
         }
@@ -85,7 +86,7 @@ pub const Cron = struct {
             step = try self.tick(step);
 
             // Wait until the next tick
-            const wait: u64 = @intCast(@max(0, step - time()));
+            const wait: u64 = @intCast(@max(0, step - self.time()));
             log.debug("sleeping for {}", .{wait});
             self.wait.timedWait(&self.mutex, wait * std.time.ns_per_s) catch break;
         }
@@ -95,10 +96,10 @@ pub const Cron = struct {
         var next_tick: i64 = 60;
 
         for (self.jobs.items) |*job| {
-            if (job.next < now) {
+            if (job.next <= now) {
                 var buf: [20]u8 = undefined;
 
-                try self.queue.enqueue(job.name, job.data, .{
+                _ = try self.queue.enqueue(job.name, job.data, .{
                     .key = std.fmt.bufPrintIntToSlice(&buf, job.next, 10, .lower, .{}),
                     .schedule_at = job.next,
                 });
@@ -112,20 +113,43 @@ pub const Cron = struct {
     }
 };
 
-const t = std.testing;
-
 test Cron {
-    var queue = Queue.init(t.allocator);
+    var queue = try Queue.init(testing.allocator);
     defer queue.deinit();
 
-    var cron = Cron.init(t.allocator, &queue);
+    var cron = Cron.init(testing.allocator, &queue);
     defer cron.deinit();
 
-    try cron.schedule("bar", "baz", "* * * * *");
-    try t.expect(cron.jobs.items.len == 1);
+    testing.time.value = 0;
+    cron.time = &testing.time.get;
 
-    _ = try cron.tick(time() + 60);
-    try t.expect(queue.pending.items.len == 1);
+    // Only used for listing
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    try cron.schedule("bar", "baz", "* * * * *");
+
+    try testing.expectTable(try queue.getAllJobs(arena.allocator()),
+        \\| name | key | state   |
+        \\|------|-----|---------|
+    );
+
+    _ = try cron.tick(60);
+
+    try testing.expectTable(try queue.getAllJobs(arena.allocator()),
+        \\| name | key | state   |
+        \\|------|-----|---------|
+        \\| bar  | 60  | pending |
+    );
+
+    _ = try cron.tick(120);
+
+    try testing.expectTable(try queue.getAllJobs(arena.allocator()),
+        \\| name | key | state   |
+        \\|------|-----|---------|
+        \\| bar  | 60  | pending |
+        \\| bar  | 120 | pending |
+    );
 }
 
 pub const Expr = struct {
@@ -265,7 +289,7 @@ test "expr.match()" {
     try expectMatch("* * * * *", .{
         .{ 0, true },
         .{ 60, true },
-        .{ time(), true },
+        .{ std.time.timestamp(), true },
     });
 
     try expectMatch("*/5 * * * *", .{
