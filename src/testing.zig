@@ -8,6 +8,14 @@ pub usingnamespace struct {
     pub const allocator = std.testing.allocator;
 };
 
+pub const time = struct {
+    pub var value: i64 = 0;
+
+    pub fn get() i64 {
+        return value;
+    }
+};
+
 // TODO: This is similar to the writeTable() fn in ai/fmt.zig but let's take
 //       this as an opportunity to get the requirements right first
 //       and then maybe it will be easier to come up with good abstraction
