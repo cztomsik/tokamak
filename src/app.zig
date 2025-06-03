@@ -14,13 +14,13 @@ pub const Base = struct {
 };
 
 pub fn run(comptime mods: []const type) !void {
-    const base_allocator, const is_debug = switch (@import("builtin").mode) {
+    var base_allocator, const is_debug = switch (@import("builtin").mode) {
         .Debug => .{ std.heap.DebugAllocator(.{}).init, true },
         else => .{ std.heap.ArenaAllocator.init(std.heap.page_allocator), false },
     };
     defer if (is_debug) {
         const leaked = base_allocator.deinit();
-        if (leaked) std.log.debug("Memory leak is detected", .{});
+        if (leaked == .leak) std.log.debug("Memory leak is detected", .{});
     } else {
         base_allocator.deinit();
     };
