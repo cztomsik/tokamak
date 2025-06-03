@@ -31,8 +31,10 @@ pub fn run(comptime mods: []const type) !void {
 pub fn runAlloc(allocator: std.mem.Allocator, comptime mods: []const type) !void {
     const ct = try Container.init(allocator, mods ++ &[_]type{Base});
     defer ct.deinit();
+    // TODO: I am not very happy about this
+    const server = ct.injector.find(*Server) orelse @panic("Cannot found httpz.Server");
 
-    // Every module can define app init/deinit hooks
+    // Every module can define app init/deinit, errorHandler hooks
     inline for (mods) |M| {
         if (std.meta.hasFn(M, "afterAppInit")) {
             try ct.injector.call(M.afterAppInit, .{});
@@ -41,10 +43,11 @@ pub fn runAlloc(allocator: std.mem.Allocator, comptime mods: []const type) !void
         if (std.meta.hasFn(M, "beforeAppDeinit")) {
             try ct.registerDeinit(M.beforeAppDeinit);
         }
+
+        if (std.meta.hasFn(M, "errorHandler") and M != Base) {
+            server.error_handler = &M.errorHandler;
+        }
     }
 
-    // TODO: I am not very happy about this
-    if (ct.injector.find(*Server)) |server| {
-        try server.start();
-    }
+    try server.start();
 }
