@@ -128,8 +128,12 @@ pub const Context = struct {
                     return self.send(@as([]const u8, res));
                 }
 
+                // TODO: return error for handle function
                 switch (@typeInfo(T)) {
                     .error_set => {
+                        if (self.server.error_handler) |handler| {
+                            return try handler(self, res);
+                        }
                         self.res.status = getErrorStatus(res);
                         try self.send(.{ .@"error" = res });
                     },
@@ -137,6 +141,9 @@ pub const Context = struct {
                         if (res) |r| {
                             try self.send(r);
                         } else |e| {
+                            if (self.server.error_handler) |handler| {
+                                return try handler(self, e);
+                            }
                             try self.send(e);
                         }
                     },

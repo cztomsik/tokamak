@@ -6,6 +6,7 @@ const Route = @import("route.zig").Route;
 
 pub const InitOptions = struct {
     listen: ListenOptions = .{},
+    error_handler: ?*const fn (ctx: *Context, err: anyerror) anyerror!void = null,
     injector: ?*Injector = null,
     workers: httpz.Config.Worker = .{},
     request: httpz.Config.Request = .{},
@@ -24,6 +25,7 @@ pub const ListenOptions = struct {
 pub const Server = struct {
     allocator: std.mem.Allocator,
     routes: []const Route,
+    error_handler: ?*const fn (ctx: *Context, err: anyerror) anyerror!void,
     injector: ?*Injector,
     http: httpz.Server(Adapter),
 
@@ -45,6 +47,7 @@ pub const Server = struct {
             .allocator = allocator,
             .routes = routes,
             .injector = options.injector,
+            .error_handler = options.error_handler,
             .http = http,
         };
     }
