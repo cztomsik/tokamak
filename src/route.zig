@@ -46,6 +46,7 @@ pub const Route = struct {
     pub fn provide(comptime fac: anytype, children: []const Route) Route {
         const H = struct {
             fn handleProvide(ctx: *Context) anyerror!void {
+                if (@TypeOf(fac) == void) @panic("The given factory cannot return `void`");
                 var child = .{try ctx.injector.call(fac, .{})};
                 defer if (comptime std.meta.hasMethod(@TypeOf(child[0]), "deinit")) child[0].deinit();
 
