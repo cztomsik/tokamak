@@ -307,7 +307,7 @@ const Op = struct {
     }
 
     fn init(self: Op, ct: *Container, bundle: anytype) !void {
-        const target = &@field(bundle[self.mid], self.field.name);
+        const target: *self.field.type = if (comptime @sizeOf(self.field.type) > 0) &@field(bundle[self.mid], self.field.name) else @ptrFromInt(0xaaaaaaaaaaaaaaaa);
         try ct.register(if (comptime meta.isOnePtr(self.field.type)) target.* else target);
 
         switch (self.how) {
