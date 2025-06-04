@@ -106,16 +106,16 @@ const Bundle = struct {
             }
 
             if (ticks > 2 * self.ops.len) {
-                std.log.debug("-- Ext deps:", .{});
+                std.debug.print("-- Ext deps:\n", .{});
                 inline for (self.ext, 0..) |tid, i| {
                     const x: u8 = if ((ready >> self.ops.len) & (1 << i) != 0) 'x' else ' ';
-                    std.log.debug("[{c}] {s}", .{ x, tid.name });
+                    std.debug.print("[{c}] {s}\n", .{ x, tid.name });
                 }
 
-                std.log.debug("-- Pending tasks:", .{});
+                std.debug.print("-- Pending tasks:\n", .{});
                 inline for (self.ops, 0..) |op, i| {
                     const x: u8 = if (done & (1 << i) != 0) 'x' else ' ';
-                    std.log.debug("[{c}] {s}", .{ x, comptime op.desc() });
+                    std.debug.print("[{c}] {s}\n", .{ x, comptime op.desc() });
                 }
 
                 // NOTE: Cycles should still be detected in comptime
@@ -307,7 +307,7 @@ const Op = struct {
     }
 
     fn init(self: Op, ct: *Container, bundle: anytype) !void {
-        const target = &@field(bundle[self.mid], self.field.name);
+        const target: *self.field.type = if (comptime @sizeOf(self.field.type) > 0) &@field(bundle[self.mid], self.field.name) else @ptrFromInt(0xaaaaaaaaaaaaaaaa);
         try ct.register(if (comptime meta.isOnePtr(self.field.type)) target.* else target);
 
         switch (self.how) {
