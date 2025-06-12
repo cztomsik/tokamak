@@ -39,7 +39,9 @@ pub const Handler = @import("context.zig").Handler;
 pub const EventStream = @import("context.zig").EventStream;
 pub const Schema = @import("schema.zig").Schema;
 pub const Request = httpz.Request;
+pub const RequestBody = http.RequestBody;
 pub const Response = httpz.Response;
+
 pub const MultiFormData = httpz.key_value.MultiFormKeyValue;
 pub const FormData = httpz.key_value.StringKeyValue;
 
