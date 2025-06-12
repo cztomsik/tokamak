@@ -201,6 +201,19 @@ pub fn Buf(comptime T: type) type {
             return self.buf[self.len];
         }
 
+        pub fn insert(self: *@This(), index: usize, item: T) void {
+            self.insertSlice(index, &.{item});
+        }
+
+        pub fn insertSlice(self: *@This(), index: usize, slice: []const T) void {
+            std.debug.assert(index < self.len);
+            std.debug.assert(self.buf.len >= self.len + slice.len);
+
+            std.mem.copyBackwards(T, self.buf[index + slice.len ..], self.items()[index..]);
+            @memcpy(self.buf[index .. index + slice.len], slice);
+            self.len += slice.len;
+        }
+
         /// Get the current slice
         pub fn items(self: *@This()) []T {
             return self.buf[0..self.len];
@@ -217,4 +230,17 @@ pub fn Buf(comptime T: type) type {
             }
         }
     };
+}
+
+test Buf {
+    var buf = try Buf(u8).initAlloc(std.testing.allocator, 7);
+    defer buf.deinit(std.testing.allocator);
+
+    buf.push(0);
+    buf.insertSlice(0, &.{ 1, 2 });
+    buf.push(3);
+    buf.insertSlice(buf.len - 1, &.{ 4, 5 });
+    buf.insert(2, 6);
+
+    try std.testing.expectEqualSlices(u8, &.{ 1, 2, 6, 0, 4, 5, 3 }, buf.items());
 }
