@@ -125,10 +125,18 @@ pub const DefaultBackend = struct {
             options.url,
             &remaining,
         );
+        const content_type: ?[]const u8 = blk: {
+            const headers = options.headers;
+            if (headers.len == 0) break :blk null;
+            for (headers) |h| {
+                if (std.mem.eql(u8, h.name, "Content-Type")) break :blk h.value;
+            }
+            break :blk null;
+        };
 
         var req = try self.std_client.open(options.method, url, .{
             .headers = .{
-                .content_type = .{ .override = "application/json" },
+                .content_type = .{ .override = content_type orelse "application/json" },
             },
             .extra_headers = options.headers,
             .server_header_buffer = remaining,
