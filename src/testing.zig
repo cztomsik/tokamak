@@ -16,6 +16,15 @@ pub const time = struct {
     }
 };
 
+/// Attempts to print `arg` into a buf and then compare those strings.
+pub fn expectFmt(arg: anytype, expected: []const u8) !void {
+    var buf = try std.ArrayList(u8).initCapacity(std.testing.allocator, 64);
+    defer buf.deinit();
+
+    try buf.writer().print("{}", .{arg});
+    try std.testing.expectEqualStrings(expected, buf.items);
+}
+
 // TODO: This is similar to the writeTable() fn in ai/fmt.zig but let's take
 //       this as an opportunity to get the requirements right first
 //       and then maybe it will be easier to come up with good abstraction
