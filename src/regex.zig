@@ -178,7 +178,134 @@ fn recursive(pc: [*]const Op, text: []const u8, sp: usize) bool {
 //     while (pos < text.len) {}
 // }
 
-const expect = std.testing.expect;
+fn expectCompile(regex: []const u8, expected: []const u8) !void {
+    var buf = std.ArrayList(u8).init(std.testing.allocator);
+    var w = buf.writer();
+    defer buf.deinit();
+
+    var r = try Regex.compile(std.testing.allocator, regex);
+    defer r.deinit(std.testing.allocator);
+
+    var pc: [*]const Op = r.code.ptr;
+    const end = pc + r.code.len;
+
+    while (pc != end) {
+        const i = pc - r.code.ptr;
+
+        if (i > 0) {
+            try w.writeByte('\n');
+        }
+
+        try w.print("{d:>3}: {s}", .{ i, @tagName(pc[0]) });
+
+        switch (pc[0]) {
+            .char => try w.print(" {c}", .{
+                @as(u8, @intCast(decode(pc + 1))),
+            }),
+            .jmp => try w.print(" :{d}", .{
+                @as(i32, @intCast(i)) + decode(pc + 1) + 1, // relative to itself
+            }),
+            .split => try w.print(" :{d} :{d}", .{
+                @as(i32, @intCast(i)) + decode(pc + 1) + 1, // relative to itself
+                @as(i32, @intCast(i)) + decode(pc + 2) + 2, // relative to itself
+            }),
+            else => {},
+        }
+
+        pc += switch (pc[0]) {
+            .split => 3,
+            .char, .jmp => 2,
+            else => 1,
+        };
+    }
+
+    try std.testing.expectEqualStrings(expected, buf.items);
+}
+
+test "Regex.compile()" {
+    try expectCompile("", "  0: match");
+
+    try expectCompile("abc",
+        \\  0: char a
+        \\  2: char b
+        \\  4: char c
+        \\  6: match
+    );
+
+    try expectCompile("a.c",
+        \\  0: char a
+        \\  2: any
+        \\  3: char c
+        \\  5: match
+    );
+
+    try expectCompile("a?c",
+        \\  0: split :3 :5
+        \\  3: char a
+        \\  5: char c
+        \\  7: match
+    );
+
+    try expectCompile("ab?c",
+        \\  0: char a
+        \\  2: split :5 :7
+        \\  5: char b
+        \\  7: char c
+        \\  9: match
+    );
+
+    try expectCompile("a+b",
+        \\  0: char a
+        \\  2: split :0 :5
+        \\  5: char b
+        \\  7: match
+    );
+
+    try expectCompile("a*b",
+        \\  0: split :3 :7
+        \\  3: char a
+        \\  5: jmp :0
+        \\  7: char b
+        \\  9: match
+    );
+
+    try expectCompile("a|b",
+        \\  0: split :3 :7
+        \\  3: char a
+        \\  5: jmp :9
+        \\  7: char b
+        \\  9: match
+    );
+
+    try expectCompile("a|b|c",
+        \\  0: split :3 :7
+        \\  3: char a
+        \\  5: jmp :12
+        \\  7: split :10 :14
+        \\ 10: char b
+        \\ 12: jmp :16
+        \\ 14: char c
+        \\ 16: match
+    );
+
+    try expectCompile("(ab)?de",
+        \\  0: split :3 :7
+        \\  3: char a
+        \\  5: char b
+        \\  7: char d
+        \\  9: char e
+        \\ 11: match
+    );
+
+    try expectCompile("(ab)+de",
+        \\  0: char a
+        \\  2: char b
+        \\  4: split :0 :7
+        \\  7: char d
+        \\  9: char e
+        \\ 11: match
+    );
+}
 
 fn expectMatch(regex: []const u8, text: []const u8, expected: bool) !void {
     std.debug.print("--- {s} --- {s}\n", .{ regex, text });
