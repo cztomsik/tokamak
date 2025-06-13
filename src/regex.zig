@@ -1,3 +1,4 @@
+const builtin = @import("builtin");
 const std = @import("std");
 const Buf = @import("util.zig").Buf;
 
@@ -14,10 +15,10 @@ pub const Regex = struct {
         var code: Buf(Op) = try .initAlloc(allocator, len);
         errdefer code.deinit(allocator);
 
-        var stack: Buf(i32) = try .initAlloc(allocator, depth);
+        var stack: Buf([2]i32) = try .initAlloc(allocator, depth);
         defer stack.deinit(allocator);
 
-        var prev_atom: i32 = -1;
+        var prev_atom: i32 = 0;
         var hole_other_branch: i32 = -1;
 
         for (regex) |ch| {
@@ -26,8 +27,16 @@ pub const Regex = struct {
             switch (ch) {
                 '^' => code.push(.begin),
                 '$' => code.push(.begin),
-                '(' => stack.push(end),
-                ')' => prev_atom = stack.pop().?,
+                '(' => stack.push(.{ prev_atom, hole_other_branch }),
+                ')' => {
+                    if (hole_other_branch > 0) {
+                        code.buf[@intCast(hole_other_branch)] = encode(end - hole_other_branch); // relative to the jmp itself
+                    }
+
+                    const x = stack.pop().?;
+                    prev_atom = x[0];
+                    hole_other_branch = x[1];
+                },
 
                 '?' => {
                     code.insertSlice(@intCast(prev_atom), &.{
@@ -71,7 +80,7 @@ pub const Regex = struct {
                     // Create a jump with a hole
                     code.push(.jmp);
                     hole_other_branch = @intCast(code.len);
-                    code.push(undefined);
+                    code.push(if (comptime builtin.is_test) encode(0x7FFFFFFF) else undefined); // so it blows if we don't fill this
                 },
 
                 '.' => {
@@ -305,6 +314,39 @@ test "Regex.compile()" {
         \\  9: char e
         \\ 11: match
     );
+
+    try expectCompile("(a|b)?",
+        \\  0: split :3 :12
+        \\  3: split :6 :10
+        \\  6: char a
+        \\  8: jmp :12
+        \\ 10: char b
+        \\ 12: match
+    );
+
+    try expectCompile("(a|b)*c",
+        \\  0: split :3 :14
+        \\  3: split :6 :10
+        \\  6: char a
+        \\  8: jmp :12
+        \\ 10: char b
+        \\ 12: jmp :0
+        \\ 14: char c
+        \\ 16: match
+    );
+
+    try expectCompile("(a|b|c)+d",
+        \\  0: split :3 :7
+        \\  3: char a
+        \\  5: jmp :12
+        \\  7: split :10 :14
+        \\ 10: char b
+        \\ 12: jmp :16
+        \\ 14: char c
+        \\ 16: split :0 :19
+        \\ 19: char d
+        \\ 21: match
+    );
 }
 
 fn expectMatch(regex: []const u8, text: []const u8, expected: bool) !void {
@@ -364,6 +406,9 @@ test "Regex.match()" {
     try expectMatch("(ab)*de", "ababde", true);
     try expectMatch("(ab)*de", "de", true);
     try expectMatch("(ab)*de", "abd", false);
+    try expectMatch("(a|b)*", "aba", true);
+    try expectMatch("(a|b)*c", "abbaabc", true);
+    try expectMatch("(a|b)*c", "d", false);
 
     // Start/End
     try expectMatch("^hello", "hello world", true);
