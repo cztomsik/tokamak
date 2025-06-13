@@ -32,40 +32,40 @@ pub const Regex = struct {
                 '?' => {
                     code.insertSlice(@intCast(prev_atom), &.{
                         .split,
-                        encodeJmp(2), // run the check
-                        encodeJmp(end - prev_atom + 1), // jump out otherwise
+                        encode(2), // run the check
+                        encode(end - prev_atom + 1), // jump out otherwise
                     });
                 },
 
                 '+' => {
                     code.push(.split);
-                    code.push(encodeJmp(prev_atom - end - 1)); // repeat
-                    code.push(encodeJmp(1)); // jump out otherwise
+                    code.push(encode(prev_atom - end - 1)); // repeat
+                    code.push(encode(1)); // jump out otherwise
                 },
 
                 '*' => {
                     code.insertSlice(@intCast(prev_atom), &.{
                         .split,
-                        encodeJmp(2), // run the check
-                        encodeJmp(end - prev_atom + 3), // jump out otherwise
+                        encode(2), // run the check
+                        encode(end - prev_atom + 3), // jump out otherwise
                     });
 
                     code.push(.jmp);
-                    code.push(encodeJmp(prev_atom - end - 4)); // keep repeating
+                    code.push(encode(prev_atom - end - 4)); // keep repeating
                 },
 
                 '|' => {
                     // TODO: groups? can we just put it in the stack?
                     code.insertSlice(@intCast(hole_other_branch + 1), &.{
                         .split,
-                        encodeJmp(2), // LHS branch (which ends with holey-jmp)
-                        encodeJmp(end - hole_other_branch + 2), // RHS
+                        encode(2), // LHS branch (which ends with holey-jmp)
+                        encode(end - hole_other_branch + 2), // RHS
                     });
 
                     // Point any previous hole to our newly created holey-jmp (double-jump)
                     // NOTE: we could probably inline/flatten these in a second-pass (optimization?)
                     if (hole_other_branch > 0) {
-                        code.buf[@intCast(hole_other_branch)] = encodeJmp(@as(i32, @intCast(code.len)) - hole_other_branch); // relative to the jmp itself
+                        code.buf[@intCast(hole_other_branch)] = encode(@as(i32, @intCast(code.len)) - hole_other_branch); // relative to the jmp itself
                     }
 
                     // Create a jump with a hole
@@ -90,7 +90,7 @@ pub const Regex = struct {
         // Pending pipe?
         if (hole_other_branch > 0) {
             const end: i32 = @intCast(code.len);
-            code.buf[@intCast(hole_other_branch)] = encodeJmp(end - hole_other_branch); // relative to the jmp itself
+            code.buf[@intCast(hole_other_branch)] = encode(end - hole_other_branch); // relative to the jmp itself
         }
 
         // Add final match
@@ -147,17 +147,14 @@ fn encode(v: i32) Op {
     return @enumFromInt(@as(i32, @intCast(v)));
 }
 
-fn encodeJmp(offset: i32) Op {
-    return encode(offset * @sizeOf(Op));
-}
-
 fn decode(pc: [*]const Op) i32 {
     return @intFromEnum(pc[0]);
 }
 
 fn decodeJmp(pc: [*]const Op) [*]const Op {
     const addr: isize = @intCast(@intFromPtr(pc));
-    return @ptrFromInt(@as(usize, @intCast(addr + decode(pc))));
+    const offset = @as(isize, @intCast(decode(pc))) * @sizeOf(Op);
+    return @ptrFromInt(@as(usize, @intCast(addr + offset)));
 }
 
 // https://swtch.com/~rsc/regexp/regexp2.html#backtrack
