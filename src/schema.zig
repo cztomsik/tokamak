@@ -1,5 +1,6 @@
 const std = @import("std");
 const meta = @import("meta.zig");
+const testing = @import("testing.zig");
 
 /// Returns a formatter which will print a JSON-schema for the given type.
 pub fn fmt(comptime T: type) std.json.Formatter(Schema) {
@@ -119,7 +120,7 @@ test "Schema.forType()" {
 }
 
 fn expectJsonSchema(comptime T: type, expected: []const u8) !void {
-    try std.testing.expectFmt(expected, "{}", .{fmt(T)});
+    try testing.expectFmt(fmt(T), expected);
 }
 
 test "schema.jsonStringify()" {
