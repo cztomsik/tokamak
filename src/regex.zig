@@ -84,7 +84,7 @@ pub const Regex = struct {
                     // Create a jump with a hole
                     code.push(.jmp);
                     hole_other_branch = @intCast(code.len);
-                    code.push(if (comptime builtin.is_test) encode(0x7FFFFFFF) else undefined); // so it blows if we don't fill this
+                    code.push(encode(if (comptime builtin.is_test) 0x7FFFFFFF else 1)); // so it blows if we don't fill it
                 },
 
                 '.' => {
@@ -121,9 +121,6 @@ pub const Regex = struct {
     }
 
     pub fn match(self: *Regex, text: []const u8) bool {
-        // TODO: implement & switch to pikevm(), or maybe only do that for longer texts?
-        // return recursive(self.code.ptr, text, 0);
-
         return pikevm(self.code, text, self.threads);
     }
 
@@ -145,6 +142,11 @@ pub const Regex = struct {
     }
 };
 
+// TODO: would be nice if we could avoid i32, but we perform code-insertions
+//       which can make already created absolute jumps invalid
+//       we could either fix them just-in-time, or we could simply emit
+//       @bitCast() relative jumps and then, resolve them in a second-pass,
+//       which should be there anyway, so we can get rid of those mid-jumps.
 const Op = enum(i32) {
     begin,
     end,
@@ -154,40 +156,29 @@ const Op = enum(i32) {
     jmp, // i32
     split, // i32, i32
     _,
+
+    fn name(self: Op) []const u8 {
+        return switch (self) {
+            .begin, .end, .char, .any, .match, .jmp, .split => @tagName(self),
+            else => "???",
+        };
+    }
 };
 
 const Thread = struct {
-    pc: [*]const Op,
+    pc: usize,
 };
 
 fn encode(v: i32) Op {
     return @enumFromInt(@as(i32, @intCast(v)));
 }
 
-fn decode(pc: [*]const Op) i32 {
-    return @intFromEnum(pc[0]);
+fn decode(code: []const Op, pc: usize) i32 {
+    return @intFromEnum(code[pc]);
 }
 
-fn decodeJmp(pc: [*]const Op) [*]const Op {
-    const addr: isize = @intCast(@intFromPtr(pc));
-    const offset = @as(isize, @intCast(decode(pc))) * @sizeOf(Op);
-    return @ptrFromInt(@as(usize, @intCast(addr + offset)));
-}
-
-// https://swtch.com/~rsc/regexp/regexp2.html#backtrack
-fn recursive(pc: [*]const Op, text: []const u8, sp: usize) bool {
-    std.debug.print("sp={} {s} {c}\n", .{ sp, @tagName(pc[0]), if (pc[0] == .char) @as(u8, @intCast(decode(pc + 1))) else ' ' });
-
-    return switch (pc[0]) {
-        .begin => if (sp == 0) recursive(pc + 1, text, sp) else false,
-        .end => if (sp + 1 == text.len) recursive(pc + 1, text, sp) else false,
-        .char => if (sp < text.len and text[sp] == decode(pc + 1)) recursive(pc + 2, text, sp + 1) else false,
-        .any => if (sp < text.len) recursive(pc + 1, text, sp + 1) else false,
-        .split => recursive(decodeJmp(pc + 1), text, sp) or recursive(decodeJmp(pc + 2), text, sp),
-        .jmp => recursive(decodeJmp(pc + 1), text, sp),
-        .match => true,
-        else => unreachable,
-    };
+fn decodeJmp(code: []const Op, pc: usize) usize {
+    return @intCast(@as(isize, @intCast(pc)) + decode(code, pc));
 }
 
 // TODO: https://swtch.com/~rsc/regexp/regexp2.html#pike
@@ -196,25 +187,26 @@ fn pikevm(code: []const Op, text: []const u8, threads: []Thread) bool {
     var nlist = Buf(Thread).init(threads[threads.len / 2 ..]);
 
     // Initial thread
-    clist.push(.{ .pc = code.ptr });
+    clist.push(.{ .pc = 0 });
 
     var sp: usize = 0;
     while (true) : (sp += 1) {
         std.debug.print("sp={}\n", .{sp});
 
+        // TODO: I think it could still overflow but maybe we could just compute real max size for clist/nlist in count()?
         var j: usize = 0; // ^/jmp/split needs to be processed before advancing
         while (j < clist.len) : (j += 1) { // and we do that by pushing to clist
             const pc = clist.buf[j].pc;
 
-            switch (pc[0]) {
+            switch (code[pc]) {
                 .begin => if (sp == 0) clist.push(.{ .pc = pc + 1 }),
                 .end => return false, // TODO (the other version does not work yet either)
-                .char => if (sp < text.len and text[sp] == decode(pc + 1)) nlist.push(.{ .pc = pc + 2 }),
+                .char => if (sp < text.len and text[sp] == decode(code, pc + 1)) nlist.push(.{ .pc = pc + 2 }),
                 .any => if (sp < text.len) nlist.push(.{ .pc = pc + 1 }),
-                .jmp => clist.push(.{ .pc = decodeJmp(pc + 1) }),
+                .jmp => clist.push(.{ .pc = decodeJmp(code, pc + 1) }),
                 .split => {
-                    clist.push(.{ .pc = decodeJmp(pc + 1) });
-                    clist.push(.{ .pc = decodeJmp(pc + 2) });
+                    clist.push(.{ .pc = decodeJmp(code, pc + 1) });
+                    clist.push(.{ .pc = decodeJmp(code, pc + 2) });
                 },
                 .match => return true,
                 else => return false,
@@ -237,33 +229,32 @@ fn expectCompile(regex: []const u8, expected: []const u8) !void {
     var r = try Regex.compile(std.testing.allocator, regex);
     defer r.deinit(std.testing.allocator);
 
-    var pc: [*]const Op = r.code.ptr;
-    const end = pc + r.code.len;
+    var pc: usize = 0;
 
-    while (pc != end) {
-        const i = pc - r.code.ptr;
+    while (pc < r.code.len) {
+        const op = r.code[pc];
 
-        if (i > 0) {
+        if (pc > 0) {
             try w.writeByte('\n');
         }
 
-        try w.print("{d:>3}: {s}", .{ i, @tagName(pc[0]) });
+        try w.print("{d:>3}: {s}", .{ pc, op.name() });
 
-        switch (pc[0]) {
+        switch (op) {
             .char => try w.print(" {c}", .{
-                @as(u8, @intCast(decode(pc + 1))),
+                @as(u8, @intCast(decode(r.code, pc + 1))),
             }),
             .jmp => try w.print(" :{d}", .{
-                @as(i32, @intCast(i)) + decode(pc + 1) + 1, // relative to itself
+                decodeJmp(r.code, pc + 1),
             }),
             .split => try w.print(" :{d} :{d}", .{
-                @as(i32, @intCast(i)) + decode(pc + 1) + 1, // relative to itself
-                @as(i32, @intCast(i)) + decode(pc + 2) + 2, // relative to itself
+                decodeJmp(r.code, pc + 1),
+                decodeJmp(r.code, pc + 2),
             }),
             else => {},
         }
 
-        pc += switch (pc[0]) {
+        pc += switch (op) {
             .split => 3,
             .char, .jmp => 2,
             else => 1,
