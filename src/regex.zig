@@ -8,9 +8,13 @@ const Buf = @import("util.zig").Buf;
 // https://swtch.com/~rsc/regexp/regexp3.html
 pub const Regex = struct {
     code: []const Op,
+    threads: []Thread,
 
     pub fn compile(allocator: std.mem.Allocator, regex: []const u8) !Regex {
         const len, const depth = try countAndValidate(regex);
+
+        const threads = try allocator.alloc(Thread, len * 2);
+        errdefer allocator.free(threads);
 
         var code: Buf(Op) = try .initAlloc(allocator, len);
         errdefer code.deinit(allocator);
@@ -107,16 +111,20 @@ pub const Regex = struct {
 
         return .{
             .code = code.finish(),
+            .threads = threads,
         };
     }
 
     pub fn deinit(self: *Regex, allocator: std.mem.Allocator) void {
         allocator.free(self.code);
+        allocator.free(self.threads);
     }
 
     pub fn match(self: *Regex, text: []const u8) bool {
         // TODO: implement & switch to pikevm(), or maybe only do that for longer texts?
-        return recursive(self.code.ptr, text, 0);
+        // return recursive(self.code.ptr, text, 0);
+
+        return pikevm(self.code, text, self.threads);
     }
 
     // TODO: validate
@@ -183,9 +191,43 @@ fn recursive(pc: [*]const Op, text: []const u8, sp: usize) bool {
 }
 
 // TODO: https://swtch.com/~rsc/regexp/regexp2.html#pike
-// fn pikevm(pc: [*]const Op, text: []const u8, sp: usize) bool {
-//     while (pos < text.len) {}
-// }
+fn pikevm(code: []const Op, text: []const u8, threads: []Thread) bool {
+    var clist = Buf(Thread).init(threads[0 .. threads.len / 2]);
+    var nlist = Buf(Thread).init(threads[threads.len / 2 ..]);
+
+    // Initial thread
+    clist.push(.{ .pc = code.ptr });
+
+    var sp: usize = 0;
+    while (true) : (sp += 1) {
+        std.debug.print("sp={}\n", .{sp});
+
+        var j: usize = 0; // ^/jmp/split needs to be processed before advancing
+        while (j < clist.len) : (j += 1) { // and we do that by pushing to clist
+            const pc = clist.buf[j].pc;
+
+            switch (pc[0]) {
+                .begin => if (sp == 0) clist.push(.{ .pc = pc + 1 }),
+                .end => return false, // TODO (the other version does not work yet either)
+                .char => if (sp < text.len and text[sp] == decode(pc + 1)) nlist.push(.{ .pc = pc + 2 }),
+                .any => if (sp < text.len) nlist.push(.{ .pc = pc + 1 }),
+                .jmp => clist.push(.{ .pc = decodeJmp(pc + 1) }),
+                .split => {
+                    clist.push(.{ .pc = decodeJmp(pc + 1) });
+                    clist.push(.{ .pc = decodeJmp(pc + 2) });
+                },
+                .match => return true,
+                else => return false,
+            }
+        }
+
+        if (sp == text.len) break;
+        std.mem.swap(Buf(Thread), &clist, &nlist);
+        nlist.len = 0;
+    }
+
+    return false;
+}
 
 fn expectCompile(regex: []const u8, expected: []const u8) !void {
     var buf = std.ArrayList(u8).init(std.testing.allocator);
