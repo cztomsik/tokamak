@@ -31,7 +31,11 @@ pub const Regex = struct {
             switch (ch) {
                 '^' => code.push(.begin),
                 '$' => code.push(.begin),
-                '(' => stack.push(.{ prev_atom, hole_other_branch }),
+                '(' => {
+                    stack.push(.{ end, hole_other_branch });
+                    prev_atom = end;
+                    hole_other_branch = -1;
+                },
                 ')' => {
                     if (hole_other_branch > 0) {
                         code.buf[@intCast(hole_other_branch)] = encode(end - hole_other_branch); // relative to the jmp itself
@@ -69,10 +73,10 @@ pub const Regex = struct {
 
                 '|' => {
                     // TODO: groups? can we just put it in the stack?
-                    code.insertSlice(@intCast(hole_other_branch + 1), &.{
+                    code.insertSlice(@intCast(prev_atom), &.{
                         .split,
                         encode(2), // LHS branch (which ends with holey-jmp)
-                        encode(end - hole_other_branch + 2), // RHS
+                        encode(end - prev_atom + 3), // RHS
                     });
 
                     // Point any previous hole to our newly created holey-jmp (double-jump)
@@ -319,6 +323,15 @@ test "Regex.compile()" {
         \\  9: match
     );
 
+    try expectCompile("ab|c",
+        \\  0: char a
+        \\  2: split :5 :9
+        \\  5: char b
+        \\  7: jmp :11
+        \\  9: char c
+        \\ 11: match
+    );
+
     try expectCompile("a|b|c",
         \\  0: split :3 :7
         \\  3: char a
@@ -380,6 +393,16 @@ test "Regex.compile()" {
         \\ 19: char d
         \\ 21: match
     );
+
+    try expectCompile("a(b|c)+",
+        \\  0: char a
+        \\  2: split :5 :9
+        \\  5: char b
+        \\  7: jmp :11
+        \\  9: char c
+        \\ 11: split :2 :14
+        \\ 14: match
+    );
 }
 
 fn expectMatch(regex: []const u8, text: []const u8, expected: bool) !void {
@@ -425,7 +448,8 @@ test "Regex.match()" {
     try expectMatch("a|b|c", "c", true);
     try expectMatch("a|b|c", "d", false);
     try expectMatch("ab|c", "ab", true);
-    try expectMatch("ab|c", "c", true);
+    try expectMatch("ab|c", "ac", true);
+    try expectMatch("ab|c", "c", false);
     try expectMatch("ab|c", "d", false);
 
     // Group
