@@ -1,5 +1,6 @@
 const builtin = @import("builtin");
 const std = @import("std");
+const testing = @import("testing.zig");
 const Buf = @import("util.zig").Buf;
 
 // https://www.cs.princeton.edu/courses/archive/spr09/cos333/beautiful.html
@@ -128,21 +129,46 @@ pub const Regex = struct {
         return pikevm(self.code, text, self.threads);
     }
 
-    // TODO: validate
+    // TODO: escaping, char classes, maybe we should tokenize first?
     fn countAndValidate(regex: []const u8) ![2]usize {
-        var len: usize = 1;
-        var depth: usize = 0;
+        var len: usize = 1; // we always append match
+        var depth: usize = 0; // current grouping level
+        var max_depth: usize = 0; // stack size we need for compilation
+        var can_repeat: bool = false; // repeating & empty groups
 
-        for (regex) |ch| switch (ch) {
-            '(' => depth += 1,
-            ')' => {},
-            '^', '$', '.' => len += 1,
-            '?', '+' => len += 3,
-            '*', '|' => len += 5,
-            else => len += 2,
-        };
+        for (regex) |ch| {
+            if (!can_repeat) switch (ch) {
+                '?', '+', '*' => return error.NothingToRepeat,
+                else => {},
+            };
 
-        return .{ len, depth };
+            switch (ch) {
+                '(' => {
+                    depth += 1;
+                    max_depth = @max(depth, max_depth);
+                },
+                ')' => {
+                    if (depth == 0) return error.NothingToClose;
+                    if (!can_repeat) return error.EmptyGroup;
+                    depth -= 1;
+                },
+                '^', '$', '.' => len += 1,
+                '?', '+' => len += 3,
+                '*', '|' => len += 5,
+                else => len += 2,
+            }
+
+            can_repeat = switch (ch) {
+                '(', '^', '$', '?', '+', '*', '|' => false,
+                else => true,
+            };
+        }
+
+        if (depth > 0) {
+            return error.UnclosedGroup;
+        }
+
+        return .{ len, max_depth };
     }
 };
 
@@ -185,7 +211,9 @@ fn decodeJmp(code: []const Op, pc: usize) usize {
     return @intCast(@as(isize, @intCast(pc)) + decode(code, pc));
 }
 
-// TODO: https://swtch.com/~rsc/regexp/regexp2.html#pike
+// https://dl.acm.org/doi/10.1145/363347.363387
+// https://swtch.com/~rsc/regexp/regexp2.html#pike
+// TODO: captures
 fn pikevm(code: []const Op, text: []const u8, threads: []Thread) bool {
     var clist = Buf(Thread).init(threads[0 .. threads.len / 2]);
     var nlist = Buf(Thread).init(threads[threads.len / 2 ..]);
@@ -269,6 +297,13 @@ fn expectCompile(regex: []const u8, expected: []const u8) !void {
 }
 
 test "Regex.compile()" {
+    try testing.expectError(Regex.compile(undefined, "?"), error.NothingToRepeat);
+    try testing.expectError(Regex.compile(undefined, "+"), error.NothingToRepeat);
+    try testing.expectError(Regex.compile(undefined, "*"), error.NothingToRepeat);
+    try testing.expectError(Regex.compile(undefined, "()"), error.EmptyGroup);
+    try testing.expectError(Regex.compile(undefined, ")"), error.NothingToClose);
+    try testing.expectError(Regex.compile(undefined, "("), error.UnclosedGroup);
+
     try expectCompile("", "  0: match");
 
     try expectCompile("abc",
