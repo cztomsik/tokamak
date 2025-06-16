@@ -16,6 +16,11 @@ pub const time = struct {
     }
 };
 
+/// Like std.testing.expectError() but with flipped args.
+pub fn expectError(res: anytype, expected: anyerror) !void {
+    return std.testing.expectError(expected, res);
+}
+
 /// Attempts to print `arg` into a buf and then compare those strings.
 pub fn expectFmt(arg: anytype, expected: []const u8) !void {
     var buf = try std.ArrayList(u8).initCapacity(std.testing.allocator, 64);
