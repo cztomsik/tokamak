@@ -258,13 +258,13 @@ fn expectCompile(regex: []const u8, expected: []const u8) !void {
     var w = buf.writer();
     defer buf.deinit();
 
-    var r = try Regex.compile(std.testing.allocator, regex);
-    defer r.deinit(std.testing.allocator);
+    var re = try Regex.compile(std.testing.allocator, regex);
+    defer re.deinit(std.testing.allocator);
 
     var pc: usize = 0;
 
-    while (pc < r.code.len) {
-        const op = r.code[pc];
+    while (pc < re.code.len) {
+        const op = re.code[pc];
 
         if (pc > 0) {
             try w.writeByte('\n');
@@ -274,14 +274,14 @@ fn expectCompile(regex: []const u8, expected: []const u8) !void {
 
         switch (op) {
             .char => try w.print(" {c}", .{
-                @as(u8, @intCast(decode(r.code, pc + 1))),
+                @as(u8, @intCast(decode(re.code, pc + 1))),
             }),
             .jmp => try w.print(" :{d}", .{
-                decodeJmp(r.code, pc + 1),
+                decodeJmp(re.code, pc + 1),
             }),
             .split => try w.print(" :{d} :{d}", .{
-                decodeJmp(r.code, pc + 1),
-                decodeJmp(r.code, pc + 2),
+                decodeJmp(re.code, pc + 1),
+                decodeJmp(re.code, pc + 2),
             }),
             else => {},
         }
@@ -443,10 +443,10 @@ test "Regex.compile()" {
 fn expectMatch(regex: []const u8, text: []const u8, expected: bool) !void {
     std.debug.print("--- {s} --- {s}\n", .{ regex, text });
 
-    var r = try Regex.compile(std.testing.allocator, regex);
-    defer r.deinit(std.testing.allocator);
+    var re = try Regex.compile(std.testing.allocator, regex);
+    defer re.deinit(std.testing.allocator);
 
-    try std.testing.expectEqual(expected, r.match(text));
+    try std.testing.expectEqual(expected, re.match(text));
 }
 
 test "Regex.match()" {
