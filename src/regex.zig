@@ -223,7 +223,7 @@ fn pikevm(code: []const Op, text: []const u8, threads: []Thread) bool {
 
     var sp: usize = 0;
     while (true) : (sp += 1) {
-        std.debug.print("sp={}\n", .{sp});
+        // std.debug.print("sp={}\n", .{sp});
 
         // TODO: I think it could still overflow but maybe we could just compute real max size for clist/nlist in count()?
         var j: usize = 0; // ^/jmp/split needs to be processed before advancing
@@ -441,72 +441,111 @@ test "Regex.compile()" {
 }
 
 fn expectMatch(regex: []const u8, text: []const u8, expected: bool) !void {
-    std.debug.print("--- {s} --- {s}\n", .{ regex, text });
+    try expectMatches(regex, &.{.{ text, expected }});
+}
 
+fn expectMatches(regex: []const u8, fixtures: []const struct { []const u8, bool }) !void {
     var re = try Regex.compile(std.testing.allocator, regex);
     defer re.deinit(std.testing.allocator);
 
-    try std.testing.expectEqual(expected, re.match(text));
+    for (fixtures) |fix| {
+        errdefer std.debug.print("--- {s} --- {s}\n", .{ regex, fix[0] });
+
+        try std.testing.expectEqual(fix[1], re.match(fix[0]));
+    }
 }
 
 test "Regex.match()" {
     // Literal
-    try expectMatch("hello", "hello", true);
-    try expectMatch("hello", "hello world", true);
-    try expectMatch("hello", "hi", false);
+    try expectMatches("hello", &.{
+        .{ "hello", true },
+        .{ "hello world", true },
+        .{ "hi", false },
+    });
 
     // Dot
-    try expectMatch("h.llo", "hello", true);
-    try expectMatch("h.llo", "hallo", true);
-    try expectMatch("h.llo", "hllo", false);
+    try expectMatches("h.llo", &.{
+        .{ "hello", true },
+        .{ "hallo", true },
+        .{ "hllo", false },
+    });
 
     // Question
-    try expectMatch("ab?c", "ac", true);
-    try expectMatch("ab?c", "abc", true);
-    try expectMatch("ab?c", "abbc", false);
-    try expectMatch("ab?c", "adc", false);
+    try expectMatches("ab?c", &.{
+        .{ "ac", true },
+        .{ "abc", true },
+        .{ "abbc", false },
+        .{ "adc", false },
+    });
 
     // Plus
-    try expectMatch("ab+c", "abc", true);
-    try expectMatch("ab+c", "abbc", true);
-    try expectMatch("ab+c", "ac", false);
+    try expectMatches("ab+c", &.{
+        .{ "abc", true },
+        .{ "abbc", true },
+        .{ "ac", false },
+    });
 
     // Star
-    try expectMatch("ab*c", "ac", true);
-    try expectMatch("ab*c", "abc", true);
-    try expectMatch("ab*c", "abbc", true);
-    try expectMatch("ab*c", "adc", false);
+    try expectMatches("ab*c", &.{
+        .{ "ac", true },
+        .{ "abc", true },
+        .{ "abbc", true },
+        .{ "adc", false },
+    });
 
     // Pipe
-    try expectMatch("a|b|c", "a", true);
-    try expectMatch("a|b|c", "b", true);
-    try expectMatch("a|b|c", "c", true);
-    try expectMatch("a|b|c", "d", false);
-    try expectMatch("ab|c", "ab", true);
-    try expectMatch("ab|c", "ac", true);
-    try expectMatch("ab|c", "c", false);
-    try expectMatch("ab|c", "d", false);
+    try expectMatches("a|b|c", &.{
+        .{ "a", true },
+        .{ "b", true },
+        .{ "c", true },
+        .{ "d", false },
+    });
+
+    try expectMatches("ab|c", &.{
+        .{ "ab", true },
+        .{ "ac", true },
+        .{ "c", false },
+        .{ "d", false },
+    });
 
     // Group
-    try expectMatch("(abc)?def", "abcdef", true);
-    try expectMatch("(abc)?def", "def", true);
-    try expectMatch("(abc)?def", "adef", false);
-    try expectMatch("(ab)+de", "abde", true);
-    try expectMatch("(ab)+de", "ababde", true);
-    try expectMatch("(ab)+de", "abd", false);
-    try expectMatch("(ab)*de", "abde", true);
-    try expectMatch("(ab)*de", "ababde", true);
-    try expectMatch("(ab)*de", "de", true);
-    try expectMatch("(ab)*de", "abd", false);
-    try expectMatch("(a|b)*", "aba", true);
-    try expectMatch("(a|b)*c", "abbaabc", true);
-    try expectMatch("(a|b)*c", "d", false);
+    try expectMatches("(abc)?def", &.{
+        .{ "abcdef", true },
+        .{ "def", true },
+        .{ "adef", false },
+    });
+
+    try expectMatches("(ab)+de", &.{
+        .{ "abde", true },
+        .{ "ababde", true },
+        .{ "abd", false },
+    });
+
+    try expectMatches("(ab)*de", &.{
+        .{ "abde", true },
+        .{ "ababde", true },
+        .{ "de", true },
+        .{ "abd", false },
+    });
+
+    try expectMatches("(a|b)*", &.{
+        .{ "aba", true },
+    });
+
+    try expectMatches("(a|b)*c", &.{
+        .{ "abbaabc", true },
+        .{ "d", false },
+    });
 
     // Start/End
-    try expectMatch("^hello", "hello world", true);
-    try expectMatch("^hello", "say hello", false);
-    // try expectMatch("world$", "hello world", true);
-    // try expectMatch("world$", "world peace", false);
+    try expectMatches("^hello", &.{
+        .{ "hello world", true },
+        .{ "say hello", false },
+    });
+    // try expectMatches("world$", &.{
+    //     .{ "hello world", true },
+    //     .{ "world peace", false },
+    // });
 
     // Empty
     try expectMatch("hello", "", false);
@@ -515,7 +554,9 @@ test "Regex.match()" {
     try expectMatch("", "any", true);
 
     // Combination
-    // try expectMatch("^a.*b$", "ab", true);
-    // try expectMatch("^a.*b$", "axxxb", true);
-    // try expectMatch("^a.*b$", "axxx", false);
+    // try expectMatches("^a.*b$", &.{
+    //     .{ "ab", true },
+    //     .{ "axxxb", true },
+    //     .{ "axxx", false },
+    // });
 }
