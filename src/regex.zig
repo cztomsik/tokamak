@@ -1,6 +1,5 @@
 const builtin = @import("builtin");
 const std = @import("std");
-const testing = @import("testing.zig");
 const Buf = @import("util.zig").Buf;
 
 // https://www.cs.princeton.edu/courses/archive/spr09/cos333/beautiful.html
@@ -12,7 +11,8 @@ pub const Regex = struct {
     threads: []Thread,
 
     pub fn compile(allocator: std.mem.Allocator, regex: []const u8) !Regex {
-        const len, const depth = try countAndValidate(regex);
+        var tokenizer: Tokenizer = .{ .input = regex };
+        const len, const depth = try countAndValidate(&tokenizer);
 
         const threads = try allocator.alloc(Thread, len * 2);
         errdefer allocator.free(threads);
@@ -26,28 +26,22 @@ pub const Regex = struct {
         var prev_atom: i32 = 0;
         var hole_other_branch: i32 = -1;
 
-        for (regex) |ch| {
+        while (tokenizer.next()) |tok| {
             const end: i32 = @intCast(code.len);
 
-            switch (ch) {
-                '^' => code.push(.begin),
-                '$' => code.push(.begin),
-                '(' => {
-                    stack.push(.{ end, hole_other_branch });
+            switch (tok) {
+                .char => |ch| {
                     prev_atom = end;
-                    hole_other_branch = -1;
-                },
-                ')' => {
-                    if (hole_other_branch > 0) {
-                        code.buf[@intCast(hole_other_branch)] = encode(end - hole_other_branch); // relative to the jmp itself
-                    }
-
-                    const x = stack.pop().?;
-                    prev_atom = x[0];
-                    hole_other_branch = x[1];
+                    code.push(.char);
+                    code.push(encode(ch));
                 },
 
-                '?' => {
+                .dot => {
+                    code.push(.any);
+                    prev_atom = end;
+                },
+
+                .que => {
                     code.insertSlice(@intCast(prev_atom), &.{
                         .split,
                         encode(2), // run the check
@@ -55,13 +49,13 @@ pub const Regex = struct {
                     });
                 },
 
-                '+' => {
+                .plus => {
                     code.push(.split);
                     code.push(encode(prev_atom - end - 1)); // repeat
                     code.push(encode(1)); // jump out otherwise
                 },
 
-                '*' => {
+                .star => {
                     code.insertSlice(@intCast(prev_atom), &.{
                         .split,
                         encode(2), // run the check
@@ -72,7 +66,7 @@ pub const Regex = struct {
                     code.push(encode(prev_atom - end - 4)); // keep repeating
                 },
 
-                '|' => {
+                .pipe => {
                     // TODO: groups? can we just put it in the stack?
                     code.insertSlice(@intCast(prev_atom), &.{
                         .split,
@@ -92,16 +86,24 @@ pub const Regex = struct {
                     code.push(encode(if (comptime builtin.is_test) 0x7FFFFFFF else 1)); // so it blows if we don't fill it
                 },
 
-                '.' => {
-                    code.push(.any);
+                .lparen => {
+                    stack.push(.{ end, hole_other_branch });
                     prev_atom = end;
+                    hole_other_branch = -1;
                 },
 
-                else => {
-                    prev_atom = end;
-                    code.push(.char);
-                    code.push(encode(ch));
+                .rparen => {
+                    if (hole_other_branch > 0) {
+                        code.buf[@intCast(hole_other_branch)] = encode(end - hole_other_branch); // relative to the jmp itself
+                    }
+
+                    const x = stack.pop().?;
+                    prev_atom = x[0];
+                    hole_other_branch = x[1];
                 },
+
+                .caret => code.push(.begin),
+                .dollar => code.push(.end),
             }
         }
 
@@ -129,38 +131,37 @@ pub const Regex = struct {
         return pikevm(self.code, text, self.threads);
     }
 
-    // TODO: escaping, char classes, maybe we should tokenize first?
-    fn countAndValidate(regex: []const u8) ![2]usize {
+    fn countAndValidate(tokenizer: *Tokenizer) ![2]usize {
         var len: usize = 1; // we always append match
         var depth: usize = 0; // current grouping level
         var max_depth: usize = 0; // stack size we need for compilation
         var can_repeat: bool = false; // repeating & empty groups
 
-        for (regex) |ch| {
-            if (!can_repeat) switch (ch) {
-                '?', '+', '*' => return error.NothingToRepeat,
+        while (tokenizer.next()) |tok| {
+            if (!can_repeat) switch (tok) {
+                .que, .plus, .star => return error.NothingToRepeat,
                 else => {},
             };
 
-            switch (ch) {
-                '(' => {
+            switch (tok) {
+                .lparen => {
                     depth += 1;
                     max_depth = @max(depth, max_depth);
                 },
-                ')' => {
+                .rparen => {
                     if (depth == 0) return error.NothingToClose;
                     if (!can_repeat) return error.EmptyGroup;
                     depth -= 1;
                 },
-                '^', '$', '.' => len += 1,
-                '?', '+' => len += 3,
-                '*', '|' => len += 5,
-                else => len += 2,
+                .dot, .dollar, .caret => len += 1,
+                .char => len += 2,
+                .que, .plus => len += 3,
+                .star, .pipe => len += 5,
             }
 
-            can_repeat = switch (ch) {
-                '(', '^', '$', '?', '+', '*', '|' => false,
-                else => true,
+            can_repeat = switch (tok) {
+                .char, .dot, .rparen => true,
+                else => false,
             };
         }
 
@@ -168,7 +169,49 @@ pub const Regex = struct {
             return error.UnclosedGroup;
         }
 
+        tokenizer.pos = 0; // reset back
         return .{ len, max_depth };
+    }
+};
+
+const Token = union(enum) {
+    char: u8,
+    dot,
+    que,
+    plus,
+    star,
+    pipe,
+    lparen,
+    rparen,
+    dollar,
+    caret,
+};
+
+const Tokenizer = struct {
+    input: []const u8,
+    pos: usize = 0,
+
+    fn next(self: *Tokenizer) ?Token {
+        // TODO: escaping (\\ -> char, \+ -> char, but \w -> alphanum)
+        while (self.pos < self.input.len) {
+            const ch = self.input[self.pos];
+            self.pos += 1;
+
+            return switch (ch) {
+                '.' => .dot,
+                '?' => .que,
+                '+' => .plus,
+                '*' => .star,
+                '|' => .pipe,
+                '(' => .lparen,
+                ')' => .rparen,
+                '^' => .caret,
+                '$' => .dollar,
+                else => .{ .char = ch },
+            };
+        }
+
+        return null;
     }
 };
 
@@ -225,14 +268,14 @@ fn pikevm(code: []const Op, text: []const u8, threads: []Thread) bool {
     while (true) : (sp += 1) {
         // std.debug.print("sp={}\n", .{sp});
 
-        // TODO: I think it could still overflow but maybe we could just compute real max size for clist/nlist in count()?
+        // TODO: I think it can still overflow but maybe we could just compute real max size for clist/nlist in count()?
         var j: usize = 0; // ^/jmp/split needs to be processed before advancing
         while (j < clist.len) : (j += 1) { // and we do that by pushing to clist
             const pc = clist.buf[j].pc;
 
             switch (code[pc]) {
                 .begin => if (sp == 0) clist.push(.{ .pc = pc + 1 }),
-                .end => return false, // TODO (the other version does not work yet either)
+                .end => if (sp == text.len) clist.push(.{ .pc = pc + 1 }), // TODO (the other version does not work yet either)
                 .char => if (sp < text.len and text[sp] == decode(code, pc + 1)) nlist.push(.{ .pc = pc + 2 }),
                 .any => if (sp < text.len) nlist.push(.{ .pc = pc + 1 }),
                 .jmp => clist.push(.{ .pc = decodeJmp(code, pc + 1) }),
@@ -251,6 +294,25 @@ fn pikevm(code: []const Op, text: []const u8, threads: []Thread) bool {
     }
 
     return false;
+}
+
+const testing = @import("testing.zig");
+
+fn expectTokens(regex: []const u8, tokens: []const std.meta.Tag(Token)) !void {
+    var tokenizer = Tokenizer{ .input = regex };
+
+    for (tokens) |tag| {
+        const tok: @TypeOf(tag) = tokenizer.next() orelse return error.Eof;
+        try testing.expectEqual(tok, tag);
+    }
+
+    try testing.expectEqual(tokenizer.pos, regex.len);
+}
+
+test Tokenizer {
+    try expectTokens("", &.{});
+    try expectTokens("a.c+", &.{ .char, .dot, .char, .plus });
+    try expectTokens("a?(b|c)*", &.{ .char, .que, .lparen, .char, .pipe, .char, .rparen, .star });
 }
 
 fn expectCompile(regex: []const u8, expected: []const u8) !void {
@@ -542,10 +604,12 @@ test "Regex.match()" {
         .{ "hello world", true },
         .{ "say hello", false },
     });
-    // try expectMatches("world$", &.{
-    //     .{ "hello world", true },
-    //     .{ "world peace", false },
-    // });
+
+    try expectMatches("world$", &.{
+        .{ "world", true },
+        // .{ "hello world", true },
+        // .{ "world peace", false },
+    });
 
     // Empty
     try expectMatch("hello", "", false);
