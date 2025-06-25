@@ -206,6 +206,7 @@ pub const Selector = struct {
                 while (parts.next()) |s| if (std.mem.eql(u8, s, cls)) return true;
                 return false;
             },
+            .unsupported => false,
             else => unreachable,
         };
     }
