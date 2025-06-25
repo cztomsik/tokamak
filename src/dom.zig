@@ -158,22 +158,35 @@ pub const Document = struct {
         try stack.append(&doc.node);
         parser.scanner.keep_whitespace = true;
 
+        var n_elem: usize = 0;
+        var n_text: usize = 0;
+
         while (try parser.next()) |ev| {
             switch (ev) {
                 .open => |tag| {
-                    const el = try doc.createElement(tag);
-                    if (stack.items.len > 0) stack.getLast().appendChild(&el.node);
-                    try stack.append(&el.node);
+                    if (stack.getLastOrNull()) |parent| {
+                        const el = try doc.createElement(tag);
+                        try stack.append(&el.node);
+                        parent.appendChild(&el.node);
+                        n_elem += 1;
+                    }
                 },
 
                 .attr => |att| {
-                    try stack.getLast().element().?.setAttribute(att.name, att.value);
+                    if (stack.getLastOrNull()) |parent| {
+                        if (parent.element()) |el| {
+                            try el.setAttribute(att.name, att.value);
+                        }
+                    }
                 },
 
                 .text => |raw| {
-                    // TODO: decode entities (in chunks); avoid double-cloning; maybe we could join too (later)
-                    const tn = try doc.createTextNode(raw);
-                    if (stack.items.len > 0) stack.getLast().appendChild(&tn.node);
+                    if (stack.getLastOrNull()) |parent| {
+                        // TODO: decode entities (in chunks); avoid double-cloning; maybe we could join too (later)
+                        const tn = try doc.createTextNode(raw);
+                        parent.appendChild(&tn.node);
+                        n_text += 1;
+                    }
                 },
 
                 .close => {
@@ -182,10 +195,13 @@ pub const Document = struct {
             }
         }
 
-        std.debug.print(
-            "mem used: {}\n",
-            .{std.fmt.fmtIntSizeDec(doc.nodes.arena.queryCapacity())},
-        );
+        std.debug.print("mem used: {} stack: {}/{} #el: {} #text: {}\n", .{
+            std.fmt.fmtIntSizeDec(doc.nodes.arena.queryCapacity()),
+            stack.items.len,
+            stack.capacity,
+            n_elem,
+            n_text,
+        });
 
         return doc;
     }

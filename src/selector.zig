@@ -231,8 +231,8 @@ pub fn QuerySelectorIterator(comptime E: type) type {
 
         pub fn next(self: *@This()) ?E {
             while (self.next_element) |el| {
-                if (self.selector.match(el)) return el;
                 self.next_element = el.firstElementChild() orelse el.nextElementSibling() orelse nextInOrder(el);
+                if (self.selector.match(el)) return el;
             } else return null;
         }
 
