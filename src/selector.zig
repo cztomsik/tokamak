@@ -211,6 +211,40 @@ pub const Selector = struct {
     }
 };
 
+pub fn QuerySelectorIterator(comptime E: type) type {
+    return struct {
+        allocator: std.mem.Allocator,
+        selector: Selector,
+        next_element: ?E,
+
+        pub fn init(allocator: std.mem.Allocator, selector: []const u8, start: ?E) !@This() {
+            return .{
+                .allocator = allocator,
+                .selector = try Selector.parse(allocator, selector),
+                .next_element = start,
+            };
+        }
+
+        pub fn deinit(self: *@This()) void {
+            self.selector.deinit(self.allocator);
+        }
+
+        pub fn next(self: *@This()) ?E {
+            while (self.next_element) |el| {
+                if (self.selector.match(el)) return el;
+                self.next_element = el.firstElementChild() orelse el.nextElementSibling() orelse nextInOrder(el);
+            } else return null;
+        }
+
+        fn nextInOrder(el: E) ?E {
+            var next_parent = el.parentElement();
+            while (next_parent) |parent| : (next_parent = parent.parentElement()) {
+                return parent.nextElementSibling() orelse continue;
+            } else return null;
+        }
+    };
+}
+
 const Fixture = struct {
     parents: []const ?usize,
     prevs: []const ?usize,
