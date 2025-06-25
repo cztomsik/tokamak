@@ -1,5 +1,15 @@
 const std = @import("std");
 
+// This is useful mostly for parsing - it's a simple, slice-backed container
+// that is not supposed to grow beyong its max size. It does not do any bounds
+// checking, except maybe the peek/pop() which returns optional.
+//
+// The general pattern is that you do two passes over the input, first time you
+// count the max len, without any need for allocation and then, in the second
+// pass you use a previously created Buf(T) to build the result.
+//
+// A nice touch is that it can be used in comptime, and it provides finish()
+// which also checks if the final size is the same.
 pub fn Buf(comptime T: type) type {
     return struct {
         buf: []T = &.{},
@@ -33,7 +43,13 @@ pub fn Buf(comptime T: type) type {
             self.len += 1;
         }
 
-        /// Remove and return the last item.
+        /// Return the last item, if there is any.
+        pub fn peek(self: *@This()) ?T {
+            if (self.len == 0) return null;
+            return self.buf[self.len - 1];
+        }
+
+        /// Remove and return the last item, if there is any.
         pub fn pop(self: *@This()) ?T {
             if (self.len == 0) return null;
             self.len -= 1;
