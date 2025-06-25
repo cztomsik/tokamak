@@ -9,6 +9,7 @@ pub const config = @import("config.zig");
 pub const cron = @import("cron.zig");
 pub const crypto = @import("crypto.zig");
 pub const csv = @import("csv.zig");
+pub const dom = @import("dom.zig");
 pub const event = @import("event.zig");
 pub const hackernews = @import("hackernews.zig");
 pub const http = @import("http.zig");
