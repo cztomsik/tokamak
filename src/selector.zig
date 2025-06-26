@@ -217,12 +217,14 @@ pub fn QuerySelectorIterator(comptime E: type) type {
         allocator: std.mem.Allocator,
         selector: Selector,
         next_element: ?E,
+        end_element: ?E,
 
-        pub fn init(allocator: std.mem.Allocator, selector: []const u8, start: ?E) !@This() {
+        pub fn init(allocator: std.mem.Allocator, selector: []const u8, start: ?E, end: ?E) !@This() {
             return .{
                 .allocator = allocator,
                 .selector = try Selector.parse(allocator, selector),
                 .next_element = start,
+                .end_element = end,
             };
         }
 
@@ -234,6 +236,7 @@ pub fn QuerySelectorIterator(comptime E: type) type {
             while (self.next_element) |el| {
                 self.next_element = el.firstElementChild() orelse el.nextElementSibling() orelse nextInOrder(el);
                 if (self.selector.match(el)) return el;
+                if (el == self.end_element) self.next_element = null;
             } else return null;
         }
 
@@ -241,7 +244,9 @@ pub fn QuerySelectorIterator(comptime E: type) type {
             var next_parent = el.parentElement();
             while (next_parent) |parent| : (next_parent = parent.parentElement()) {
                 return parent.nextElementSibling() orelse continue;
-            } else return null;
+            }
+
+            return null;
         }
     };
 }
