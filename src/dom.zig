@@ -8,6 +8,7 @@
 const std = @import("std");
 const sax = @import("sax.zig");
 const entities = @import("entities.zig");
+const util = @import("util.zig");
 const Selector = @import("selector.zig").Selector;
 const QuerySelectorIterator = @import("selector.zig").QuerySelectorIterator;
 
@@ -85,31 +86,24 @@ pub const Node = struct {
 
     fn downcast(self: *Node, comptime T: type) *T {
         std.debug.assert(self.kind == std.meta.fieldInfo(T, .node).defaultValue().?.kind);
-        return @fieldParentPtr("node", self);
+        return @alignCast(@fieldParentPtr("node", self));
     }
 };
 
-// TODO: len > 8 (blockquote,figcaption + arbitrary attributes)
-//       but short names never start with \0 and we could also req. ascii-only
-//       so the highest bit could be safe for ptr? interned? maybe refcounted? what about comptime?
-pub const LocalName = enum(u64) {
-    _,
+// TODO: arbitrary tag names/attributes (len > 12)
+pub const LocalName = enum(u128) {
+    _, // tk.util.Smol128
 
     // Shorthand for usage in switch statements
     const p = parse;
 
     pub fn parse(local_name: []const u8) LocalName {
-        if (local_name.len > 0 and local_name.len <= 8) {
-            var val: u64 = 0;
-            @memcpy(@as([*]u8, @ptrCast(&val)), local_name);
-            std.debug.assert(val != 0);
-            return @enumFromInt(val);
-        } else return p("unknown");
+        const x = util.Smol128.initShort(local_name) orelse util.Smol128.initComptime("unknown");
+        return @enumFromInt(x.raw);
     }
 
     pub fn name(self: *const LocalName) []const u8 {
-        const bytes: *const [8]u8 = @ptrCast(self);
-        return if (std.mem.indexOfScalar(u8, bytes, 0)) |i| bytes[0..i] else bytes;
+        return util.Smol128.str(@ptrCast(self));
     }
 
     pub fn isVoid(self: LocalName) bool {
@@ -185,7 +179,7 @@ pub const Element = struct {
 // https://github.com/cztomsik/graffiti/blob/master/lib/core/Text.js
 pub const Text = struct {
     node: Node = .{ .kind = .text },
-    data: []const u8,
+    data: util.Smol128,
 };
 
 // https://github.com/cztomsik/graffiti/blob/master/src/dom/document.zig
@@ -200,7 +194,8 @@ pub const Document = struct {
     };
 
     comptime {
-        std.debug.assert(@sizeOf(NodeWrap) <= 104);
+        // @compileLog(@sizeOf(NodeWrap));
+        std.debug.assert(@sizeOf(NodeWrap) <= 128);
     }
 
     pub fn init(allocator: std.mem.Allocator) !*Document {
@@ -334,12 +329,15 @@ pub const Document = struct {
     }
 
     pub fn createTextNode(self: *Document, data: []const u8) !*Text {
+        // const trimmed = std.mem.trim(u8, data, " \t\r\n");
+        // std.debug.print("len: {} trimmed: {}\n", .{ data.len, trimmed.len });
+
         const wrap = try self.nodes.create();
         errdefer self.nodes.destroy(wrap);
 
         wrap.* = .{
             .text = .{
-                .data = try self.dupe(data),
+                .data = try .init(self.arena(), data),
             },
         };
         return &wrap.text;
@@ -369,10 +367,6 @@ pub const Document = struct {
 
     fn gpa(self: *Document) std.mem.Allocator {
         return self.nodes.arena.child_allocator;
-    }
-
-    fn dupe(self: *Document, text: []const u8) ![]const u8 {
-        return self.arena().dupe(u8, text);
     }
 };
 
