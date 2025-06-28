@@ -149,6 +149,7 @@ pub const Selector = struct {
         // state
         var i: usize = 0;
         var current = element;
+        var prev = false;
         var parent = false;
         var ancestors = false;
 
@@ -156,11 +157,16 @@ pub const Selector = struct {
             switch (self.parts[i]) {
                 .parent => parent = true,
                 .ancestor => ancestors = true,
-                .previous_sibling => current = current.previousElementSibling() orelse break,
+                .previous_sibling => prev = true,
                 // end-of-branch and we still have a match, no need to check others
                 .@"or" => break :next_part,
                 else => |comp| {
                     while (true) {
+                        if (prev) {
+                            prev = false;
+                            current = current.previousElementSibling() orelse break;
+                        }
+
                         if (parent or ancestors) {
                             parent = false;
                             current = current.parentElement() orelse break;
