@@ -70,11 +70,11 @@ pub const Node = struct {
     pub fn dump(self: *Node) void {
         try self.visit(struct {
             fn open(_: @This(), el: *Element) !void {
-                std.debug.print("open {s}\n", .{@tagName(el.local_name)});
+                std.debug.print("open {s}\n", .{el.local_name.name()});
             }
 
             fn close(_: @This(), el: *Element) !void {
-                std.debug.print("close {s}\n", .{@tagName(el.local_name)});
+                std.debug.print("close {s}\n", .{el.local_name.name()});
             }
 
             fn text(_: @This(), tn: *Text) !void {
@@ -89,142 +89,39 @@ pub const Node = struct {
     }
 };
 
-// TODO: packed union, Symbol?
-pub const LocalName = enum(u8) {
-    a,
-    abbr,
-    address,
-    area,
-    article,
-    aside,
-    audio,
-    b,
-    base,
-    bdi,
-    bdo,
-    blockquote,
-    body,
-    br,
-    button,
-    canvas,
-    caption,
-    cite,
-    code,
-    col,
-    colgroup,
-    data,
-    datalist,
-    dd,
-    del,
-    details,
-    dfn,
-    dialog,
-    div,
-    dl,
-    dt,
-    em,
-    embed,
-    fieldset,
-    figcaption,
-    figure,
-    footer,
-    form,
-    frame,
-    h1,
-    h2,
-    h3,
-    h4,
-    h5,
-    h6,
-    head,
-    header,
-    hgroup,
-    hr,
-    html,
-    i,
-    iframe,
-    img,
-    input,
-    ins,
-    isindex,
-    kbd,
-    keygen,
-    label,
-    legend,
-    li,
-    link,
-    main,
-    map,
-    mark,
-    math,
-    menu,
-    meta,
-    meter,
-    nav,
-    noscript,
-    object,
-    ol,
-    optgroup,
-    option,
-    output,
-    p,
-    param,
-    picture,
-    pre,
-    progress,
-    q,
-    rp,
-    rt,
-    ruby,
-    s,
-    samp,
-    script,
-    search,
-    section,
-    select,
-    slot,
-    small,
-    source,
-    span,
-    strong,
-    style,
-    sub,
-    summary,
-    sup,
-    svg,
-    table,
-    tbody,
-    td,
-    template,
-    textarea,
-    tfoot,
-    th,
-    thead,
-    time,
-    title,
-    tr,
-    track,
-    u,
-    ul,
-    @"var",
-    video,
-    wbr,
-    unknown,
+// TODO: len > 8 (blockquote,figcaption + arbitrary attributes)
+//       but short names never start with \0 and we could also req. ascii-only
+//       so the highest bit could be safe for ptr? interned? maybe refcounted? what about comptime?
+pub const LocalName = enum(u64) {
+    _,
 
-    pub fn parse(name: []const u8) LocalName {
-        return std.meta.stringToEnum(LocalName, name) orelse .unknown;
+    // Shorthand for usage in switch statements
+    const p = parse;
+
+    pub fn parse(local_name: []const u8) LocalName {
+        if (local_name.len > 0 and local_name.len <= 8) {
+            var val: u64 = 0;
+            @memcpy(@as([*]u8, @ptrCast(&val)), local_name);
+            std.debug.assert(val != 0);
+            return @enumFromInt(val);
+        } else return p("unknown");
+    }
+
+    pub fn name(self: *const LocalName) []const u8 {
+        const bytes: *const [8]u8 = @ptrCast(self);
+        return if (std.mem.indexOfScalar(u8, bytes, 0)) |i| bytes[0..i] else bytes;
     }
 
     pub fn isVoid(self: LocalName) bool {
         return switch (self) {
-            .area, .base, .br, .col, .embed, .frame, .hr, .img, .input, .isindex, .keygen, .link, .meta, .param, .source, .track, .wbr => true,
+            p("area"), p("base"), p("br"), p("col"), p("embed"), p("frame"), p("hr"), p("img"), p("input"), p("isindex"), p("keygen"), p("link"), p("meta"), p("param"), p("source"), p("track"), p("wbr") => true,
             else => false,
         };
     }
 
     pub fn isRaw(self: LocalName) bool {
         return switch (self) {
-            .script, .style => true,
+            p("script"), p("style") => true,
             else => false,
         };
     }
@@ -263,7 +160,7 @@ pub const Element = struct {
     }
 
     pub fn localName(self: *Element) []const u8 {
-        return @tagName(self.local_name);
+        return self.local_name.name();
     }
 
     pub fn id(self: *Element) []const u8 {
@@ -301,6 +198,10 @@ pub const Document = struct {
         element: Element,
         text: Text,
     };
+
+    comptime {
+        std.debug.assert(@sizeOf(NodeWrap) <= 104);
+    }
 
     pub fn init(allocator: std.mem.Allocator) !*Document {
         const self = try allocator.create(Document);
