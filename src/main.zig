@@ -27,6 +27,7 @@ pub const selector = @import("selector.zig");
 pub const sendmail = @import("sendmail.zig");
 pub const testing = @import("testing.zig");
 pub const tpl = @import("tpl.zig");
+pub const util = @import("util.zig");
 
 // Core types (DI)
 pub const Injector = @import("injector.zig").Injector;
