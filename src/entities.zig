@@ -42,8 +42,7 @@ pub fn Decoder(comptime entities: anytype) type {
                     ' ', '\t', '\r', '\n', '<', '&' => return null,
                     else => {},
                 }
-            }
-            return null;
+            } else return null;
         }
 
         pub fn decodeEntity(self: *@This(), entity: []const u8) ?[]const u8 {
@@ -73,6 +72,16 @@ pub fn decode(comptime entities: anytype, allocator: std.mem.Allocator, input: [
     }
 
     return buf.toOwnedSlice();
+}
+
+pub fn decodeInplace(buf: []u8, entities: anytype) []u8 {
+    var decoder = Decoder(entities).init(buf);
+    var len: usize = 0;
+    while (decoder.next()) |chunk| {
+        std.mem.copyForwards(u8, buf[len .. len + chunk.len], chunk);
+        len += chunk.len;
+    }
+    return buf[0..len];
 }
 
 pub const xml = .{
@@ -343,7 +352,12 @@ fn expectDecode(input: []const u8, expected: []const u8) !void {
     const actual = try decode(html4, std.testing.allocator, input);
     defer std.testing.allocator.free(actual);
 
+    const buf = try std.testing.allocator.dupe(u8, input);
+    defer std.testing.allocator.free(buf);
+    const actual2 = decodeInplace(buf, html4);
+
     try std.testing.expectEqualStrings(expected, actual);
+    try std.testing.expectEqualStrings(expected, actual2);
 }
 
 test "decoding" {

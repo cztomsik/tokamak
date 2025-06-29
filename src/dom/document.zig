@@ -103,14 +103,10 @@ pub const Document = struct {
 
                 .text => |raw| {
                     if (top.element()) |el| {
-
-                        // TODO: join text nodes? up to some limit? (later)
-                        var chunks = entities.Decoder(entities.html4).init(raw);
-                        while (chunks.next()) |chunk| {
-                            const tn = try doc.createTextNode(chunk);
-                            el.node.appendChild(&tn.node);
-                            n_text += 1;
-                        }
+                        const buf: []u8 = @constCast(raw); // TODO: it's not pretty but it should be safe
+                        const tn = try doc.createTextNode(entities.decodeInplace(buf, entities.html4));
+                        el.node.appendChild(&tn.node);
+                        n_text += 1;
                     }
                 },
 
