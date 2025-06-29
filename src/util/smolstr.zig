@@ -36,6 +36,8 @@ pub fn SmolStr(comptime B: type) type {
 
         const Self = @This();
 
+        pub const empty: Self = .{ .short = .{ .len = 0 } };
+
         pub fn init(allocator: std.mem.Allocator, s: []const u8) !Self {
             return initShort(s) orelse .{
                 .long = .{
