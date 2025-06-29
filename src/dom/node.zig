@@ -1,5 +1,6 @@
 const std = @import("std");
 const util = @import("../util.zig");
+const Document = @import("document.zig").Document;
 const Element = @import("element.zig").Element;
 const Text = @import("text.zig").Text;
 
@@ -7,11 +8,17 @@ const Text = @import("text.zig").Text;
 // https://github.com/cztomsik/graffiti/blob/master/lib/core/Node.js
 pub const Node = struct {
     kind: enum { element, text, document },
+    document: *Document,
     parent_node: ?*Node = null,
     first_child: ?*Node = null,
     last_child: ?*Node = null,
     previous_sibling: ?*Node = null,
     next_sibling: ?*Node = null,
+
+    comptime {
+        // @compileLog(@sizeOf(Node));
+        std.debug.assert(@sizeOf(Node) <= 56);
+    }
 
     pub fn element(self: *Node) ?*Element {
         return if (self.kind == .element) self.downcast(Element) else null;
@@ -31,6 +38,13 @@ pub const Node = struct {
 
         self.last_child = child;
         child.parent_node = self;
+    }
+
+    pub fn depth(self: *Node) usize {
+        var n: usize = 0;
+        var next = self.parent_node;
+        while (next) |p| : (next = p.parent_node) n += 1;
+        return n;
     }
 
     pub fn visit(self: *Node, visitor: anytype) !void {
@@ -76,7 +90,6 @@ pub const Node = struct {
     }
 
     fn downcast(self: *Node, comptime T: type) *T {
-        std.debug.assert(self.kind == std.meta.fieldInfo(T, .node).defaultValue().?.kind);
         return @alignCast(@fieldParentPtr("node", self));
     }
 };

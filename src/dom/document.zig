@@ -12,34 +12,35 @@ const QuerySelectorIterator = @import("../selector.zig").QuerySelectorIterator;
 // https://github.com/cztomsik/graffiti/blob/master/src/dom/document.zig
 // https://github.com/cztomsik/graffiti/blob/master/lib/core/Document.js
 pub const Document = struct {
-    node: Node = .{ .kind = .document },
-    nodes: std.heap.MemoryPool(NodeWrap),
-
-    const NodeWrap = union {
-        element: Element,
-        text: Text,
-    };
-
-    comptime {
-        // @compileLog(@sizeOf(NodeWrap));
-        std.debug.assert(@sizeOf(NodeWrap) <= 128);
-    }
+    node: Node,
+    arena: std.mem.Allocator,
 
     pub fn init(allocator: std.mem.Allocator) !*Document {
-        const self = try allocator.create(Document);
-        errdefer allocator.destroy(self);
+        const arena = try allocator.create(std.heap.ArenaAllocator);
+        errdefer allocator.destroy(arena);
 
+        arena.* = std.heap.ArenaAllocator.init(allocator);
+        errdefer arena.deinit();
+
+        const self = try arena.allocator().create(Document);
         self.* = .{
-            .nodes = try .initPreheated(allocator, 256),
+            .node = .{ .document = self, .kind = .document },
+            .arena = arena.allocator(),
         };
-
         return self;
     }
 
     pub fn deinit(self: *Document) void {
-        const allocator = self.gpa();
-        self.nodes.deinit();
-        allocator.destroy(self);
+        const arena: *std.heap.ArenaAllocator = @ptrCast(@alignCast(self.arena.ptr));
+        const allocator = arena.child_allocator;
+
+        arena.deinit();
+        allocator.destroy(arena);
+    }
+
+    fn arenaSize(self: *Document) usize {
+        const arena: *std.heap.ArenaAllocator = @ptrCast(@alignCast(self.arena.ptr));
+        return arena.queryCapacity();
     }
 
     // TODO: ParseOptions (so we can eagerly say that ie. we want to skip styles, scripts, ...)
@@ -57,6 +58,7 @@ pub const Document = struct {
         return parseFromSax(allocator, &parser);
     }
 
+    // TODO: move to parser.zig?
     pub fn parseFromSax(allocator: std.mem.Allocator, parser: *sax.Parser) !*Document {
         const doc = try Document.init(allocator);
         errdefer doc.deinit();
@@ -102,8 +104,7 @@ pub const Document = struct {
                 .text => |raw| {
                     if (top.element()) |el| {
 
-                        // TODO: avoid double-cloning, and maybe we could join too? (later)
-                        // TODO: and maybe the whole iterator api is nonsense too?
+                        // TODO: join text nodes? up to some limit? (later)
                         var chunks = entities.Decoder(entities.html4).init(raw);
                         while (chunks.next()) |chunk| {
                             const tn = try doc.createTextNode(chunk);
@@ -130,8 +131,8 @@ pub const Document = struct {
         }
 
         std.debug.print("mem used: {} unclosed: {} #el: {} #attr: {} #text: {}\n", .{
-            std.fmt.fmtIntSizeDec(doc.nodes.arena.queryCapacity()),
-            999, // TODO: count distance to the root
+            std.fmt.fmtIntSizeDec(doc.arenaSize()),
+            top.depth(),
             n_elem,
             n_attr,
             n_text,
@@ -143,31 +144,21 @@ pub const Document = struct {
     }
 
     pub fn createElement(self: *Document, local_name: []const u8) !*Element {
-        const wrap = try self.nodes.create();
-        errdefer self.nodes.destroy(wrap);
-
-        wrap.* = .{
-            .element = .{
-                .local_name = .parse(local_name),
-                .attributes = .init(self.arena()),
-            },
-        };
-        return &wrap.element;
+        const element = try self.arena.create(Element);
+        try element.init(self, local_name);
+        return element;
     }
 
     pub fn createTextNode(self: *Document, data: []const u8) !*Text {
-        // const trimmed = std.mem.trim(u8, data, " \t\r\n");
-        // std.debug.print("len: {} trimmed: {}\n", .{ data.len, trimmed.len });
+        // TODO: not sure if want to do anything about whitespace, it doesn't look that bad
+        // if (data.len > 12) {
+        //     const trimmed = std.mem.trim(u8, data, " \t\r\n");
+        //     std.debug.print("len: {} trimmed: {}\n", .{ data.len, trimmed.len });
+        // }
 
-        const wrap = try self.nodes.create();
-        errdefer self.nodes.destroy(wrap);
-
-        wrap.* = .{
-            .text = .{
-                .data = try .init(self.arena(), data),
-            },
-        };
-        return &wrap.text;
+        const text = try self.arena.create(Text);
+        try text.init(self, data);
+        return text;
     }
 
     pub fn querySelector(self: *Document, selector: []const u8) !?*Element {
@@ -178,7 +169,11 @@ pub const Document = struct {
     }
 
     pub fn querySelectorAll(self: *Document, selector: []const u8) !QuerySelectorIterator(*Element) {
-        return .init(self.gpa(), selector, self.documentElement(), null);
+        // TODO: maybe we should accept allocator and the querySelector() should either do so too or it could use fba on the stack
+        //       or maybe both could and we could also add xxxAlloc() variants for unbounded selectors
+        const arena: *std.heap.ArenaAllocator = @ptrCast(@alignCast(self.arena.ptr));
+        const gpa = arena.child_allocator;
+        return .init(gpa, selector, self.documentElement(), null);
     }
 
     pub fn documentElement(self: *Document) ?*Element {
@@ -187,14 +182,6 @@ pub const Document = struct {
 
     // TODO: pub fn $() and $$()? (monad-like err-wrapping, fluent api, good-enough for simple modifications?)
     // https://github.com/cheeriojs/cheerio https://api.jquery.com/ https://zeptojs.com/
-
-    fn arena(self: *Document) std.mem.Allocator {
-        return self.nodes.arena.allocator();
-    }
-
-    fn gpa(self: *Document) std.mem.Allocator {
-        return self.nodes.arena.child_allocator;
-    }
 };
 
 test {
