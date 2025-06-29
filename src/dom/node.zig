@@ -40,6 +40,37 @@ pub const Node = struct {
         child.parent_node = self;
     }
 
+    pub fn insertBefore(self: *Node, child: *Node, before: *Node) void {
+        if (before.previous_sibling) |prev| {
+            prev.next_sibling = child;
+            child.previous_sibling = prev;
+        } else {
+            self.first_child = child;
+        }
+
+        before.previous_sibling = child;
+        child.next_sibling = before;
+        child.parent_node = self;
+    }
+
+    pub fn removeChild(self: *Node, child: *Node) void {
+        if (child.previous_sibling) |prev| {
+            prev.next_sibling = child.next_sibling;
+        } else {
+            self.first_child = child.next_sibling;
+        }
+
+        if (child.next_sibling) |next| {
+            next.previous_sibling = child.previous_sibling;
+        } else {
+            self.last_child = child.previous_sibling;
+        }
+
+        child.previous_sibling = null;
+        child.next_sibling = null;
+        child.parent_node = null;
+    }
+
     pub fn depth(self: *Node) usize {
         var n: usize = 0;
         var next = self.parent_node;

@@ -62,7 +62,7 @@ pub fn Decoder(comptime entities: anytype) type {
     };
 }
 
-pub fn decode(comptime entities: anytype, allocator: std.mem.Allocator, input: []const u8) ![]const u8 {
+pub fn decode(allocator: std.mem.Allocator, input: []const u8, comptime entities: anytype) ![]const u8 {
     var buf = std.ArrayList(u8).init(allocator);
     errdefer buf.deinit();
 
@@ -74,7 +74,7 @@ pub fn decode(comptime entities: anytype, allocator: std.mem.Allocator, input: [
     return buf.toOwnedSlice();
 }
 
-pub fn decodeInplace(buf: []u8, entities: anytype) []u8 {
+pub fn decodeInplace(buf: []u8, comptime entities: anytype) []u8 {
     var decoder = Decoder(entities).init(buf);
     var len: usize = 0;
     while (decoder.next()) |chunk| {
@@ -349,7 +349,7 @@ pub const html4 = xml ++ .{
 };
 
 fn expectDecode(input: []const u8, expected: []const u8) !void {
-    const actual = try decode(html4, std.testing.allocator, input);
+    const actual = try decode(std.testing.allocator, input, html4);
     defer std.testing.allocator.free(actual);
 
     const buf = try std.testing.allocator.dupe(u8, input);

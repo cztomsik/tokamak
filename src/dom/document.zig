@@ -103,8 +103,13 @@ pub const Document = struct {
 
                 .text => |raw| {
                     if (top.element()) |el| {
-                        const buf: []u8 = @constCast(raw); // TODO: it's not pretty but it should be safe
-                        const tn = try doc.createTextNode(entities.decodeInplace(buf, entities.html4));
+                        // TODO: avoid @constCast(), avoid checking is_eof!
+                        const decoded = if (!parser.is_eof)
+                            entities.decodeInplace(@constCast(raw), entities.html4)
+                        else
+                            try entities.decode(doc.arena, raw, entities.html4);
+
+                        const tn = try doc.createTextNode(decoded);
                         el.node.appendChild(&tn.node);
                         n_text += 1;
                     }
@@ -190,4 +195,9 @@ test {
 
     const btn = try doc.querySelector("div .btn");
     try std.testing.expect(btn != null);
+
+    const span = try doc.createElement("span");
+    btn.?.node.parent_node.?.insertBefore(&span.node, &btn.?.node);
+
+    try std.testing.expectEqual(btn, (try doc.querySelector("span + .btn")).?);
 }
