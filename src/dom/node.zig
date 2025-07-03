@@ -105,19 +105,56 @@ pub const Node = struct {
     }
 
     pub fn dump(self: *Node) void {
-        try self.visit(struct {
-            fn open(_: @This(), el: *Element) !void {
-                std.debug.print("open {s}\n", .{el.local_name.name()});
+        const Cx = struct {
+            writer: std.io.AnyWriter,
+            indent: usize = 0,
+
+            fn open(cx: *@This(), el: *Element) !void {
+                try cx.writer.writeByte('\n');
+                try cx.writer.writeByteNTimes(' ', cx.indent);
+                try cx.writer.print("<{s}", .{el.localName()});
+
+                var next = el.attributes;
+                while (next) |att| : (next = att.next) {
+                    // TODO: entities
+                    try cx.writer.print(" {s}=\"{s}\"", .{ att.name.name(), att.value.str() });
+                }
+
+                try cx.writer.writeByte('>');
+
+                cx.indent += 2;
             }
 
-            fn close(_: @This(), el: *Element) !void {
-                std.debug.print("close {s}\n", .{el.local_name.name()});
+            fn close(cx: *@This(), el: *Element) !void {
+                cx.indent -= 2;
+
+                if (!el.local_name.isVoid()) {
+                    if (el.node.first_child != null) {
+                        try cx.writer.writeByte('\n');
+                        try cx.writer.writeByteNTimes(' ', cx.indent);
+                    }
+
+                    try cx.writer.print("</{s}>", .{el.localName()});
+                }
             }
 
-            fn text(_: @This(), tn: *Text) !void {
-                std.debug.print("{s}\n", .{tn.data.str()});
+            fn text(cx: *@This(), tn: *Text) !void {
+                // TODO: entities
+
+                var it = std.mem.tokenizeAny(u8, std.mem.trim(u8, tn.data.str(), " \t\r\n"), "\r\n");
+                while (it.next()) |line| {
+                    try cx.writer.writeByte('\n');
+                    try cx.writer.writeByteNTimes(' ', cx.indent);
+                    try cx.writer.writeAll(line);
+                }
             }
-        }{});
+        };
+
+        std.debug.lockStdErr();
+        defer std.debug.unlockStdErr();
+
+        var cx = Cx{ .writer = std.io.getStdErr().writer().any() };
+        self.visit(&cx) catch {};
     }
 
     fn downcast(self: *Node, comptime T: type) *T {
