@@ -39,6 +39,7 @@ pub const HtmlParser = struct {
         // It can only contain elements and the root node.
         var top: *Node = root;
 
+        const time = std.time.milliTimestamp();
         var n_elem: usize = 0;
         var n_attr: usize = 0;
         var n_text: usize = 0;
@@ -107,7 +108,8 @@ pub const HtmlParser = struct {
             }
         }
 
-        std.debug.print("mem used: {} unclosed: {} #el: {} #attr: {} #text: {}\n", .{
+        std.debug.print("time: {}ms mem used: {} unclosed: {} #el: {} #attr: {} #text: {}\n", .{
+            std.time.milliTimestamp() - time, // total, including I/O
             std.fmt.fmtIntSizeDec(doc.arenaSize()),
             top.depth(),
             n_elem,
