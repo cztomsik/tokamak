@@ -115,7 +115,7 @@ pub const Node = struct {
             }
 
             fn text(_: @This(), tn: *Text) !void {
-                std.debug.print("{s}\n", .{tn.data[0..@min(32, tn.data.len)]});
+                std.debug.print("{s}\n", .{tn.data.str()});
             }
         }{});
     }
