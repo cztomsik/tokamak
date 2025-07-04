@@ -17,6 +17,27 @@ sanitization, etc.
 > - Added basic Swagger support.
 > - Added `tk.static.dir()` for serving entire directories.
 
+## Installation
+
+```bash
+zig fetch --save "git+https://github.com/cztomsik/tokamak#main"
+```
+
+Then in your `build.zig`:
+
+```zig
+const tokamak = @import("tokamak");
+
+pub fn build(b: *std.Build) void {
+    ...
+    const exe = b.addExecutable(.{ ... });
+    ...
+
+    // Add tokamak
+    tokamak.setup(exe, .{});
+}
+```
+
 ## Getting Started
 
 Simple things should be easy to do.
