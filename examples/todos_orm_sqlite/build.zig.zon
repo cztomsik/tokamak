@@ -7,8 +7,8 @@
             .path = "../..",
         },
         .fridge = .{
-            .url = "https://github.com/cztomsik/fridge/archive/refs/heads/main.tar.gz",
-            .hash = "fridge-0.9.5-3GyIikVYAQAo_R8sHa31-wARIkSRO0DQFHdnWENsvY3B",
+            .url = "git+https://github.com/cztomsik/fridge?ref=main#0ff3f700228b879695d98fa054a0c6e49d06c214",
+            .hash = "fridge-0.9.5-3GyIip6PAQBk67No4W0T6Do4qtqj1tsU5uJn1FnjJ15g",
         },
     },
     .paths = .{
