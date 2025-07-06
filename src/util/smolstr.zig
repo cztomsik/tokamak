@@ -16,6 +16,8 @@ pub fn SmolStr(comptime B: type) type {
 
     // Inspired by https://cedardb.com/blog/german_strings/ but we don't tag pointers.
     // NOTE: we also ZERO-OUT buf/padding so we can then RELIABLY compare by value.
+    // NOTE: we could get 3 extra bytes using the 2N - 1 trick
+    //       https://devblogs.microsoft.com/oldnewthing/20230803-00/?p=108532
     //
     // Layout:
     //   raw   [....u128/u192/xxx....]
