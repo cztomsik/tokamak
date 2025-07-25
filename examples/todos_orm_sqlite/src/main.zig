@@ -36,7 +36,13 @@ const App = struct {
         }),
     },
 
-    pub fn afterAppInit(allocator: std.mem.Allocator, db_pool: *fr.Pool(fr.SQLite3), server: *tk.Server) !void {
+    pub fn configure(bundle: *tk.Bundle) void {
+        // Register some callbacks to be auto-called during the app init.
+        bundle.addInitHook(initDb);
+        bundle.addInitHook(printServerPort);
+    }
+
+    fn initDb(allocator: std.mem.Allocator, db_pool: *fr.Pool(fr.SQLite3)) !void {
         var db = try db_pool.getSession(allocator);
         defer db.deinit();
 
@@ -47,13 +53,15 @@ const App = struct {
             \\   is_done BOOLEAN NOT NULL
             \\ );
         , .{});
+    }
 
-        std.debug.print("Starting tokamak on: http://localhost:{d}\n", .{server.http.config.port.?});
+    fn printServerPort(server: *tk.Server) void {
+        std.debug.print("Starting tokamak on: http://localhost:{d}/todo\n", .{server.http.config.port.?});
     }
 };
 
 pub fn main() !void {
-    try tk.app.run(&.{App});
+    try tk.app.run(tk.Server.start, &.{App});
 }
 
 fn readOne(db: *fr.Session, id: u32) !Todo {
