@@ -6,6 +6,7 @@ pub const ai = @import("ai.zig");
 pub const ansi = @import("ansi.zig");
 pub const app = @import("app.zig");
 // pub const cdp = @import("cdp.zig");
+pub const cli = @import("cli.zig");
 pub const config = @import("config.zig");
 pub const cron = @import("cron.zig");
 pub const crypto = @import("crypto.zig");
