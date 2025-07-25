@@ -1,3 +1,17 @@
+// # Container v2
+//
+// - [x] remove "runtime-peeling", `Container.init()` is fully-resolved & prepared in comptime now
+// - [x] get rid of all `initXxx()`, `before/afterXxx` magic methods
+// - [x] introduce one `M.configure(*tk.Bundle)` which can be used for everything (called in **comptime**)
+// - [x] check that deps are unique, make mods mostly order-independent (except mock/override)
+// - [x] introduce init/deinit runtime hooks (in **addition to** providers)
+// - [x] introduce comptime hooks (postprocessing, validation, scanning, ...)
+// - [x] decide if we want fallback/lazy (we don't)
+// - [ ] interfaces (fat/intrusive, or both)
+// - [x] split to several meaningul commits (meta, impl, examples, readme, ...)
+// - [ ] include this list in the PR description & merge it
+
+const builtin = @import("builtin");
 const std = @import("std");
 const meta = @import("meta.zig");
 const Injector = @import("injector.zig").Injector;
@@ -7,375 +21,505 @@ const Buf = @import("util.zig").Buf;
 pub const Container = struct {
     allocator: std.mem.Allocator,
     injector: Injector,
-    refs: std.ArrayListUnmanaged(Ref),
-    deinit_fns: std.ArrayListUnmanaged(*const fn (*Container) void),
+    bundle: *anyopaque,
+    deinit_fn: *const fn (*Container) void,
 
     pub fn init(allocator: std.mem.Allocator, comptime mods: []const type) !*Container {
+        // TODO: maybe we can now avoid this alloc?
         const self = try allocator.create(Container);
-        errdefer self.deinit();
+        errdefer allocator.destroy(self);
+
+        const b = try allocator.create(Bundle.compile(mods));
+        errdefer allocator.destroy(b);
 
         self.* = .{
             .allocator = allocator,
             .injector = .empty,
-            .refs = .empty,
-            .deinit_fns = .empty,
+            .bundle = undefined,
+            .deinit_fn = undefined,
         };
 
-        try self.register(self);
-        try self.register(&self.allocator);
-
-        if (comptime mods.len > 0) {
-            try Bundle.compile(mods).init(self);
-        }
+        try b.init(self);
+        self.bundle = @ptrCast(b);
+        self.deinit_fn = struct {
+            fn deinit(ct: *Container) void {
+                const allocator2 = ct.allocator;
+                const b2: @TypeOf(b) = @alignCast(@ptrCast(ct.bundle));
+                b2.deinit(ct);
+                allocator2.destroy(b2);
+                allocator2.destroy(ct);
+            }
+        }.deinit;
 
         return self;
     }
 
     pub fn deinit(self: *Container) void {
-        const fns = self.deinit_fns.items;
-        for (1..fns.len + 1) |i| fns[fns.len - i](self);
-        self.deinit_fns.deinit(self.allocator);
-
-        self.refs.deinit(self.allocator);
-        self.allocator.destroy(self);
-    }
-
-    pub fn register(self: *Container, ptr: anytype) !void {
-        try self.refs.append(self.allocator, .ref(ptr));
-        self.injector = .init(self.refs.items, self.injector.parent);
-    }
-
-    pub fn registerDeinit(self: *Container, comptime fun: anytype) !void {
-        comptime std.debug.assert(meta.Return(fun) == void);
-
-        const H = struct {
-            fn deinit(ct: *Container) void {
-                ct.injector.call(fun, .{}) catch unreachable;
-            }
-        };
-
-        try self.deinit_fns.append(self.allocator, &H.deinit);
+        self.deinit_fn(self);
     }
 };
 
-/// Comptime-assisted strategy for initializing multiple modules together.
-const Bundle = struct {
-    mods: []const type,
-    ops: []const Op,
-    ext: []const meta.TypeId,
+const How = union(enum) {
+    /// If there is `T.init()`, it will be used either as a factory or as an
+    /// initializer; otherwise, if the type is a struct, its fields will be
+    /// filled using `injector.get(f.type)`. In other cases, a compile error
+    /// will be raised.
+    auto,
 
-    fn init(self: Bundle, ct: *Container) !void {
-        const bundle = try ct.allocator.create(std.meta.Tuple(self.mods));
-        errdefer {
-            // TODO: ct.deinitUpTo(prev_deinit_count)
-            ct.allocator.destroy(bundle);
-        }
+    /// Use `T.init()` (both factory & inplace are supported)
+    init,
 
-        const H = struct {
-            fn deinit(ct2: *Container, bundle2: *std.meta.Tuple(self.mods)) void {
-                ct2.allocator.destroy(bundle2);
-            }
-        };
-        try ct.register(bundle);
-        try ct.registerDeinit(H.deinit);
+    /// Init every struct field using `inj.get(f.type)`.
+    autowire,
 
-        var done: u64 = 0; // Eagerly-initialized module fields
-        var ready: u64 = 0; // All the deps we might need
-        var ticks: usize = 0;
+    // internal
+    val: meta.ComptimeVal, // *const T
+    fac: meta.ComptimeVal, // fn(...deps) !T
+    fun: meta.ComptimeVal, // fn(ptr: *T, ...deps) !void
+    fref: struct { type, []const u8 }, // &T.field
 
-        while (@popCount(done) < self.ops.len) : (ticks += 1) {
-            inline for (self.ops) |op| {
-                if (done & (1 << op.id) == 0 and op.deps & ready == op.deps) {
-                    try op.init(ct, bundle);
-
-                    if (comptime std.meta.hasMethod(op.field.type, "deinit")) {
-                        try ct.registerDeinit(meta.Deref(op.field.type).deinit);
-                    }
-
-                    done |= 1 << op.id;
-                    ready |= done;
-
-                    if (ct.refs.items.len > @popCount(ready)) {
-                        for (ct.refs.items[ct.refs.items.len - (ct.refs.items.len - @popCount(ready)) ..]) |ref| {
-                            if (std.mem.indexOfScalar(meta.TypeId, self.ext, ref.tid)) |j| {
-                                ready |= @as(u64, 1) << @as(u6, @intCast((self.ops.len + j)));
-                            }
-                        }
-                    }
-                }
-            }
-
-            if (ticks > 2 * self.ops.len) {
-                std.debug.print("-- Ext deps:\n", .{});
-                inline for (self.ext, 0..) |tid, i| {
-                    const x: u8 = if ((ready >> self.ops.len) & (1 << i) != 0) 'x' else ' ';
-                    std.debug.print("[{c}] {s}\n", .{ x, tid.name });
-                }
-
-                std.debug.print("-- Pending tasks:\n", .{});
-                inline for (self.ops, 0..) |op, i| {
-                    const x: u8 = if (done & (1 << i) != 0) 'x' else ' ';
-                    std.debug.print("[{c}] {s}\n", .{ x, comptime op.desc() });
-                }
-
-                // NOTE: Cycles should still be detected in comptime
-                @panic("Init failed (missing ext)");
-            }
-        }
-
-        // Register all the modules too
-        inline for (self.mods, 0..) |M, mid| {
-            if (comptime @sizeOf(M) > 0) {
-                try ct.register(&bundle[mid]);
-            } else {
-                try ct.register(@as(*M, @ptrFromInt(0xaaaaaaaaaaaaaaaa)));
-            }
-        }
-
-        // Every module can define init/deinit hooks
-        inline for (self.mods) |M| {
-            if (std.meta.hasFn(M, "afterBundleInit")) {
-                try ct.injector.call(M.afterBundleInit, .{});
-            }
-
-            if (std.meta.hasFn(M, "beforeBundleDeinit")) {
-                try ct.registerDeinit(M.beforeBundleDeinit);
-            }
-        }
+    /// This dependency should be initialized using the provided comptime value.
+    ///
+    /// NOTE: If the dep type is a mutable ptr, then you can still pass a ref to
+    ///       a global var this way. Not recommended, but good to know.
+    pub fn value(val: anytype) How {
+        return .{ .val = .wrap(val) };
     }
 
-    fn compile(comptime mods: []const type) Bundle {
-        var ops: Buf(Op) = .initComptime(64);
-        var ext: Buf(meta.TypeId) = .initComptime(64);
-
-        collect(&ops, mods);
-        markDeps(ops.items(), &ext);
-        reorder(ops.items());
-
-        return .{
-            .mods = mods,
-            .ops = ops.finish(),
-            .ext = ext.finish(),
-        };
+    /// Initialize the dependency using `ptr.* = try inj.call(fun)`.
+    /// The function will be called at the proper time, but if you cause a cycle
+    /// you may still get a compile error.
+    ///
+    /// Cycles should be avoided, but you can always define an empty initializer
+    /// for one of them, or use `.value(undefined)`. The former is better
+    /// because you can still control the order by declaring the deps.
+    pub fn factory(fac: anytype) How {
+        return .{ .fac = .wrap(fac) };
     }
 
-    fn collect(ops: *Buf(Op), comptime mods: []const type) void {
-        var i: usize = 0;
-        for (mods, 0..) |M, mid| {
-            for (std.meta.fields(M)) |f| {
-                var op: Op = .{
-                    .id = i,
-                    .mid = mid,
-                    .mod = M,
-                    .field = f,
-                    .how = .auto, // If nothing below works, auto-wire all the fields or fail
-                };
-
-                // Default takes precedence over any initXxx() that appear LATER in the chain.
-                if (f.default_value_ptr != null) {
-                    // However, it can still be overridden by an initXxx() that appears EARLIER in the chain.
-                    if (findInitializer(mods[0..mid], f.type)) |meth| {
-                        op.how = .useMethod(meth);
-                    } else {
-                        op.how = .default;
-                    }
-                } else {
-                    // Look for any initXxx() in order (the first one wins)
-                    if (findInitializer(mods, f.type)) |meth| {
-                        op.how = .useMethod(meth);
-                    }
-                    // Otherwise, try T.init() or keep it as .auto
-                    else if (std.meta.hasMethod(f.type, "init")) {
-                        op.how = .useMethod(.{ meta.Deref(f.type), "init" });
-                    }
-                }
-
-                ops.push(op);
-                i += 1;
-            }
-        }
+    /// Initialize the dependency using `try inj.call(fun, .{ ptr, ...deps })`.
+    /// Like with factory, if you get into a cycle, you can either adapt the
+    /// other end, or in the worst case, force `undefined`.
+    pub fn initializer(init: anytype) How {
+        return .{ .fun = .wrap(init) };
     }
 
-    fn findInitializer(mods: []const type, comptime T: type) ?Cb {
-        for (mods) |M| {
-            for (std.meta.declarations(M)) |d| {
-                if (d.name.len > 4 and std.mem.startsWith(u8, d.name, "init")) {
-                    switch (@typeInfo(@TypeOf(@field(M, d.name)))) {
-                        .@"fn" => |f| {
-                            if (meta.Result(@field(M, d.name)) == T or (meta.Result(@field(M, d.name)) == void and f.params.len > 0 and f.params[0].type.? == *T)) {
-                                return .{ M, d.name };
-                            }
-                        },
-                        else => {},
-                    }
-                }
-            }
-        } else return null;
-    }
-
-    fn markDeps(ops: []Op, exts: *Buf(meta.TypeId)) void {
-        @setEvalBranchQuota(100 * ops.len);
-
-        for (ops) |*op| {
-            switch (op.how) {
-                .default => {},
-                .auto => {
-                    for (std.meta.fields(op.field.type)) |f| {
-                        if (f.default_value_ptr == null) {
-                            markDep(ops, exts, op, f.type);
-                        }
-                    }
-                },
-                inline .initializer, .factory => |cb, tag| {
-                    const params = @typeInfo(@TypeOf(@field(cb[0], cb[1]))).@"fn".params;
-
-                    for (params[@intFromBool(tag == .initializer)..]) |p| {
-                        markDep(ops, exts, op, p.type orelse continue);
-                    }
-                },
-            }
-        }
-    }
-
-    fn markDep(ops: []Op, exts: *Buf(meta.TypeId), target: *Op, comptime T: type) void {
-        // Builtins
-        if (T == *Container or T == *Injector or T == std.mem.Allocator) return;
-
-        for (ops) |op| {
-            if (meta.Deref(op.field.type) == meta.Deref(T)) {
-                target.deps |= 1 << op.id;
-                return;
-            }
-        } else {
-            if (@typeInfo(T) != .optional) {
-                target.deps |= 1 << (ops.len + exts.len);
-                exts.push(meta.tid(meta.Deref(T)));
-            }
-        }
-    }
-
-    fn reorder(ops: []Op) void {
-        var i: usize = 0;
-        var ready: u64 = (~@as(u64, 0)) << ops.len; // Ops are pending but everything else is "ready"
-
-        while (i < ops.len) {
-            for (ops[i..]) |*t| {
-                if ((t.deps & ready) == t.deps) {
-                    ready |= 1 << t.id;
-                    std.mem.swap(Op, t, &ops[i]);
-                    i += 1;
-                    break;
-                }
-            } else {
-                var dump: []const u8 = "";
-                for (ops[i..]) |op| dump = dump ++ op.desc() ++ "\n";
-
-                @compileError("Cycle detected:\n" ++ dump);
-            }
-        }
+    fn method(meth: anytype) How {
+        return if (meta.Result(meth) == void) .initializer(meth) else .factory(meth);
     }
 };
 
-/// Each Op represents a single service that needs to be initialized
-/// and specifies how that initialization should happen.
-const Op = struct {
-    id: usize, // original index
-    mid: usize, // module index
-    mod: type,
-    field: std.builtin.Type.StructField,
-    deps: u64 = 0,
-    how: union(enum) {
-        default,
-        auto,
-        initializer: Cb,
-        factory: Cb,
-
-        fn useMethod(meth: Cb) @This() {
-            return if (meta.Result(@field(meth[0], meth[1])) == void) .{ .initializer = meth } else .{ .factory = meth };
-        }
+const Dep = struct {
+    type: type,
+    provider: How,
+    state: union(enum) {
+        instance: struct { type: type, offset: usize },
+        override,
     },
+    mask: u64 = 0, // bitset of what we need
 
-    fn path(self: Op) []const u8 {
-        return @typeName(self.mod) ++ "." ++ self.field.name;
+    fn desc(self: Dep) []const u8 {
+        return @typeName(self.type) ++ " " ++ @tagName(self.provider);
     }
 
-    fn desc(self: Op) []const u8 {
-        return self.path() ++ " <- " ++ switch (self.how) {
-            inline .initializer, .factory => |cb, t| @typeName(cb[0]) ++ "." ++ cb[1] ++ "() [" ++ @tagName(t) ++ "]",
-            inline else => |_, t| @tagName(t),
-        };
+    fn ptr(self: Dep, data: []u8) *self.type {
+        return if (@sizeOf(self.type) > 0) @alignCast(@ptrCast(&data[self.state.instance.offset])) else @ptrFromInt(0xaaaaaaaaaaaaaaaa);
     }
 
-    fn init(self: Op, ct: *Container, bundle: anytype) !void {
-        const target: *self.field.type = if (comptime @sizeOf(self.field.type) > 0) &@field(bundle[self.mid], self.field.name) else @ptrFromInt(0xaaaaaaaaaaaaaaaa);
-        try ct.register(if (comptime meta.isOnePtr(self.field.type)) target.* else target);
+    fn initInstance(self: Dep, data: []u8, inj: *Injector) !void {
+        const inst = self.ptr(data);
 
-        switch (self.how) {
-            .default => target.* = self.field.defaultValue().?,
-            .auto => {
-                if (comptime !meta.isStruct(self.field.type)) @compileError(self.path() ++ ": Only plain structs can be auto-initialized");
-
-                inline for (std.meta.fields(self.field.type)) |f| {
+        switch (self.provider) {
+            .autowire => {
+                inline for (std.meta.fields(self.type)) |f| {
                     if (f.defaultValue()) |def| {
-                        @field(target, f.name) = ct.injector.find(f.type) orelse def;
+                        @field(inst, f.name) = inj.find(f.type) orelse def;
                     } else {
-                        @field(target, f.name) = try ct.injector.get(f.type);
+                        @field(inst, f.name) = try inj.get(f.type);
                     }
                 }
             },
-            .initializer => |cb| try ct.injector.call(@field(cb[0], cb[1]), .{}),
-            .factory => |cb| target.* = try ct.injector.call(@field(cb[0], cb[1]), .{}),
+            .val => |v| inst.* = v.unwrap(),
+            .fac => |f| inst.* = try inj.call0(f.unwrap()),
+            .fun => |f| try inj.call0(f.unwrap()),
+            .fref => |r| inst.* = &@field(try inj.get(*r[0]), r[1]),
+            else => unreachable,
+        }
+    }
+
+    fn deinitInstance(self: Dep, data: []u8, inj: *Injector) void {
+        switch (self.provider) {
+            .val, .fref, .autowire => return, // No-op!
+            .fac, .fun => {}, // Proceed
+            else => unreachable,
+        }
+
+        // TODO: not 100% sure if this is always the case
+        if (std.meta.hasMethod(self.type, "deinit")) {
+            const deinit = meta.Deref(self.type).deinit;
+            const params = @typeInfo(@TypeOf(deinit)).@"fn".params;
+
+            if (params.len == 1 and meta.Deref(params[0].type.?) == meta.Deref(self.type)) {
+                self.ptr(data).deinit();
+            } else {
+                inj.call0(deinit) catch unreachable;
+            }
         }
     }
 };
 
-/// Callback definition for initializer and factory methods
-const Cb = struct { type, []const u8 };
+// internal, always runtime
+const Hook = struct {
+    kind: enum { init, deinit },
+    fun: meta.ComptimeVal,
+    mask: u64 = 0,
 
-test {
-    const S1 = struct {};
-    const S2 = struct { dep: *S1 };
-    const S3 = struct { dep: *S2 };
-    const S4 = struct { dep: *S3 };
-    const App = struct {
-        s4: S4,
-        s3: S3,
-        s2: S2,
-        s1: S1,
-    };
+    fn desc(self: Hook) []const u8 {
+        return "hook " ++ @tagName(self.kind) ++ " " ++ @typeName(self.fun.type);
+    }
+};
 
-    const b = comptime Bundle.compile(&.{App});
-    inline for (b.ops, 0..) |op, i| {
-        std.debug.print("{} {s} \n", .{ i, op.path() });
+// internal
+const Op = union(enum) {
+    dep: Dep,
+    hook: Hook,
+
+    fn desc(self: Op) []const u8 {
+        return switch (self) {
+            inline else => |v, t| @tagName(t) ++ " " ++ v.desc(),
+        };
+    }
+};
+
+pub const Bundle = struct {
+    deps: Buf(Dep),
+    compile_hooks: Buf(meta.ComptimeVal), // before the compilation
+    runtime_hooks: Buf(Hook), // when the deps are ready / before they are gone
+    n_inst: usize = 0,
+    n_data: usize = 0,
+
+    /// Add every field as dependency, use f.default or .auto otherwise.
+    /// Then, if `M.configure(*Bundle)` is defined, invoke it (may recur).
+    pub fn addModule(self: *Bundle, comptime M: type) void {
+        self.add(M, .value(undefined));
+        const start = self.findDep(M).?.state.instance.offset;
+
+        inline for (std.meta.fields(M)) |f| {
+            // Add "inline" inst (without alloc)
+            self.insertDep(.{
+                .state = .{ .instance = .{ .type = f.type, .offset = start + @offsetOf(M, f.name) } },
+                .type = f.type,
+                .provider = if (f.defaultValue()) |v| .value(v) else .auto,
+            });
+            self.n_inst += 1;
+        }
+
+        if (std.meta.hasFn(M, "configure")) {
+            M.configure(self);
+        }
     }
 
-    // This should @compileError:
-    // const Invalid = struct {
-    //     const A = struct { b: *B };
-    //     const B = struct { a: *A };
-    //     a: A,
-    //     b: B,
-    // };
-    // _ = comptime Bundle.compile(&.{Invalid});
+    /// Add a dependency to the container. It can still be mocked or overridden,
+    /// but any other re-definition will result in a compile error.
+    pub fn add(self: *Bundle, comptime T: type, how: How) void {
+        self.insertDep(.{
+            .state = self.allocInstance(T),
+            .type = T,
+            .provider = how,
+        });
+    }
+
+    /// Only allowed during a test run. Use this in your test module to override
+    /// how some dependency should be initialized. This should not be part of
+    /// your regular modules, and calling it outside of the test runner will
+    /// result in a compile error.
+    pub fn addMock(self: *Bundle, comptime T: type, how: How) void {
+        if (!builtin.is_test) @compileError("bundle.addMock() can only be used in tests");
+        self.addOverride(T, how);
+    }
+
+    /// Override how a dependency should be initialized. It works cross-module
+    /// but it should be only used against your own dependencies, otherwise the
+    /// init-order can be hard to follow.
+    ///
+    /// NOTE: DO NOT use this just because you need to do something after the
+    ///       dep is initialized. use `addInitHook()` for that.
+    pub fn addOverride(self: *Bundle, comptime T: type, how: How) void {
+        self.insertDep(.{
+            .state = .override,
+            .type = T,
+            .provider = how,
+        });
+    }
+
+    /// Add ref to a `&T.field`. Use this if you need to inject ptr to some
+    /// sub-part of your struct.
+    pub fn addFieldRef(self: *Bundle, comptime T: type, comptime field: []const u8) void {
+        // TODO: would be great, if we could just write the ref, without any data overhead
+        //       also, should this still be part of the regular unique/override chain?
+        self.add(*@FieldType(T, field), .{ .fref = .{ T, field } });
+    }
+
+    /// Call this `fn(*Bundle)` later, but still in **comptime**, right before
+    /// the compilation is performed. This can be used, i.e., for walking the
+    /// `[]const Route` tree and checking if we have all the deps available.
+    pub fn addCompileHook(self: *Bundle, comptime fun: anytype) void {
+        self.compile_hooks.push(.wrap(fun));
+    }
+
+    /// Call this function as soon as all its deps are ready.
+    pub fn addInitHook(self: *Bundle, comptime fun: anytype) void {
+        self.runtime_hooks.push(.{ .kind = .init, .fun = .wrap(fun) });
+    }
+
+    /// Call this function right before any of its deps go away.
+    pub fn addDeinitHook(self: *Bundle, comptime fun: anytype) void {
+        self.runtime_hooks.push(.{ .kind = .deinit, .fun = .wrap(fun) });
+    }
+
+    // TODO: public?
+    fn compile(comptime mods: []const type) type {
+        var bundle = Bundle{
+            .deps = .initComptime(64),
+            .compile_hooks = .initComptime(64),
+            .runtime_hooks = .initComptime(64),
+        };
+
+        // Build the initial graph using provided modules
+        for (mods) |M| {
+            bundle.addModule(M);
+        }
+
+        // Allow for some post-processing
+        for (bundle.compile_hooks.items()) |hook| {
+            hook.unwrap()(&bundle);
+        }
+
+        for (bundle.deps.items()) |*dep| {
+            bundle.resolveOne(dep);
+        }
+
+        for (bundle.runtime_hooks.items()) |*hook| {
+            for (@typeInfo(hook.fun.type).@"fn".params) |p| bundle.mark(p.type orelse continue, &hook.mask);
+        }
+
+        return CompiledBundle(bundle.render(), bundle.n_inst, bundle.n_data);
+    }
+
+    fn resolveOne(self: *Bundle, dep: *Dep) void {
+        if (dep.state == .override) {
+            @compileError("Unused override for " ++ @typeName(dep.type));
+        }
+
+        if (dep.provider == .auto or dep.provider == .init) {
+            if (std.meta.hasMethod(dep.type, "init")) {
+                dep.provider = .method(@field(meta.Deref(dep.type), "init"));
+            } else if (dep.provider == .init) {
+                @compileError("Type " ++ @typeName(dep.type) ++ " does not have an init() method");
+            }
+        }
+
+        if (dep.provider == .auto) {
+            dep.provider = .autowire;
+        }
+
+        if (dep.provider == .autowire) {
+            if (!meta.isStruct(dep.type)) {
+                @compileError("Only struct types can be autowired: " ++ @typeName(dep.type));
+            }
+        }
+
+        switch (dep.provider) {
+            .autowire => for (std.meta.fields(dep.type)) |f| self.mark(f.type, &dep.mask),
+            .val => {},
+            .fac => |f| for (@typeInfo(f.type).@"fn".params) |p| self.mark(p.type orelse continue, &dep.mask),
+            // TODO: maybe we can lift the first-arg constraint for initializers and only check p.type != dep.type?
+            .fun => |f| for (@typeInfo(f.type).@"fn".params[1..]) |p| self.mark(p.type orelse continue, &dep.mask),
+            .fref => |r| self.mark(r[0], &dep.mask),
+            else => unreachable,
+        }
+    }
+
+    fn mark(self: *Bundle, comptime T: type, mask: *u64) void {
+        // Builtins
+        if (T == *Container or T == *Injector or T == std.mem.Allocator) return;
+
+        if (self.findDep(T)) |dep| {
+            // error: pointer arithmetic requires element type 'xxx' to have runtime bits
+            // const i = dep - self.deps.buf.ptr;
+            var i: usize = 0;
+            while (dep != &self.deps.buf[i]) : (i += 1) {}
+
+            mask.* |= 1 << i;
+        }
+    }
+
+    fn render(self: *Bundle) []const Op {
+        var buf = Buf(Op).initComptime(self.deps.len + self.runtime_hooks.len);
+        var ready: u64 = 0;
+        var hooks: u64 = 0;
+
+        while (@popCount(ready) < self.n_inst) {
+            for (self.deps.items(), 0..) |dep, i| {
+                if (ready & (1 << i) == 0 and ready & dep.mask == dep.mask) {
+                    buf.push(.{ .dep = dep });
+                    ready |= 1 << i;
+                    break;
+                }
+            } else {
+                @compileError("Cycle found");
+            }
+
+            for (self.runtime_hooks.items(), 0..) |hook, i| {
+                if (hooks & (1 << i) == 0 and ready & hook.mask == hook.mask) {
+                    buf.push(.{ .hook = hook });
+                    hooks |= 1 << i;
+                }
+            }
+        }
+
+        return buf.finish();
+    }
+
+    pub fn findDep(self: *Bundle, comptime T: type) ?*Dep {
+        // Whenever we look for uniqueness or for dep tracking, we want to use base types
+        const expected = meta.Deref(T);
+        for (self.deps.items()) |*dep| {
+            if (meta.Deref(dep.type) == expected) return dep;
+        } else return null;
+    }
+
+    fn insertDep(self: *Bundle, dep: Dep) void {
+        if (self.findDep(dep.type)) |existing| {
+            // Check unique
+            if (existing.state == .instance and dep.state == .instance) {
+                @compileError("Cannot re-define " ++ @typeName(dep.type));
+            }
+
+            // Incoming .override - keep the current state, replace the provider (last one wins)
+            if (dep.state == .override) {
+                existing.provider = dep.provider;
+                return;
+            }
+
+            // Pending override - keep the provider, replace the state
+            if (existing.state == .override) {
+                existing.state = dep.state;
+                return;
+            }
+
+            unreachable;
+        } else {
+            self.deps.push(dep);
+            @setEvalBranchQuota(10 * self.deps.len * self.deps.len);
+        }
+    }
+
+    fn allocInstance(self: *Bundle, comptime T: type) @FieldType(Dep, "state") {
+        const offset = std.mem.alignForward(usize, self.n_data, @alignOf(T));
+        self.n_inst += 1;
+        self.n_data = offset + @sizeOf(T);
+        return .{ .instance = .{ .type = T, .offset = offset } };
+    }
+};
+
+fn CompiledBundle(comptime ops: []const Op, comptime n_inst: usize, comptime n_data: usize) type {
+    return struct {
+        refs: [n_inst + 2]Ref,
+        data: [n_data]u8,
+
+        fn init(self: *@This(), ct: *Container) !void {
+            // We NEED to use ct.inj directly, because if anyone saves this ptr, it needs to stay valid (ie. not be on the stack)
+            const inj = &ct.injector;
+
+            self.pushRef(inj, ct);
+            self.pushRef(inj, &ct.allocator);
+
+            var pc: usize = 0;
+            errdefer dump(pc);
+
+            inline for (ops) |op| {
+                switch (op) {
+                    .dep => |dep| {
+                        if (dep.provider != .fref) {
+                            self.pushRef(inj, dep.ptr(&self.data));
+                        }
+
+                        try dep.initInstance(&self.data, inj);
+
+                        // NOTE: pushRef() auto-derefs **T, and we can't save ref at the top because it is not yet initialized!
+                        if (dep.provider == .fref) {
+                            self.pushRef(inj, dep.ptr(&self.data));
+                        }
+                    },
+
+                    .hook => |hook| {
+                        if (hook.kind == .init) {
+                            try inj.call0(hook.fun.unwrap());
+                        }
+                    },
+                }
+
+                pc += 1;
+
+                // TODO: deinitFrom(pc)?
+                errdefer {
+                    switch (op) {
+                        .dep => |dep| {
+                            dep.deinitInstance(&self.data, inj);
+                        },
+
+                        .hook => |hook| {
+                            if (hook.kind == .deinit) {
+                                // TODO: this is not 100% right (child scopes)
+                                inj.call0(hook.fun.unwrap()) catch unreachable;
+                            }
+                        },
+                    }
+                }
+            }
+        }
+
+        fn deinit(self: *@This(), ct: *Container) void {
+            inline for (ops) |op| {
+                switch (op) {
+                    .dep => |dep| {
+                        dep.deinitInstance(&self.data, &ct.injector);
+                    },
+
+                    .hook => |hook| {
+                        if (hook.kind == .deinit) {
+                            // TODO: this is not 100% right (child scopes)
+                            ct.injector.call0(hook.fun.unwrap()) catch unreachable;
+                        }
+                    },
+                }
+            }
+        }
+
+        fn pushRef(self: *@This(), inj: *Injector, ptr: anytype) void {
+            // std.debug.print("push ref {} {s}\n", .{ inj.refs.len, @typeName(@TypeOf(ptr)) });
+            self.refs[inj.refs.len] = .ref(if (comptime meta.isOnePtr(@TypeOf(ptr.*))) ptr.* else ptr);
+            inj.refs = self.refs[0 .. inj.refs.len + 1];
+        }
+
+        fn dump(pc: usize) void {
+            inline for (ops, 0..) |op, i| {
+                std.debug.print("{c} {s}\n", .{
+                    @as(u8, if (pc > i) 'x' else if (pc == i) '>' else ' '),
+                    comptime op.desc(),
+                });
+            }
+        }
+    };
 }
 
 test "empty" {
     const ct = try Container.init(std.testing.allocator, &.{});
     defer ct.deinit();
 
+    try std.testing.expectEqual(2, ct.injector.refs.len);
     try std.testing.expectEqual(ct, ct.injector.find(*Container));
-}
-
-test "DIY container" {
-    const Svc = struct { x: u32 };
-    var inst: Svc = .{ .x = 123 };
-
-    const ct = try Container.init(std.testing.allocator, &.{});
-    defer ct.deinit();
-
-    try ct.register(&inst);
-    try std.testing.expectEqual(&inst, ct.injector.find(*Svc));
-    try std.testing.expectEqual(123, ct.injector.find(*Svc).?.x);
 }
 
 test "basic single-mod" {
@@ -385,6 +529,8 @@ test "basic single-mod" {
 
     const ct = try Container.init(std.testing.allocator, &.{App});
     defer ct.deinit();
+
+    try std.testing.expectEqual(5, ct.injector.refs.len);
 
     const app = try ct.injector.get(*App);
     try std.testing.expectEqual(&app.s1, app.s2.dep);
@@ -405,6 +551,8 @@ test "basic multi-mod" {
 
     const ct = try Container.init(std.testing.allocator, &.{ M1, M2 });
     defer ct.deinit();
+
+    try std.testing.expectEqual(6, ct.injector.refs.len);
 
     const s1 = try ct.injector.get(*S1);
     const s2 = try ct.injector.get(*S2);
@@ -435,6 +583,8 @@ test "T.init()" {
     const ct = try Container.init(std.testing.allocator, &.{App});
     defer ct.deinit();
 
+    try std.testing.expectEqual(5, ct.injector.refs.len);
+
     const s1 = try ct.injector.get(*S1);
     const s2 = try ct.injector.get(*S2);
 
@@ -442,83 +592,34 @@ test "T.init()" {
     try std.testing.expectEqual(456, s2.y);
 }
 
-test "M.initXxx()" {
+test "M.configure()" {
     const S1 = struct { x: u32 };
-    const S2 = struct { y: u32 };
+    const S2 = struct { dep: *S1 };
+
     const App = struct {
-        s1: S1,
         s2: S2,
 
-        pub fn initS1() S1 {
-            return .{ .x = 123 };
+        var hook_ok: bool = false;
+
+        pub fn configure(bundle: *Bundle) void {
+            bundle.add(S1, .auto);
+            bundle.add(u32, .value(123));
+            bundle.addInitHook(check);
         }
 
-        pub fn initS2(s2: *S2) void {
-            s2.y = 456;
+        fn check(s2: *S2) void {
+            if (s2.dep.x == 123) {
+                hook_ok = true;
+            }
         }
     };
 
     const ct = try Container.init(std.testing.allocator, &.{App});
     defer ct.deinit();
 
-    const s1 = try ct.injector.get(*S1);
+    try std.testing.expectEqual(6, ct.injector.refs.len);
+    try std.testing.expect(App.hook_ok);
+
     const s2 = try ct.injector.get(*S2);
-
-    try std.testing.expectEqual(123, s1.x);
-    try std.testing.expectEqual(456, s2.y);
-}
-
-test "M.initXxx() precedence" {
-    const S1 = struct { x: u32 };
-    const S2 = struct { y: u32 };
-    const S3 = struct { z: u32 };
-
-    const App = struct {
-        s1: S1,
-        s2: S2,
-        s3: S3,
-
-        pub fn initS1() S1 {
-            unreachable;
-        }
-
-        pub fn initS2(_: *S2) void {
-            unreachable;
-        }
-    };
-
-    const Fallbacks = struct {
-        pub fn initS1() S1 {
-            unreachable;
-        }
-
-        pub fn initS2(_: *S2) void {
-            unreachable;
-        }
-
-        pub fn initS3(s3: *S3) void {
-            s3.z = 789;
-        }
-    };
-
-    const Mocks = struct {
-        pub fn initS1() S1 {
-            return .{ .x = 123 };
-        }
-
-        pub fn initS2(s2: *S2) void {
-            s2.y = 456;
-        }
-    };
-
-    const ct = try Container.init(std.testing.allocator, &.{ Mocks, App, Fallbacks });
-    defer ct.deinit();
-
-    const s1 = try ct.injector.get(*S1);
-    const s2 = try ct.injector.get(*S2);
-    const s3 = try ct.injector.get(*S3);
-
-    try std.testing.expectEqual(123, s1.x);
-    try std.testing.expectEqual(456, s2.y);
-    try std.testing.expectEqual(789, s3.z);
+    try std.testing.expectEqual(123, s2.dep.x);
 }

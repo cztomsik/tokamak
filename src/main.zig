@@ -32,6 +32,7 @@ pub const util = @import("util.zig");
 // Core types (DI)
 pub const Injector = @import("injector.zig").Injector;
 pub const Container = @import("container.zig").Container;
+pub const Bundle = @import("container.zig").Bundle;
 
 // Core types (Server)
 pub const Server = @import("server.zig").Server;
