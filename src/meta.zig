@@ -1,8 +1,19 @@
 const std = @import("std");
+const util = @import("util.zig");
 
 // https://github.com/ziglang/zig/issues/19858#issuecomment-2370673253
+// NOTE: I've tried to make it work with enum / packed struct but I was still
+//       getting weird "operation is runtime due to this operand" here and there
+//       but it should be possible because we do something similar in util.Smol
 pub const TypeId = *const struct {
     name: [*:0]const u8,
+
+    pub fn sname(self: *const @This()) []const u8 {
+        // NOTE: we can't switch (invalid record Zig 0.14.1)
+        if (self == tid([]const u8)) return "str";
+        if (self == tid(?[]const u8)) return "?str";
+        return shortName(std.mem.span(self.name), '.');
+    }
 };
 
 pub inline fn tid(comptime T: type) TypeId {
@@ -11,6 +22,28 @@ pub inline fn tid(comptime T: type) TypeId {
     };
     return &H.id;
 }
+
+pub fn tids(comptime types: []const type) []const TypeId {
+    var buf = util.Buf(TypeId).initComptime(types.len);
+    for (types) |T| buf.push(tid(T));
+    return buf.finish();
+}
+
+/// Ptr to a comptime value, wrapped together with its type. We use this to
+/// pass around values (including a concrete fun types!) during the Bundle
+/// compilation.
+pub const ComptimeVal = struct {
+    type: type,
+    ptr: *const anyopaque,
+
+    pub fn wrap(comptime val: anytype) ComptimeVal {
+        return .{ .type = @TypeOf(val), .ptr = @ptrCast(&val) };
+    }
+
+    pub fn unwrap(self: ComptimeVal) self.type {
+        return @as(*const self.type, @ptrCast(@alignCast(self.ptr))).*;
+    }
+};
 
 pub fn dupe(allocator: std.mem.Allocator, value: anytype) !@TypeOf(value) {
     return switch (@typeInfo(@TypeOf(value))) {
@@ -94,6 +127,10 @@ pub fn isGeneric(comptime fun: anytype) bool {
     return @typeInfo(@TypeOf(fun)).@"fn".is_generic;
 }
 
+pub fn isOptional(comptime T: type) bool {
+    return @typeInfo(T) == .optional;
+}
+
 pub fn isOnePtr(comptime T: type) bool {
     return switch (@typeInfo(T)) {
         .pointer => |p| p.size == .one,
@@ -122,6 +159,13 @@ pub fn Deref(comptime T: type) type {
     return if (isOnePtr(T)) std.meta.Child(T) else T;
 }
 
+pub fn Unwrap(comptime T: type) type {
+    return switch (@typeInfo(T)) {
+        .optional => |o| o.child,
+        else => T,
+    };
+}
+
 pub fn hasDecl(comptime T: type, comptime name: []const u8) bool {
     return switch (@typeInfo(T)) {
         .@"struct", .@"union", .@"enum", .@"opaque" => @hasDecl(T, name),
@@ -130,11 +174,23 @@ pub fn hasDecl(comptime T: type, comptime name: []const u8) bool {
 }
 
 pub fn fieldTypes(comptime T: type) []const type {
-    return comptime blk: {
-        const fields = std.meta.fields(T);
-        var types: [fields.len]type = undefined;
-        for (&types, fields) |*t, f| t.* = f.type;
-        const copy = types;
-        break :blk &copy;
-    };
+    const fields = std.meta.fields(T);
+    var buf = util.Buf(type).initComptime(fields.len);
+    for (fields) |f| buf.push(f.type);
+    return buf.finish();
+}
+
+pub fn fnParams(comptime fun: anytype) []const type {
+    const info = @typeInfo(@TypeOf(fun));
+    if (info != .@"fn") @compileError("Expected a function, got " ++ @typeName(@TypeOf(fun)));
+
+    const params = info.@"fn".params;
+    var buf = util.Buf(type).initComptime(params.len);
+    for (params) |param| buf.push(param.type.?);
+    return buf.finish();
+}
+
+// TODO: move somewhere else?
+fn shortName(name: []const u8, delim: u8) []const u8 {
+    return if (std.mem.lastIndexOfScalar(u8, name, delim)) |i| name[i + 1 ..] else name;
 }
