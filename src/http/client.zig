@@ -11,7 +11,7 @@ pub const RequestOptions = struct {
     url: []const u8 = "",
     headers: []const std.http.Header = &.{},
     body: ?RequestBody = null,
-    max_len: usize = 64 * 1024,
+    max_len: usize = 1024 * 1024,
     timeout: ?usize = 60, // TODO: given how std.http.Client reads, it's better to wait for async + timers
 };
 
@@ -117,13 +117,12 @@ pub const DefaultBackend = struct {
     }
 
     pub fn request(self: *DefaultBackend, arena: std.mem.Allocator, options: RequestOptions) !Response {
-        var buf: [4 * 1024]u8 = undefined;
-        var remaining: []u8 = &buf;
+        var buf: []u8 = try arena.alloc(u8, 8 * 1024);
 
         const url = try std.Uri.resolve_inplace(
             if (options.base_url) |base| try std.Uri.parse(base) else .{ .scheme = "http" },
             options.url,
-            &remaining,
+            &buf,
         );
 
         var req = try self.std_client.open(options.method, url, .{
@@ -131,7 +130,7 @@ pub const DefaultBackend = struct {
                 .content_type = .{ .override = "application/json" },
             },
             .extra_headers = options.headers,
-            .server_header_buffer = remaining,
+            .server_header_buffer = buf,
         });
         defer req.deinit();
 
