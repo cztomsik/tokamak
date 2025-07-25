@@ -6,6 +6,7 @@ const Server = @import("server.zig").Server;
 const Route = @import("route.zig").Route;
 const Params = @import("route.zig").Params;
 const Schema = @import("schema.zig").Schema;
+const parseValue = @import("parse.zig").parseValue;
 const log = std.log.scoped(.tokamak);
 
 pub const Handler = fn (*Context) anyerror!void;
@@ -20,29 +21,9 @@ pub const Context = struct {
     injector: *Injector,
     responded: bool = false,
 
-    /// Get value from a string.
+    /// Parse a string value into the requested type.
     pub fn parse(self: *Context, comptime T: type, s: []const u8) !T {
-        return switch (@typeInfo(T)) {
-            .optional => |o| if (std.mem.eql(u8, s, "null")) null else try self.parse(o.child, s),
-            .bool => std.mem.eql(u8, s, "true"),
-            .int => std.fmt.parseInt(T, s, 10),
-            .@"enum" => std.meta.stringToEnum(T, s) orelse error.InvalidEnumTag,
-            .pointer => |p| {
-                if (comptime meta.isString(T)) return s;
-
-                if (p.size == .slice) {
-                    var res = std.ArrayList(p.child).init(self.req.arena);
-                    var it = std.mem.splitScalar(u8, s, ',');
-                    while (it.next()) |part| {
-                        try res.append(try self.parse(p.child, part));
-                    }
-                    return res.items;
-                }
-
-                @compileError("Not supported");
-            },
-            else => @compileError("Not supported"),
-        };
+        return parseValue(T, s, self.req.arena);
     }
 
     /// Reads the query parameters into a struct.
