@@ -1,42 +1,44 @@
 const std = @import("std");
 const Injector = @import("injector.zig").Injector;
 const Container = @import("container.zig").Container;
+const Bundle = @import("container.zig").Bundle;
 const Server = @import("server.zig").Server;
 const ServerOptions = @import("server.zig").InitOptions;
 
 pub const Base = struct {
-    pub fn initServer(ct: *Container, routes: []const @import("route.zig").Route, options: ?ServerOptions) !Server {
-        var opts: ServerOptions = options orelse .{};
-        opts.injector = &ct.injector;
+    pub fn configure(bundle: *Bundle) void {
+        bundle.addCompileHook(maybeConfigureServer);
+    }
 
-        return .init(ct.allocator, routes, opts);
+    fn maybeConfigureServer(bundle: *Bundle) void {
+        if (bundle.findDep(*Server)) |_| {
+            // TODO: auto-provide defaults? shorthand for this pattern?
+            if (bundle.findDep(ServerOptions) == null) {
+                bundle.add(ServerOptions, .value(ServerOptions{}));
+            }
+
+            bundle.addInitHook(setServerInjector);
+        }
+    }
+
+    // TODO: This is because *Injector is part of ServerOptions
+    fn setServerInjector(server: *Server, inj: *Injector) void {
+        server.injector = inj;
     }
 };
 
-pub fn run(comptime mods: []const type) !void {
+pub fn run(comptime fun: anytype, comptime mods: []const type) !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
 
-    try runAlloc(gpa.allocator(), mods);
+    try runAlloc(fun, gpa.allocator(), mods);
 }
 
-pub fn runAlloc(allocator: std.mem.Allocator, comptime mods: []const type) !void {
+pub fn runAlloc(comptime fun: anytype, allocator: std.mem.Allocator, comptime mods: []const type) !void {
+    comptime std.debug.assert(@typeInfo(@TypeOf(fun)) == .@"fn");
+
     const ct = try Container.init(allocator, mods ++ &[_]type{Base});
     defer ct.deinit();
 
-    // Every module can define app init/deinit hooks
-    inline for (mods) |M| {
-        if (std.meta.hasFn(M, "afterAppInit")) {
-            try ct.injector.call(M.afterAppInit, .{});
-        }
-
-        if (std.meta.hasFn(M, "beforeAppDeinit")) {
-            try ct.registerDeinit(M.beforeAppDeinit);
-        }
-    }
-
-    // TODO: I am not very happy about this
-    if (ct.injector.find(*Server)) |server| {
-        try server.start();
-    }
+    try ct.injector.call0(fun);
 }
