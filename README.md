@@ -9,6 +9,9 @@ front of it, like Nginx or Cloudfront, which will handle SSL, caching,
 sanitization, etc.
 
 > ### Recent changes
+> - multi-mod API has changed
+>   [considerably](https://github.com/cztomsik/tokamak/pull/25)
+> - there's a new [cli module](https://github.com/cztomsik/tokamak/tree/master/src/cli.zig)
 > - injecting `tk.Injector` is deprecated, use `*tk.Injector`
 > - multi-module support (cross-module initializers, providers, overrides)
 > - Switched to [http.zig](https://github.com/karlseguin/http.zig) for improved
