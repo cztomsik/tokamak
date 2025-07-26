@@ -8,6 +8,7 @@ const meta = @import("meta.zig");
 pub const Writer = struct {
     writer: std.io.AnyWriter,
     indent: usize = 0,
+    after_dash: bool = false,
 
     pub fn init(writer: std.io.AnyWriter) Writer {
         return .{ .writer = writer };
@@ -31,6 +32,7 @@ pub const Writer = struct {
             .float, .comptime_float => self.writer.print("!!float {d}", .{value}),
             .@"enum", .enum_literal => self.writeString(@tagName(value)),
             .error_set => self.writeString(@errorName(value)),
+            .array => self.writeSlice(&value),
             .pointer => |p| {
                 if (@typeInfo(p.child) == .array) {
                     return self.writeSlice(value[0..]);
@@ -47,13 +49,13 @@ pub const Writer = struct {
     }
 
     pub fn writeString(self: *Writer, value: []const u8) !void {
-        // TODO: Let's keep it simple for now
+        // TODO: Is this enough? Is it also enough for keys?
         const needs_escape = value.len == 0 or
             std.mem.eql(u8, value, "true") or
             std.mem.eql(u8, value, "false") or
-            for (value) |ch| {
-                if (!std.ascii.isAlphabetic(ch)) break true;
-            } else false;
+            std.mem.eql(u8, value, "null") or
+            std.mem.indexOfAny(u8, value, ":#@*&{}[]|>'\"\n\r") != null or
+            (value[0] == ' ' or value[value.len - 1] == ' ');
 
         if (needs_escape) {
             try self.writer.print("{}", .{std.json.fmt(value, .{})});
@@ -69,15 +71,18 @@ pub const Writer = struct {
 
         for (items, 0..) |it, i| {
             if (i > 0) {
-                try self.writer.writeAll("\n\n");
+                try self.writer.writeAll(if (shouldInline(it)) "\n" else "\n\n");
             }
 
-            try self.writeIndent();
+            if (!self.after_dash or i > 0) {
+                try self.writeIndent();
+            }
+
             try self.writer.writeAll("- ");
+            self.after_dash = true;
 
-            const n = self.maybePush(@TypeOf(it));
-            defer self.indent -= n;
-
+            self.indent += 1;
+            defer self.indent -= 1;
             try self.writeValue(it);
         }
     }
@@ -92,43 +97,64 @@ pub const Writer = struct {
         inline for (fields, 0..) |f, i| {
             if (i > 0) {
                 try self.writer.writeByte('\n');
-                try self.writeIndent();
             }
 
-            try self.writeKey(f.name);
+            if (!self.after_dash) {
+                try self.writeIndent();
+            } else {
+                self.after_dash = false;
+            }
+
+            try self.writeValue(f.name);
             try self.writer.writeAll(": ");
 
-            const n = self.maybePush(f.type);
-            defer self.indent -= n;
+            const val = @field(value, f.name);
 
-            try self.writeValue(@field(value, f.name));
+            if (shouldInline(val)) {
+                try self.writeValue(val);
+            } else {
+                try self.writer.writeByte('\n');
+                self.indent += 1;
+                try self.writeValue(val);
+                self.indent -= 1;
+            }
         }
-    }
-
-    fn writeKey(self: *Writer, key: []const u8) !void {
-        // TODO: I think we might need two separate needs_escape impls.
-        return self.writeString(key);
     }
 
     fn writeIndent(self: *Writer) !void {
         try self.writer.writeBytesNTimes("  ", self.indent);
     }
 
-    fn maybePush(self: *Writer, comptime T: type) usize {
-        if (meta.isSlice(T) or meta.isStruct(T)) {
-            self.indent += 1;
-            return 1;
-        } else return 0;
+    fn shouldInline(value: anytype) bool {
+        const T = @TypeOf(value);
+
+        if (comptime meta.isString(T)) return true;
+        if (comptime meta.isSlice(T)) return value.len == 0;
+
+        return switch (@typeInfo(T)) {
+            .@"struct" => |s| s.fields.len == 0,
+            .array => shouldInline(&value[0..]),
+            .optional => if (value) |v| shouldInline(v) else true,
+            .pointer => shouldInline(value.*),
+            else => true,
+        };
     }
 };
 
 const testing = @import("testing.zig");
 
 const User = struct { name: []const u8, age: u32 };
+const Address = struct { street: []const u8, city: []const u8, zip: u32 };
+const Story = struct { id: u64, title: []const u8, kids: ?[]const u64 };
 
 const users: []const User = &.{
-    .{ .name = "John", .age = 21 },
-    .{ .name = "Jane", .age = 23 },
+    .{ .name = "John Doe", .age = 21 },
+    .{ .name = "Jane Doe", .age = 23 },
+};
+
+const stories: []const Story = &.{
+    .{ .id = 123, .title = "Root", .kids = &[_]u64{ 456, 789 } },
+    .{ .id = 456, .title = "Leaf", .kids = &[_]u64{} },
 };
 
 fn expectYaml(val: anytype, expected: []const u8) !void {
@@ -157,16 +183,48 @@ test {
     );
 
     try expectYaml(users[0],
-        \\name: John
+        \\name: John Doe
         \\age: 21
     );
 
+    try expectYaml(.{ .user = users[0] },
+        \\user: 
+        \\  name: John Doe
+        \\  age: 21
+    );
+
     try expectYaml(users,
-        \\- name: John
+        \\- name: John Doe
         \\  age: 21
         \\
-        \\- name: Jane
+        \\- name: Jane Doe
         \\  age: 23
+    );
+
+    try expectYaml(stories[0],
+        \\id: 123
+        \\title: Root
+        \\kids: 
+        \\  - 456
+        \\  - 789
+    );
+
+    try expectYaml(stories[1],
+        \\id: 456
+        \\title: Leaf
+        \\kids: []
+    );
+
+    try expectYaml(stories,
+        \\- id: 123
+        \\  title: Root
+        \\  kids: 
+        \\    - 456
+        \\    - 789
+        \\
+        \\- id: 456
+        \\  title: Leaf
+        \\  kids: []
     );
 
     // edge-cases
@@ -175,4 +233,11 @@ test {
     try expectYaml("foo:bar", "\"foo:bar\"");
     try expectYaml(.{}, "{}");
     try expectYaml(users[0..0], "[]");
+    try expectYaml([_][]const u32{ &.{ 1, 2 }, &.{ 3, 4 } },
+        \\- - 1
+        \\  - 2
+        \\
+        \\- - 3
+        \\  - 4
+    );
 }
