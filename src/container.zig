@@ -7,7 +7,7 @@
 // - [x] introduce init/deinit runtime hooks (in **addition to** providers)
 // - [x] introduce comptime hooks (postprocessing, validation, scanning, ...)
 // - [x] decide if we want fallback/lazy (we don't)
-// - [ ] interfaces (fat/intrusive, or both)
+// - [x] interfaces (intrusive)
 // - [x] split to several meaningul commits (meta, impl, examples, readme, ...)
 // - [ ] include this list in the PR description & merge it
 
@@ -198,8 +198,16 @@ pub const Bundle = struct {
     n_inst: usize = 0,
     n_data: usize = 0,
 
-    /// Add every field as dependency, use f.default or .auto otherwise.
-    /// Then, if `M.configure(*Bundle)` is defined, invoke it (may recur).
+    /// Go through every `M.xxx` field and add it as a dependency (using a
+    /// provided default value or `.auto`).
+    ///
+    /// If the field type is interface-like (has an `interface` field), it will
+    /// also auto-register a ref to the `&T.interface` field.
+    ///
+    /// Finally, if there's a `pub fn M.configure(*Bundle)` defined, it will be
+    /// called (may recur). This is where you can define extra refs, register
+    /// init/deinit/compile hooks or even add more dependencies conditionally
+    /// and/or be more explicit about how it will be initialized.
     pub fn addModule(self: *Bundle, comptime M: type) void {
         self.add(M, .value(undefined));
         const start = self.findDep(M).?.state.instance.offset;
@@ -212,6 +220,11 @@ pub const Bundle = struct {
                 .provider = if (f.defaultValue()) |v| .value(v) else .auto,
             });
             self.n_inst += 1;
+
+            // Auto-add &T.interface, if present
+            if (meta.isStruct(f.type) and @hasField(f.type, "interface")) {
+                self.addFieldRef(f.type, "interface");
+            }
         }
 
         if (std.meta.hasFn(M, "configure")) {
