@@ -9,7 +9,7 @@
 // - [x] decide if we want fallback/lazy (we don't)
 // - [x] interfaces (intrusive)
 // - [x] split to several meaningul commits (meta, impl, examples, readme, ...)
-// - [ ] include this list in the PR description & merge it
+// - [x] include this list in the PR description & merge it
 
 const builtin = @import("builtin");
 const std = @import("std");

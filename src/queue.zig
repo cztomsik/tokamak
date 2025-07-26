@@ -38,24 +38,19 @@ pub const JobOptions = struct {
 };
 
 pub const Queue = struct {
-    backend: QueueBackend,
+    pub const VTable = struct {
+        enqueueJob: *const fn (*Queue, JobInfo) anyerror!?JobId,
+        getJobInfo: *const fn (*Queue, std.mem.Allocator, JobId) anyerror!?JobInfo,
+        getAllJobs: *const fn (*Queue, std.mem.Allocator) anyerror![]JobInfo,
+        startNext: *const fn (*Queue, i64) anyerror!?JobId,
+        startJob: *const fn (*Queue, JobId) anyerror!bool,
+        retryJob: *const fn (*Queue, JobId) anyerror!void,
+        removeJob: *const fn (*Queue, JobId) anyerror!void,
+        handleResult: *const fn (*Queue, JobId, anyerror![]const u8, i64) anyerror!void,
+    };
+
+    vtable: *const VTable,
     time: *const fn () i64 = std.time.timestamp,
-
-    pub fn init(allocator: std.mem.Allocator) !Queue {
-        return Queue.initWithBackend(DefaultBackend, allocator);
-    }
-
-    pub fn initWithBackend(comptime B: type, allocator: std.mem.Allocator) !Queue {
-        const backend = try B.init(allocator);
-
-        return .{
-            .backend = meta.upcast(backend, QueueBackend),
-        };
-    }
-
-    pub fn deinit(self: *Queue) void {
-        self.backend.deinit();
-    }
 
     pub fn enqueue(self: *Queue, name: []const u8, data: anytype, options: JobOptions) !?JobId {
         // We only stringify small payloads
@@ -83,31 +78,31 @@ pub const Queue = struct {
             .completed_at = null,
         };
 
-        return self.backend.enqueue(job);
+        return self.vtable.enqueueJob(self, job);
     }
 
     pub fn getJobInfo(self: *Queue, arena: std.mem.Allocator, id: JobId) !?JobInfo {
-        return self.backend.getJobInfo(arena, id);
+        return self.vtable.getJobInfo(self, arena, id);
     }
 
     pub fn getAllJobs(self: *Queue, arena: std.mem.Allocator) ![]JobInfo {
-        return self.backend.getAllJobs(arena);
+        return self.vtable.getAllJobs(self, arena);
     }
 
     pub fn startNext(self: *Queue) !?JobId {
-        return self.backend.startNext(self.time());
+        return self.vtable.startNext(self, self.time());
     }
 
     pub fn startJob(self: *Queue, id: JobId) !bool {
-        return self.backend.startJob(id);
+        return self.vtable.startJob(self, id);
     }
 
     pub fn retryJob(self: *Queue, id: JobId) !void {
-        return self.backend.retryJob(id);
+        return self.vtable.retryJob(self, id);
     }
 
     pub fn removeJob(self: *Queue, id: JobId) !void {
-        return self.backend.removeJob(id);
+        return self.vtable.removeJob(self, id);
     }
 
     pub fn handleSuccess(self: *Queue, id: JobId, res: anytype) !void {
@@ -120,70 +115,16 @@ pub const Queue = struct {
                 break :blk fbs.getWritten();
             },
         };
-        return self.backend.handleResult(id, result_str, self.time());
+        return self.vtable.handleResult(self, id, result_str, self.time());
     }
 
     pub fn handleFailure(self: *Queue, id: JobId, err: anyerror) !void {
-        return self.backend.handleResult(id, err, self.time());
+        return self.vtable.handleResult(self, id, err, self.time());
     }
 };
 
-pub const QueueBackend = struct {
-    context: *anyopaque,
-    vtable: *const VTable,
-
-    pub const Error = anyerror; // TODO
-
-    pub const VTable = struct {
-        enqueue: *const fn (context: *anyopaque, job: JobInfo) Error!?JobId,
-        getJobInfo: *const fn (context: *anyopaque, arena: std.mem.Allocator, id: JobId) Error!?JobInfo,
-        getAllJobs: *const fn (context: *anyopaque, arena: std.mem.Allocator) Error![]JobInfo,
-        startNext: *const fn (context: *anyopaque, time: i64) Error!?JobId,
-        startJob: *const fn (context: *anyopaque, id: JobId) Error!bool,
-        retryJob: *const fn (context: *anyopaque, id: JobId) Error!void,
-        removeJob: *const fn (context: *anyopaque, id: JobId) Error!void,
-        handleResult: *const fn (context: *anyopaque, id: JobId, result: anyerror![]const u8, time: i64) Error!void,
-        deinit: *const fn (context: *anyopaque) void,
-    };
-
-    pub fn enqueue(self: *QueueBackend, job: JobInfo) !?JobId {
-        return self.vtable.enqueue(self.context, job);
-    }
-
-    pub fn getJobInfo(self: *QueueBackend, arena: std.mem.Allocator, id: JobId) !?JobInfo {
-        return self.vtable.getJobInfo(self.context, arena, id);
-    }
-
-    pub fn getAllJobs(self: *QueueBackend, arena: std.mem.Allocator) ![]JobInfo {
-        return self.vtable.getAllJobs(self.context, arena);
-    }
-
-    pub fn startNext(self: *QueueBackend, time: i64) !?JobId {
-        return self.vtable.startNext(self.context, time);
-    }
-
-    pub fn startJob(self: *QueueBackend, id: JobId) !bool {
-        return self.vtable.startJob(self.context, id);
-    }
-
-    pub fn retryJob(self: *QueueBackend, id: JobId) !void {
-        return self.vtable.retryJob(self.context, id);
-    }
-
-    pub fn removeJob(self: *QueueBackend, id: JobId) !void {
-        return self.vtable.removeJob(self.context, id);
-    }
-
-    pub fn handleResult(self: *QueueBackend, id: JobId, result: anyerror![]const u8, time: i64) !void {
-        return self.vtable.handleResult(self.context, id, result, time);
-    }
-
-    pub fn deinit(self: *QueueBackend) void {
-        self.vtable.deinit(self.context);
-    }
-};
-
-pub const DefaultBackend = struct {
+pub const MemQueue = struct {
+    interface: Queue,
     mutex: std.Thread.Mutex.Recursive = .init,
     allocator: std.mem.Allocator,
     jobs: util.SlotMap(JobInfo),
@@ -195,21 +136,29 @@ pub const DefaultBackend = struct {
         scheduled_at: ?i64,
     };
 
-    pub fn init(allocator: std.mem.Allocator) !*DefaultBackend {
-        const self = try allocator.create(DefaultBackend);
-        errdefer allocator.destroy(self);
+    pub fn init(allocator: std.mem.Allocator) !MemQueue {
+        return .{
+            .interface = .{
+                .vtable = &.{
+                    .enqueueJob = &enqueueJob,
+                    .getJobInfo = &getJobInfo,
+                    .getAllJobs = &getAllJobs,
+                    .startNext = &startNext,
+                    .startJob = &startJob,
+                    .retryJob = &retryJob,
+                    .removeJob = &removeJob,
+                    .handleResult = &handleResult,
+                },
+            },
 
-        self.* = .{
             .allocator = allocator,
             .jobs = try .initAlloc(allocator, 4),
             .upcoming = .init(allocator, {}),
             .keys = .empty,
         };
-
-        return self;
     }
 
-    pub fn deinit(self: *DefaultBackend) void {
+    pub fn deinit(self: *MemQueue) void {
         self.mutex.lock();
         // defer self.mutex.unlock();
 
@@ -223,10 +172,10 @@ pub const DefaultBackend = struct {
         self.jobs.deinit(allocator);
         self.upcoming.deinit();
         self.keys.deinit(allocator);
-        allocator.destroy(self);
     }
 
-    pub fn enqueue(self: *DefaultBackend, job: JobInfo) !?JobId {
+    fn enqueueJob(queue: *Queue, job: JobInfo) !?JobId {
+        const self: *MemQueue = @fieldParentPtr("interface", queue);
         self.mutex.lock();
         defer self.mutex.unlock();
 
@@ -269,7 +218,8 @@ pub const DefaultBackend = struct {
         return id;
     }
 
-    pub fn getJobInfo(self: *DefaultBackend, arena: std.mem.Allocator, id: JobId) !?JobInfo {
+    fn getJobInfo(queue: *Queue, arena: std.mem.Allocator, id: JobId) !?JobInfo {
+        const self: *MemQueue = @fieldParentPtr("interface", queue);
         self.mutex.lock();
         defer self.mutex.unlock();
 
@@ -283,7 +233,8 @@ pub const DefaultBackend = struct {
         return copy;
     }
 
-    pub fn getAllJobs(self: *DefaultBackend, arena: std.mem.Allocator) ![]JobInfo {
+    fn getAllJobs(queue: *Queue, arena: std.mem.Allocator) ![]JobInfo {
+        const self: *MemQueue = @fieldParentPtr("interface", queue);
         self.mutex.lock();
         defer self.mutex.unlock();
 
@@ -299,7 +250,8 @@ pub const DefaultBackend = struct {
         return res.toOwnedSlice();
     }
 
-    pub fn startNext(self: *DefaultBackend, time: i64) !?JobId {
+    fn startNext(queue: *Queue, time: i64) !?JobId {
+        const self: *MemQueue = @fieldParentPtr("interface", queue);
         self.mutex.lock();
         defer self.mutex.unlock();
 
@@ -324,7 +276,8 @@ pub const DefaultBackend = struct {
         return null;
     }
 
-    pub fn startJob(self: *DefaultBackend, id: JobId) !bool {
+    fn startJob(queue: *Queue, id: JobId) !bool {
+        const self: *MemQueue = @fieldParentPtr("interface", queue);
         self.mutex.lock();
         defer self.mutex.unlock();
 
@@ -342,7 +295,8 @@ pub const DefaultBackend = struct {
         }
     }
 
-    pub fn retryJob(self: *DefaultBackend, id: JobId) !void {
+    fn retryJob(queue: *Queue, id: JobId) !void {
+        const self: *MemQueue = @fieldParentPtr("interface", queue);
         self.mutex.lock();
         defer self.mutex.unlock();
 
@@ -352,7 +306,8 @@ pub const DefaultBackend = struct {
         } else return error.JobNotFound;
     }
 
-    pub fn removeJob(self: *DefaultBackend, id: JobId) !void {
+    fn removeJob(queue: *Queue, id: JobId) !void {
+        const self: *MemQueue = @fieldParentPtr("interface", queue);
         self.mutex.lock();
         defer self.mutex.unlock();
 
@@ -365,7 +320,8 @@ pub const DefaultBackend = struct {
         self.jobs.remove(@bitCast(id));
     }
 
-    pub fn handleResult(self: *DefaultBackend, id: JobId, result: anyerror![]const u8, time: i64) !void {
+    fn handleResult(queue: *Queue, id: JobId, result: anyerror![]const u8, time: i64) !void {
+        const self: *MemQueue = @fieldParentPtr("interface", queue);
         self.mutex.lock();
         defer self.mutex.unlock();
 
@@ -421,8 +377,10 @@ pub const DefaultBackend = struct {
 };
 
 test Queue {
-    var queue = try Queue.init(testing.allocator);
-    defer queue.deinit();
+    var mem_queue = try MemQueue.init(testing.allocator);
+    defer mem_queue.deinit();
+
+    const queue = &mem_queue.interface;
 
     testing.time.value = 0;
     queue.time = &testing.time.get;
