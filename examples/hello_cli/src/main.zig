@@ -2,8 +2,7 @@ const std = @import("std");
 const tk = @import("tokamak");
 
 const App = struct {
-    http_client: tk.http.Client,
-    http_client_cfg: tk.http.ClientConfig = .{},
+    http_client: tk.http.StdClient,
     hn_client: tk.hackernews.Client,
 };
 

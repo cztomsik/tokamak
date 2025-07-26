@@ -200,18 +200,19 @@ test expectTable {
     );
 }
 
-pub fn httpClient() !struct { http.Client, *MockClientBackend } {
-    const http_client = try http.Client.initWithBackend(MockClientBackend, std.testing.allocator, .{});
+/// Shorthand for MockClient.init() + &mock.interface
+pub fn httpClient() !struct { *MockClient, *http.Client } {
+    const mock = try MockClient.init(std.testing.allocator);
 
     return .{
-        http_client,
-        @ptrCast(@alignCast(http_client.backend.context)),
+        mock,
+        &mock.interface,
     };
 }
 
 test httpClient {
-    var http_client, var mock = try httpClient();
-    defer http_client.deinit();
+    const mock, const http_client = try httpClient();
+    defer mock.deinit();
 
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -223,28 +224,32 @@ test httpClient {
     try std.testing.expectEqualStrings("{\"bar\":\"baz\"}", res.body);
 }
 
-pub const MockClientBackend = struct {
+pub const MockClient = struct {
+    interface: http.Client,
     fixtures: std.ArrayList(struct { std.http.Method, []const u8, std.http.Status, []const u8 }),
 
-    pub fn init(allocator: std.mem.Allocator) !*MockClientBackend {
-        const self = try allocator.create(MockClientBackend);
+    pub fn init(allocator: std.mem.Allocator) !*MockClient {
+        const self = try allocator.create(MockClient);
 
         self.* = .{
-            .fixtures = .init(allocator),
+            .interface = .{
+                .make_request = &make_request,
+                .config = &.{},
+            },
+            .fixtures = std.ArrayList(struct { std.http.Method, []const u8, std.http.Status, []const u8 }).init(allocator),
         };
 
         return self;
     }
 
-    pub fn deinit(cx: *anyopaque) void {
-        const self: *MockClientBackend = @ptrCast(@alignCast(cx));
+    pub fn deinit(self: *MockClient) void {
         const allocator = self.fixtures.allocator;
         self.fixtures.deinit();
         allocator.destroy(self);
     }
 
-    pub fn request(cx: *anyopaque, arena: std.mem.Allocator, options: http.RequestOptions) !http.ClientResponse {
-        const self: *MockClientBackend = @ptrCast(@alignCast(cx));
+    fn make_request(client: *http.Client, arena: std.mem.Allocator, options: http.RequestOptions) !http.ClientResponse {
+        const self: *MockClient = @fieldParentPtr("interface", client);
         const method, const url, const status, const body = self.fixtures.orderedRemove(0);
 
         try std.testing.expectEqual(method, options.method);
@@ -252,13 +257,13 @@ pub const MockClientBackend = struct {
 
         return .{
             .arena = arena,
-            .headers = undefined,
+            .headers = .empty,
             .status = status,
             .body = body,
         };
     }
 
-    pub fn expectNext(self: *MockClientBackend, comptime req: []const u8, comptime res: []const u8) !void {
+    pub fn expectNext(self: *MockClient, comptime req: []const u8, comptime res: []const u8) !void {
         var it = std.mem.splitScalar(u8, req, ' ');
         const status: std.http.Status = @enumFromInt(try std.fmt.parseInt(u8, it.next().?, 10));
         const method = std.meta.stringToEnum(std.http.Method, it.next().?).?;

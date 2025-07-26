@@ -63,16 +63,17 @@ pub const Client = struct {
 };
 
 test {
-    var http_client, var mock = try testing.httpClient();
-    defer http_client.deinit();
+    const mock, const http_client = try testing.httpClient();
+    defer mock.deinit();
+
+    var hn_client = Client{ .http_client = http_client };
+
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
 
     try mock.expectNext("200 GET topstories.json", "[1,2]");
     try mock.expectNext("200 GET item/1.json", "{\"id\":1,\"type\":\"story\",\"by\":\"foo\"}");
     try mock.expectNext("200 GET item/2.json", "{\"id\":2,\"type\":\"ask\",\"by\":\"bar\"}");
-    var hn_client = Client{ .http_client = &http_client };
-
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
 
     const stories = try hn_client.getTopStories(arena.allocator(), 3);
 
