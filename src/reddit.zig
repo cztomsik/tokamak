@@ -66,10 +66,10 @@ pub const Client = struct {
 };
 
 test {
-    var http_client, var mock = try testing.httpClient();
-    defer http_client.deinit();
+    const mock, const http_client = try testing.httpClient();
+    defer mock.deinit();
 
-    var reddit_client = Client{ .http_client = &http_client };
+    var reddit_client = Client{ .http_client = http_client };
 
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
@@ -106,6 +106,7 @@ test {
         \\  }
         \\}
     );
+
     const posts = try reddit_client.getHotPosts(arena.allocator(), "foo", 10);
 
     try testing.expectTable(posts,

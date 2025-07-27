@@ -1,6 +1,7 @@
 const std = @import("std");
 const testing = @import("testing.zig");
 const Queue = @import("queue.zig").Queue;
+const MemQueue = @import("queue.zig").MemQueue;
 const log = std.log.scoped(.cron);
 const c = @cImport({
     @cInclude("stdlib.h");
@@ -114,10 +115,12 @@ pub const Cron = struct {
 };
 
 test Cron {
-    var queue = try Queue.init(testing.allocator);
-    defer queue.deinit();
+    var mem_queue = try MemQueue.init(testing.allocator);
+    defer mem_queue.deinit();
 
-    var cron = Cron.init(testing.allocator, &queue);
+    const queue = &mem_queue.interface;
+
+    var cron = Cron.init(testing.allocator, queue);
     defer cron.deinit();
 
     testing.time.value = 0;

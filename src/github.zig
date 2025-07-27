@@ -1,6 +1,6 @@
 const std = @import("std");
 const http = @import("http.zig");
-const log = std.log.scoped(.github);
+const testing = @import("testing.zig");
 
 pub const Config = struct {
     base_url: []const u8 = "https://api.github.com/",
@@ -9,59 +9,28 @@ pub const Config = struct {
 };
 
 // https://docs.github.com/en/rest/issues/issues?apiVersion=2022-11-28#list-repository-issues
-// but in the order from curl response https://api.github.com/repos/cztomsik/tokamak/issues
+// https://api.github.com/repos/cztomsik/tokamak/issues
 pub const Issue = struct {
     url: []const u8,
-    // repository_url: []const u8,
-    // labels_url: []const u8,
-    // comments_url: []const u8,
-    // events_url: []const u8,
-    // html_url: []const u8,
     id: u64,
-    node_id: []const u8,
     number: u64,
     title: []const u8,
-    // user: ?struct {}, // TODO
-    labels: []const IssueLabel,
     state: []const u8,
-    locked: bool,
-    // assignee: ?struct {}, // TODO
-    // assignees: []const struct {}, // TODO
-    // milestone: ?struct {}, // TODO
-    comments: u64,
-    created_at: []const u8,
-    updated_at: []const u8,
-    closed_at: ?[]const u8,
-    // author_association: []const u8, // TODO
-    active_lock_reason: ?[]const u8,
-    // sub_issues_summary: struct {}, // TODO
     body: ?[]const u8,
-    // closed_by: ?struct {}, // TODO
-    // reactions: struct {}, // TODO
-    // timeline_url: []const u8,
-    // performed_via_github_app: ?struct {}, // TODO
-    // state_reason: ?[]const u8,
-    // pull_request: ?struct {}, // TODO
-    // draft: bool, // TODO
-    // body_html: ?[]const u8, // TODO
-    // body_text: ?[]const u8, // TODO
-    // type: ?struct {}, // TODO
-    // repository: struct {}, // TODO
 };
 
-const IssueLabel = struct {
+// https://docs.github.com/en/rest/repos/repos?apiVersion=2022-11-28#list-organization-repositories
+// https://api.github.com/users/cztomsik/repos
+pub const Repository = struct {
     id: u64,
-    node_id: []const u8,
-    url: []const u8,
     name: []const u8,
     description: ?[]const u8,
-    color: []const u8,
-    default: bool,
+    url: []const u8,
 };
 
 pub const Client = struct {
     http_client: *http.Client,
-    config: Config,
+    config: Config = .{},
 
     pub fn listRepoIssues(self: *Client, arena: std.mem.Allocator, owner: []const u8, repo: []const u8) ![]const Issue {
         const res = try self.request(arena, .{
@@ -70,6 +39,15 @@ pub const Client = struct {
         });
 
         return res.json([]const Issue);
+    }
+
+    pub fn listRepos(self: *Client, arena: std.mem.Allocator, owner: []const u8) ![]const Repository {
+        const res = try self.request(arena, .{
+            .method = .GET,
+            .url = try std.fmt.allocPrint(arena, "users/{s}/repos", .{owner}),
+        });
+
+        return res.json([]const Repository);
     }
 
     fn request(self: *Client, arena: std.mem.Allocator, options: http.RequestOptions) !http.ClientResponse {
@@ -89,3 +67,93 @@ pub const Client = struct {
         return self.http_client.request(arena, opts);
     }
 };
+
+test "listRepoIssues" {
+    const mock, const http_client = try testing.httpClient();
+    defer mock.deinit();
+
+    var github_client = Client{ .http_client = http_client };
+
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    try mock.expectNext("200 GET repos/cztomsik/tokamak/issues",
+        \\[
+        \\  {
+        \\    "url": "https://api.github.com/repos/cztomsik/tokamak/issues/1",
+        \\    "id": 123,
+        \\    "number": 1,
+        \\    "title": "First issue",
+        \\    "state": "open",
+        \\    "body": "Issue body"
+        \\  },
+        \\  {
+        \\    "url": "https://api.github.com/repos/cztomsik/tokamak/issues/2",
+        \\    "id": 456,
+        \\    "number": 2,
+        \\    "title": "Second issue",
+        \\    "state": "closed",
+        \\    "body": null
+        \\  }
+        \\]
+    );
+
+    const issues = try github_client.listRepoIssues(arena.allocator(), "cztomsik", "tokamak");
+
+    try testing.expectTable(issues,
+        \\| id  | number | title        | state  |
+        \\|-----|--------|--------------|--------|
+        \\| 123 | 1      | First issue  | open   |
+        \\| 456 | 2      | Second issue | closed |
+    );
+}
+
+test "listRepos" {
+    const mock, const http_client = try testing.httpClient();
+    defer mock.deinit();
+
+    var github_client = Client{ .http_client = http_client };
+
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    try mock.expectNext("200 GET users/cztomsik/repos",
+        \\[
+        \\  {
+        \\    "id": 123,
+        \\    "name": "tokamak",
+        \\    "description": "Web framework for Zig",
+        \\    "url": "https://api.github.com/repos/cztomsik/tokamak"
+        \\  },
+        \\  {
+        \\    "id": 456,
+        \\    "name": "napigen",
+        \\    "description": null,
+        \\    "url": "https://api.github.com/repos/cztomsik/napigen"
+        \\  }
+        \\]
+    );
+
+    const repos = try github_client.listRepos(arena.allocator(), "cztomsik");
+
+    try testing.expectTable(repos,
+        \\| id  | name    |
+        \\|-----|---------|
+        \\| 123 | tokamak |
+        \\| 456 | napigen |
+    );
+}
+
+test "auth" {
+    const mock, const http_client = try testing.httpClient();
+    defer mock.deinit();
+
+    var github_client = Client{ .http_client = http_client, .config = .{ .api_key = "test-token" } };
+
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    try mock.expectNext("200 GET users/cztomsik/repos Authorization: Bearer test-token", "[]");
+
+    _ = try github_client.listRepos(arena.allocator(), "cztomsik");
+}

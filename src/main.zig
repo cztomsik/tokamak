@@ -3,8 +3,10 @@ const httpz = @import("httpz");
 
 // Stand-alone namespaces
 pub const ai = @import("ai.zig");
+pub const ansi = @import("ansi.zig");
 pub const app = @import("app.zig");
 // pub const cdp = @import("cdp.zig");
+pub const cli = @import("cli.zig");
 pub const config = @import("config.zig");
 pub const cron = @import("cron.zig");
 pub const crypto = @import("crypto.zig");
@@ -28,10 +30,12 @@ pub const sendmail = @import("sendmail.zig");
 pub const testing = @import("testing.zig");
 pub const tpl = @import("tpl.zig");
 pub const util = @import("util.zig");
+pub const yaml = @import("yaml.zig");
 
 // Core types (DI)
 pub const Injector = @import("injector.zig").Injector;
 pub const Container = @import("container.zig").Container;
+pub const Bundle = @import("container.zig").Bundle;
 
 // Core types (Server)
 pub const Server = @import("server.zig").Server;

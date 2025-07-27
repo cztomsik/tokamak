@@ -56,7 +56,7 @@ const App = struct {
     math: MathService,
     mail: MailService,
     sendmail: tk.sendmail.Sendmail,
-    http_client: tk.http.Client,
+    http_client: tk.http.StdClient,
     ai_client: tk.ai.Client,
     agent_toolbox: tk.ai.AgentToolbox,
     agent_runtime: tk.ai.AgentRuntime,

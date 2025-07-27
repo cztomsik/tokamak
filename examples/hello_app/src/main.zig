@@ -13,5 +13,5 @@ const App = struct {
 };
 
 pub fn main() !void {
-    try tk.app.run(&.{App});
+    try tk.app.run(tk.Server.start, &.{App});
 }

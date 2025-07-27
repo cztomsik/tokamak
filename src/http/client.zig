@@ -11,7 +11,7 @@ pub const RequestOptions = struct {
     url: []const u8 = "",
     headers: []const std.http.Header = &.{},
     body: ?RequestBody = null,
-    max_len: usize = 64 * 1024,
+    max_len: usize = 1024 * 1024,
     timeout: ?usize = 60, // TODO: given how std.http.Client reads, it's better to wait for async + timers
 };
 
@@ -49,81 +49,54 @@ pub const Response = struct {
 };
 
 pub const Client = struct {
-    config: Config,
-    backend: ClientBackend,
+    make_request: *const fn (*Client, std.mem.Allocator, RequestOptions) Error!Response,
+    config: *const Config,
 
-    pub fn init(allocator: std.mem.Allocator, config: Config) !Client {
-        return initWithBackend(DefaultBackend, allocator, config);
-    }
-
-    pub fn initWithBackend(comptime B: type, allocator: std.mem.Allocator, config: Config) !Client {
-        const backend = try B.init(allocator);
-
-        return .{
-            .config = config,
-            .backend = meta.upcast(backend, ClientBackend),
-        };
-    }
-
-    pub fn deinit(self: *Client) void {
-        self.backend.deinit();
-    }
+    // TODO
+    const Error = anyerror;
 
     pub fn request(self: *Client, arena: std.mem.Allocator, options: RequestOptions) !Response {
         var opts = options;
         opts.base_url = opts.base_url orelse self.config.base_url;
 
-        return self.backend.request(arena, opts);
+        return self.make_request(self, arena, opts);
+    }
+
+    pub fn get(self: *Client, arena: std.mem.Allocator, url: []const u8) !Response {
+        return self.request(arena, .{ .method = .GET, .url = url });
+    }
+
+    pub fn post(self: *Client, arena: std.mem.Allocator, url: []const u8, body: ?RequestBody) !Response {
+        return self.request(arena, .{ .method = .POST, .url = url, .body = body });
     }
 };
 
-pub const ClientBackend = struct {
-    context: *anyopaque,
-    vtable: *const VTable,
-
-    pub const Error = std.http.Client.ConnectError || std.http.Client.RequestError;
-
-    pub const VTable = struct {
-        request: *const fn (cx: *anyopaque, arena: std.mem.Allocator, options: RequestOptions) Error!Response,
-        deinit: *const fn (cx: *anyopaque) void,
-    };
-
-    pub fn request(self: *ClientBackend, arena: std.mem.Allocator, options: RequestOptions) !Response {
-        return self.vtable.request(self.context, arena, options);
-    }
-
-    pub fn deinit(self: *ClientBackend) void {
-        self.vtable.deinit(self.context);
-    }
-};
-
-pub const DefaultBackend = struct {
+pub const StdClient = struct {
+    interface: Client,
     std_client: std.http.Client,
 
-    pub fn init(allocator: std.mem.Allocator) !*DefaultBackend {
-        const self = try allocator.create(DefaultBackend);
-
-        self.* = .{
+    pub fn init(allocator: std.mem.Allocator, config: ?*const Config) !@This() {
+        return .{
+            .interface = .{
+                .make_request = &make_request,
+                .config = config orelse &.{},
+            },
             .std_client = .{ .allocator = allocator },
         };
-
-        return self;
     }
 
-    pub fn deinit(self: *DefaultBackend) void {
-        const allocator = self.std_client.allocator;
+    pub fn deinit(self: *StdClient) void {
         self.std_client.deinit();
-        allocator.destroy(self);
     }
 
-    pub fn request(self: *DefaultBackend, arena: std.mem.Allocator, options: RequestOptions) !Response {
-        var buf: [4 * 1024]u8 = undefined;
-        var remaining: []u8 = &buf;
+    fn make_request(client: *Client, arena: std.mem.Allocator, options: RequestOptions) !Response {
+        const self: *@This() = @fieldParentPtr("interface", client);
+        var buf: []u8 = try arena.alloc(u8, 8 * 1024);
 
         const url = try std.Uri.resolve_inplace(
             if (options.base_url) |base| try std.Uri.parse(base) else .{ .scheme = "http" },
             options.url,
-            &remaining,
+            &buf,
         );
 
         var req = try self.std_client.open(options.method, url, .{
@@ -131,7 +104,7 @@ pub const DefaultBackend = struct {
                 .content_type = .{ .override = "application/json" },
             },
             .extra_headers = options.headers,
-            .server_header_buffer = remaining,
+            .server_header_buffer = buf,
         });
         defer req.deinit();
 
@@ -180,8 +153,10 @@ test {
     defer thread.join();
     defer server.stop();
 
-    var client = try Client.init(std.testing.allocator, .{ .base_url = "http://localhost:8080/" });
-    defer client.deinit();
+    var std_client = try StdClient.init(std.testing.allocator, &.{ .base_url = "http://localhost:8080/" });
+    defer std_client.deinit();
+
+    const client = &std_client.interface;
 
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();

@@ -214,12 +214,7 @@ fn routeMetadata(comptime path: []const u8, comptime has_query: bool, comptime h
     const n_deps = comptime fields.len - n_params - @intFromBool(has_query) - @intFromBool(has_body);
 
     return .{
-        .deps = comptime brk: {
-            var deps: [n_deps]meta.TypeId = undefined;
-            for (0..n_deps) |i| deps[i] = meta.tid(fields[i].type);
-            const res = deps;
-            break :brk &res;
-        },
+        .deps = meta.tids(meta.fieldTypes(std.meta.ArgsTuple(@TypeOf(handler)))[0..n_deps]),
         .params = comptime brk: {
             var params: [n_params]Schema = undefined;
             for (0..n_params, n_deps..) |i, j| params[i] = Schema.forType(fields[j].type);
