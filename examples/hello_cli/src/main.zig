@@ -4,13 +4,15 @@ const tk = @import("tokamak");
 const App = struct {
     http_client: tk.http.StdClient,
     hn_client: tk.hackernews.Client,
+    gh_client: tk.github.Client,
 };
 
 const Cli = struct {
     cmds: []const tk.cli.Command = &.{
         .usage,
         .cmd0("hello", "Print a greeting message", hello),
-        .cmd1("hn", "Show top Hacker News stories", show_hn),
+        .cmd1("hn", "Show top Hacker News stories", hn_top),
+        .cmd1("gh", "List GitHub repos", gh_repos),
         .cmd2("scrape", "Scrape a URL with optional CSS selector", scrape),
         .cmd3("substr", "Get substring with bounds checking", substr),
     },
@@ -19,8 +21,12 @@ const Cli = struct {
         return "Hello World!";
     }
 
-    fn show_hn(hn_client: *tk.hackernews.Client, allocator: std.mem.Allocator, limit: ?u8) ![]const tk.hackernews.Story {
+    fn hn_top(hn_client: *tk.hackernews.Client, allocator: std.mem.Allocator, limit: ?u8) ![]const tk.hackernews.Story {
         return hn_client.getTopStories(allocator, limit orelse 10);
+    }
+
+    fn gh_repos(gh_client: *tk.github.Client, allocator: std.mem.Allocator, owner: []const u8) ![]const tk.github.Repository {
+        return gh_client.listRepos(allocator, owner);
     }
 
     fn scrape(allocator: std.mem.Allocator, http_client: *tk.http.Client, url: []const u8, qs: ?[]const u8) !void {
