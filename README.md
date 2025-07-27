@@ -131,6 +131,10 @@ pub fn main() !void {
 }
 ```
 
+> For advanced dependency injection features like multi-module support,
+> intrusive interfaces, and lifecycle hooks, see the [Advanced Dependency
+> Injection](#advanced-dependency-injection) section below.
+
 ## Middleware
 
 While Tokamak doesn't have Express-style middleware, it achieves the same
@@ -331,6 +335,88 @@ It takes a tuple of `{ name, fn_ptr, args_tuple }` triples as input.
 > **Note:** This feature requires a system with `fork()` support. It takes over
 > the main thread and forks processes, which may lead to unexpected behavior if
 > used incorrectly. Use with caution.
+
+## Advanced Dependency Injection
+
+### Multi-Module System
+
+Tokamak supports a powerful multi-module system where dependencies are
+automatically resolved across module boundaries. Modules are Zig structs where
+fields become dependencies:
+
+```zig
+const SharedModule = struct {
+    db_pool: DbPool,
+
+    pub fn configure(bundle: *tk.Bundle) void {
+        // Add more deps conditionally, override how they should be initialized, add hooks... (see below)
+    }
+};
+
+const WebModule = struct {
+    server: tk.Server,
+    routes: []const tk.Route = &.{ ... },
+};
+
+// Register modules when creating a Container
+pub fn main() !void {
+    try tk.app.run(Server.start, &.{
+        SharedModule,
+        WebModule,
+    });
+}
+```
+
+The Bundle API provides compile-time dependency configuration:
+
+- `addModule(M)` - Add all fields of module M as dependencies
+- `add(T, how)` - Add a single dependency with initialization strategy
+- `addOverride(T, how)` - Override dependency initialization (works across modules)
+- `addMock(T, how)` - Test-only override for mocking
+- `addFieldRef(T, field)` - Add reference to a struct field as dependency
+- `addInitHook(fn)` - Add runtime initialization callback
+- `addDeinitHook(fn)` - Add runtime cleanup callback
+
+Initialization strategies:
+- `.auto` - Automatic initialization (uses `T.init()` if available, otherwise autowires struct fields)
+- `.init` - Explicitly use `T.init()` method
+- `.autowire` - Initialize struct by injecting all fields
+- `.factory(fn)` - Use custom factory function
+- `.initializer(fn)` - Use initializer function (receives pointer to initialize)
+- `.value(v)` - Use provided comptime value directly
+
+### Intrusive Interface Pattern
+
+Tokamak supports an intrusive interface pattern for pluggable implementations.
+Types with an `interface` field are automatically registered for dependency
+injection, ie:
+
+const AppModule = struct {
+    http_client: StdClient,  // Define concrete implementation
+};
+
+// client will point to &StdClient.interface
+fn handler(client: *HttpClient) !void {
+    ...
+}
+```
+
+### Testing
+
+For testing, you can override dependencies:
+
+```zig
+const TestModule = struct {
+    pub fn configure(bundle: *Bundle) void {
+        bundle.addMock(Database, .value(MockDatabase{}));
+        bundle.addMock(EmailService, .factory(createMockEmailService));
+    }
+};
+
+// Run test with mocked dependencies
+const ct = try Container.init(test_allocator, &.{AppModule, TestModule});
+ct.injector.call0(myTestFun)
+```
 
 ## License
 
