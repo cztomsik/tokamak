@@ -15,6 +15,7 @@ pub const dom = @import("dom.zig");
 pub const entities = @import("entities.zig");
 pub const event = @import("event.zig");
 pub const hackernews = @import("hackernews.zig");
+pub const html2md = @import("html2md.zig");
 pub const http = @import("http.zig");
 pub const github = @import("github.zig");
 // pub const mail = @import("mail.zig");

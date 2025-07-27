@@ -1,12 +1,13 @@
 const std = @import("std");
 const tk = @import("tokamak");
 
+// Shared
 const App = struct {
     http_client: tk.http.StdClient,
     hn_client: tk.hackernews.Client,
-    gh_client: tk.github.Client,
 };
 
+// CLI-only
 const Cli = struct {
     cmds: []const tk.cli.Command = &.{
         .usage,
@@ -29,7 +30,7 @@ const Cli = struct {
         return gh_client.listRepos(allocator, owner);
     }
 
-    fn scrape(allocator: std.mem.Allocator, http_client: *tk.http.Client, url: []const u8, qs: ?[]const u8) !void {
+    fn scrape(allocator: std.mem.Allocator, http_client: *tk.http.Client, url: []const u8, qs: ?[]const u8) ![]const u8 {
         const res = try http_client.request(allocator, .{ .url = url });
 
         const doc = try tk.dom.Document.parseFromSlice(allocator, res.body);
@@ -41,7 +42,7 @@ const Cli = struct {
             if (try doc.querySelector(sel)) |el| node = &el.node;
         }
 
-        node.dump();
+        return try tk.html2md.html2md(allocator, node, .{});
     }
 
     fn substr(str: []const u8, start: ?usize, end: ?usize) ![]const u8 {
