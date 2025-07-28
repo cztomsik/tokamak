@@ -57,35 +57,6 @@ pub const Message = struct {
     tool_calls: ?[]const ToolCall = null,
     tool_call_id: ?[]const u8 = null,
 
-    pub fn system(content: []const u8) Message {
-        return .{
-            .role = .system,
-            .content = .{ .text = content },
-        };
-    }
-
-    pub fn user(content: []const u8) Message {
-        return .{
-            .role = .user,
-            .content = .{ .text = content },
-        };
-    }
-
-    pub fn assistant(content: []const u8) Message {
-        return .{
-            .role = .assistant,
-            .content = .{ .text = content },
-        };
-    }
-
-    pub fn tool(call_id: []const u8, content: []const u8) Message {
-        return .{
-            .role = .tool,
-            .content = .{ .text = content },
-            .tool_call_id = call_id,
-        };
-    }
-
     pub fn jsonStringify(self: Message, jws: anytype) !void {
         // TODO: this is ugly hack but zig only allows omitting null fields, which is not what we want
         //       (what we want is to omit them only if they also have null as default value)

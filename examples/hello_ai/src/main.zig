@@ -84,8 +84,8 @@ const App = struct {
         var agent = try agr.createAgent(gpa, .{ .model = "", .tools = tools });
         defer agent.deinit();
 
-        try agent.addMessage(.system("You are a helpful assistant./no_think"));
-        try agent.addMessage(.user(prompt));
+        try agent.addMessage(.{ .role = .system, .content = .{ .text = "You are a helpful assistant./no_think" } });
+        try agent.addMessage(.{ .role = .user, .content = .{ .text = prompt } });
 
         const res = try agent.run();
         std.debug.print("{s}\n", .{res});

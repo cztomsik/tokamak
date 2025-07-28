@@ -113,8 +113,13 @@ pub const Agent = struct {
     }
 
     pub fn respond(self: *Agent, tc: chat.ToolCall, res: anytype) !void {
-        const msg = chat.Message.tool(tc.id, try stringifyAlloc(self.arena, res));
-        try self.addMessage(msg);
+        const content = try stringifyAlloc(self.arena, res);
+
+        try self.addMessage(.{
+            .role = .tool,
+            .content = .{ .text = content },
+            .tool_call_id = tc.id,
+        });
     }
 
     pub fn retry(self: *Agent) void {
