@@ -221,6 +221,7 @@ const Scanner = struct {
 
                 .@"<a a=" => switch (ch) {
                     '"', '\'' => self.state = .{ .@"a=x" = .{ .len = self.pos - self.spos - 1, .q = ch } },
+                    '>' => self.startNext(.any),
                     else => continue,
                 },
 
@@ -454,5 +455,21 @@ test "forgiving" {
         .{ .text = "foo" },
         .{ .text = "<!foo>bar" },
         .{ .close = "root" },
+    });
+
+    try expectEvents("<a href=/foo>text</a>", &.{
+        .{ .open = "a" },
+        // skip href=/foo
+        .{ .text = "text" },
+        .{ .close = "a" },
+    });
+
+    try expectEvents("<div class=foo><span>bar</span></div>", &.{
+        .{ .open = "div" },
+        // skip class=foo
+        .{ .open = "span" },
+        .{ .text = "bar" },
+        .{ .close = "span" },
+        .{ .close = "div" },
     });
 }
