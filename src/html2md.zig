@@ -58,6 +58,20 @@ pub const Html2Md = struct {
             },
             p("li") => {
                 self.br(1);
+
+                if (element.parentElement()) |parent| {
+                    if (parent.local_name == p("ol")) {
+                        // TODO: Add el.index, it will be useful for nth-child, even/odd
+                        var n: usize = 1;
+                        var prev = element.previousElementSibling();
+                        while (prev) |prevEl| : (prev = prevEl.previousElementSibling()) n += 1;
+
+                        try self.push("");
+                        try self.res.writer().print("{}. ", .{n});
+                        return;
+                    }
+                }
+
                 try self.push("- ");
             },
             else => {},
@@ -207,9 +221,9 @@ test "lists" {
     try expectMd("<ul><li>first</li><li>second</li><li>third</li></ul>", "- first\n- second\n- third");
 
     // Ordered
-    // try expectMd("<ol><li>item</li></ol>", "1. item");
-    // try expectMd("<ol><li>first</li><li>second</li></ol>", "1. first\n2. second");
-    // try expectMd("<ol><li>first</li><li>second</li><li>third</li></ol>", "1. first\n2. second\n3. third");
+    try expectMd("<ol><li>item</li></ol>", "1. item");
+    try expectMd("<ol><li>first</li><li>second</li></ol>", "1. first\n2. second");
+    try expectMd("<ol><li>first</li><li>second</li><li>third</li></ol>", "1. first\n2. second\n3. third");
 
     // Nesting
     // try expectMd("<ul><li>parent<ul><li>child</li></ul></li></ul>", "- parent\n  - child");
