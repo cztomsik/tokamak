@@ -194,6 +194,13 @@ pub const AgentToolbox = struct {
     injector: *Injector,
     tools: std.StringHashMapUnmanaged(AgentTool) = .empty,
 
+    pub fn init(allocator: std.mem.Allocator, injector: *Injector) AgentToolbox {
+        return .{
+            .allocator = allocator,
+            .injector = injector,
+        };
+    }
+
     pub fn deinit(self: *AgentToolbox) void {
         self.mutex.lock();
         defer self.mutex.unlock();
