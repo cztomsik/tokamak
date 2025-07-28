@@ -16,9 +16,10 @@ pub fn html2md(allocator: std.mem.Allocator, node: *dom.Node, options: Options) 
 
 pub const Html2Md = struct {
     options: Options,
+    // TODO: out: std.io.AnyWriter and then we don't need Allocator? + initAlloc() + deinit(allocator)?
     res: std.ArrayList(u8),
     in_line: u32 = 0, // <h1>, <tr>
-    pending: enum { nop, sp, br1, br2 } = .nop,
+    pending: union(enum) { nop, sp, br: u2 } = .nop,
 
     pub fn init(allocator: std.mem.Allocator, options: Options) !Html2Md {
         return .{
@@ -39,24 +40,24 @@ pub const Html2Md = struct {
         const p = dom.LocalName.parse;
 
         try switch (element.local_name) {
-            p("br") => self.br(),
+            p("br") => self.br(if (self.pending == .br) 2 else 1),
             p("em"), p("i") => self.push(self.options.em_delim),
             p("strong"), p("b") => self.push(self.options.strong_delim),
-            p("div") => self.br1(),
-            p("p"), p("ul"), p("ol"), p("table") => self.br2(),
+            p("div") => self.br(1),
+            p("p"), p("ul"), p("ol"), p("table") => self.br(2),
             p("h1"), p("h2"), p("h3"), p("h4"), p("h5"), p("h6") => {
-                self.br2();
+                self.br(2);
                 self.in_line += 1;
                 try self.push("###### "['6' - element.local_name.name()[1] ..]);
             },
             p("th"), p("td") => self.sp(),
             p("tr") => {
-                self.br1();
+                self.br(1);
                 self.in_line += 1;
                 try self.push("|");
             },
             p("li") => {
-                self.br1();
+                self.br(1);
                 try self.push("- ");
             },
             else => {},
@@ -69,19 +70,19 @@ pub const Html2Md = struct {
         try switch (element.local_name) {
             p("em"), p("i") => self.push(self.options.em_delim),
             p("strong"), p("b") => self.push(self.options.strong_delim),
-            p("div") => self.br1(),
-            p("p"), p("ul"), p("ol"), p("table") => self.br2(),
+            p("div") => self.br(1),
+            p("p"), p("ul"), p("ol"), p("table") => self.br(2),
             p("h1"), p("h2"), p("h3"), p("h4"), p("h5"), p("h6") => {
                 self.in_line -|= 1;
-                self.br2();
+                self.br(2);
             },
             p("li") => {
-                self.br1();
+                self.br(1);
                 // self.indent -|= 1;
             },
             p("tr") => {
                 self.in_line -|= 1;
-                self.br1();
+                self.br(1);
             },
             p("th"), p("td") => {
                 self.sp();
@@ -116,8 +117,7 @@ pub const Html2Md = struct {
         if (self.res.items.len > 0 and self.pending != .nop) {
             try self.res.appendSlice(switch (self.pending) {
                 .sp => " ",
-                .br1 => "\n",
-                .br2 => "\n\n",
+                .br => |n| if (n == 1) "\n" else "\n\n",
                 .nop => unreachable,
             });
         }
@@ -136,19 +136,11 @@ pub const Html2Md = struct {
         }
     }
 
-    fn br(self: *Html2Md) void {
-        if (self.pending == .br1) self.br2() else self.br1();
-    }
-
-    fn br1(self: *Html2Md) void {
-        self.pending = if (self.in_line > 0) .sp else switch (self.pending) {
-            .nop, .sp => .br1,
-            .br1, .br2 => return,
-        };
-    }
-
-    fn br2(self: *Html2Md) void {
-        self.pending = if (self.in_line > 0) .sp else .br2;
+    fn br(self: *Html2Md, n: u2) void {
+        self.pending = if (self.in_line > 0) .sp else .{ .br = switch (self.pending) {
+            .nop, .sp => n,
+            .br => @max(n, self.pending.br),
+        } };
     }
 };
 
@@ -166,6 +158,7 @@ test "empty" {
     try expectMd("", "");
     try expectMd(" ", "");
     try expectMd("   \n\t  ", "");
+    // TODO: &nbsp; etc. (SAX)
 }
 
 test "inline" {
@@ -253,6 +246,16 @@ test "tables" {
     );
 }
 
+test "strip <script>, <style>" {
+    try expectMd("<script>foo</script>", "");
+    try expectMd("<style>foo</style>", "");
+}
+
+// test "uppercase" {
+//     try expectMd("<EM>foo</EM>", "*foo*");
+//     try expectMd("<STRONG>foo</STRONG>", "**foo**");
+// }
+
 test "links and images" {
     // TODO: make this configurable
     try expectMd("<a>foo</a>", "foo");
@@ -264,7 +267,7 @@ test "ignore other" {
     try expectMd("<unknown>foo</unknown>", "foo");
 }
 
-test "significant whitespace" {
+test "edge cases" {
     try expectMd("<span>foo</span><span>bar</span>", "foobar");
     try expectMd("<p>foo <span>bar</span></p>", "foo bar");
     // try expectMd("  multiple   spaces  ", "multiple spaces");
@@ -278,4 +281,6 @@ test "significant whitespace" {
     try expectMd("<p>foo <span>bar</span> <span>baz</span></p>", "foo bar baz");
     try expectMd("foo <em>bar</em> baz", "foo *bar* baz");
     try expectMd("<span>  foo</span><span>  bar</span>", "foo bar");
+
+    try expectMd("<ul><li>Gymnastick&eacute; &scaron;vihadlo</li></ul>", "- Gymnastické švihadlo");
 }
