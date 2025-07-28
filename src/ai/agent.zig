@@ -42,7 +42,7 @@ pub const Agent = struct {
 
     pub fn addMessage(self: *Agent, msg: chat.Message) !void {
         if (self.options.debug) {
-            log.debug("{s}: {?s}", .{ @tagName(msg.role), msg.content });
+            // log.debug("{s}: {?s}", .{ @tagName(msg.role), msg.content });
 
             if (msg.tool_calls) |tcs| {
                 for (tcs) |tc| {
@@ -165,6 +165,7 @@ pub const AgentTool = struct {
     tool: chat.Tool,
     handler: *const fn (inj: *Injector, arena: std.mem.Allocator, args: []const u8) anyerror![]const u8,
 
+    // TODO: tool0(), tool1(), toolN() but we will need to work around openai schema limitations first
     fn init(comptime name: []const u8, comptime description: []const u8, comptime handler: anytype) AgentTool {
         const H = struct {
             fn handleTool(inj: *Injector, arena: std.mem.Allocator, args: []const u8) anyerror![]const u8 {

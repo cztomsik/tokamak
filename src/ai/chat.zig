@@ -1,5 +1,36 @@
 const std = @import("std");
 const schema = @import("../schema.zig");
+const util = @import("../util.zig");
+
+const Content = struct {
+    type: enum { text, image_url },
+    text: ?[]const u8 = null,
+    image_url: ?ImageUrl = null,
+};
+
+const ImageUrl = struct {
+    url: []const u8,
+    detail: enum { low, high },
+};
+
+pub const TextOrContents = union(enum) {
+    text: []const u8,
+    contents: []const Content,
+
+    pub fn jsonStringify(self: *const @This(), jw: anytype) !void {
+        try switch (self.*) {
+            inline else => |v| jw.write(v),
+        };
+    }
+
+    pub fn jsonParse(allocator: std.mem.Allocator, source: anytype, options: std.json.ParseOptions) !@This() {
+        return switch (try source.peekNextTokenType()) {
+            .string => .{ .text = try std.json.innerParse([]const u8, allocator, source, options) },
+            .array_begin => .{ .contents = try std.json.innerParse([]const Content, allocator, source, options) },
+            else => error.UnexpectedToken,
+        };
+    }
+};
 
 pub const Request = struct {
     model: []const u8,
@@ -22,35 +53,35 @@ pub const Role = enum {
 
 pub const Message = struct {
     role: Role,
-    content: ?[]const u8,
+    content: ?TextOrContents = null,
     tool_calls: ?[]const ToolCall = null,
     tool_call_id: ?[]const u8 = null,
 
     pub fn system(content: []const u8) Message {
         return .{
             .role = .system,
-            .content = content,
+            .content = .{ .text = content },
         };
     }
 
     pub fn user(content: []const u8) Message {
         return .{
             .role = .user,
-            .content = content,
+            .content = .{ .text = content },
         };
     }
 
     pub fn assistant(content: []const u8) Message {
         return .{
             .role = .assistant,
-            .content = content,
+            .content = .{ .text = content },
         };
     }
 
     pub fn tool(call_id: []const u8, content: []const u8) Message {
         return .{
             .role = .tool,
-            .content = content,
+            .content = .{ .text = content },
             .tool_call_id = call_id,
         };
     }
@@ -136,7 +167,10 @@ pub const Choice = struct {
 
     pub fn text(self: Choice) ?[]const u8 {
         if (self.finish_reason == .stop) {
-            return self.message.content;
+            switch (self.message.content orelse return null) {
+                .text => |t| return t,
+                .contents => |cs| for (cs) |c| if (c.type == .text) return c.text,
+            }
         }
 
         return null;

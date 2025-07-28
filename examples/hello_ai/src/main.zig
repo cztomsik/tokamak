@@ -1,4 +1,5 @@
 // llama-server -hf Qwen/Qwen3-8B-GGUF:Q8_0 --jinja --reasoning-format deepseek -ngl 99 -fa --temp 0.6 --top-k 20 --top-p 0.95 --min-p 0
+// TODO: llama-server --jinja -hf unsloth/gemma-3-4b-it-GGUF:Q4_K_XL
 
 const std = @import("std");
 const tk = @import("tokamak");
@@ -61,16 +62,22 @@ const App = struct {
     agent_toolbox: tk.ai.AgentToolbox,
     agent_runtime: tk.ai.AgentRuntime,
 
-    pub fn afterBundleInit(tbox: *tk.ai.AgentToolbox) !void {
+    pub fn configure(bundle: *tk.Bundle) void {
+        bundle.addInitHook(initTools);
+    }
+
+    fn initTools(tbox: *tk.ai.AgentToolbox) !void {
         try tbox.addTool("add", "Add two numbers", MathService.add);
         try tbox.addTool("mul", "Multiply two numbers", MathService.mul);
         try tbox.addTool("checkMailbox", "List email messages (limit = 10)", MailService.listMessages);
         try tbox.addTool("sendMail", "Send email (from can be null)", tk.sendmail.Sendmail.sendMail);
     }
 
-    pub fn hello_ai(gpa: std.mem.Allocator, agr: *tk.ai.AgentRuntime) !void {
+    fn hello_ai(gpa: std.mem.Allocator, agr: *tk.ai.AgentRuntime, math: *MathService) !void {
         try runAgent(gpa, agr, "Can you tell how much is 12 * (32 + 4) and send the answer to foo@bar.com?", &.{ "add", "mul", "sendMail" });
         try runAgent(gpa, agr, "Is there anything important in my mailbox? Show me table, sorted on priority", &.{"checkMailbox"});
+
+        try std.testing.expectEqual(2, math.n_used);
     }
 
     fn runAgent(gpa: std.mem.Allocator, agr: *tk.ai.AgentRuntime, prompt: []const u8, tools: []const []const u8) !void {
@@ -86,12 +93,5 @@ const App = struct {
 };
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-
-    const ct = try tk.Container.init(gpa.allocator(), &.{ Config, App });
-    defer ct.deinit();
-
-    try ct.injector.call(App.hello_ai, .{});
-    try std.testing.expectEqual(2, ct.injector.find(*MathService).?.n_used);
+    try tk.app.run(App.hello_ai, &.{ Config, App });
 }
