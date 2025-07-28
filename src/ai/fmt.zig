@@ -30,15 +30,15 @@ fn writeValue(value: anytype, writer: anytype) !void {
     // TODO: custom T.formatAi() hook
     const T = @TypeOf(value);
 
-    if (comptime meta.isSlice(T) and meta.isStruct(std.meta.Elem(T))) {
+    if (meta.isSlice(T) and meta.isStruct(std.meta.Elem(T))) {
         return writeTable(std.meta.Elem(T), value, writer);
     }
 
-    if (comptime meta.isString(T)) {
+    if (meta.isString(T)) {
         return writer.writeAll(value);
     }
 
-    if (comptime std.meta.hasMethod(T, "format")) {
+    if (std.meta.hasMethod(T, "format")) {
         return value.format("", .{}, writer);
     }
 

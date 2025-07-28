@@ -60,9 +60,11 @@ pub const Context = struct {
 
         fmt: switch (self.format) {
             .auto => {
-                if (comptime meta.isString(T)) {
+                if (meta.isString(T)) {
                     // workaround for https://github.com/ziglang/zig/issues/24323
-                    if (meta.isString(T)) return self.out.print("{s}\n", .{res});
+                    var x = true;
+                    _ = &x;
+                    if (x) return self.out.print("{s}\n", .{res});
                 }
 
                 continue :fmt .yaml;

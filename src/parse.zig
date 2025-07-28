@@ -11,7 +11,7 @@ pub fn parseValue(comptime T: type, s: []const u8, arena: std.mem.Allocator) !T 
         .@"enum" => std.meta.stringToEnum(T, s) orelse error.InvalidEnumTag,
         .optional => |o| if (std.mem.eql(u8, s, "null")) null else try parseValue(o.child, s, arena),
         .pointer => |p| {
-            if (comptime meta.isString(T)) return s;
+            if (meta.isString(T)) return s;
 
             if (p.size == .slice) {
                 if (s.len == 0) return &.{};

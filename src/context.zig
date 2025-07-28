@@ -88,7 +88,7 @@ pub const Context = struct {
     pub fn send(self: *Context, res: anytype) !void {
         self.responded = true;
 
-        if (comptime std.meta.hasMethod(@TypeOf(res), "sendResponse")) {
+        if (std.meta.hasMethod(@TypeOf(res), "sendResponse")) {
             return res.sendResponse(self);
         }
 
@@ -105,7 +105,7 @@ pub const Context = struct {
             },
             else => |T| {
                 // Comptime string
-                if (comptime meta.isString(T)) {
+                if (meta.isString(T)) {
                     return self.send(@as([]const u8, res));
                 }
 

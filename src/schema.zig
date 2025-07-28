@@ -22,7 +22,7 @@ pub const Schema = union(enum) {
     tuple: []const Schema,
 
     pub fn forType(comptime T: type) Schema {
-        if (comptime meta.hasDecl(T, "jsonSchema")) {
+        if (meta.hasDecl(T, "jsonSchema")) {
             return T.jsonSchema;
         }
 

@@ -100,7 +100,7 @@ pub const Writer = struct {
         switch (@typeInfo(T)) {
             .int, .comptime_int, .float, .comptime_float => try self.inner.print("{}", .{value}),
             else => {
-                if (comptime meta.isString(@TypeOf(value))) {
+                if (meta.isString(@TypeOf(value))) {
                     if (std.mem.indexOfAny(u8, value, ",;\t|\r\n\"")) |_| {
                         try self.writeQuoted(value);
                     } else {

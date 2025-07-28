@@ -112,40 +112,40 @@ pub fn LastArg(comptime fun: anytype) type {
     return params[params.len - 1].type.?;
 }
 
-pub fn isStruct(comptime T: type) bool {
+pub inline fn isStruct(comptime T: type) bool {
     return @typeInfo(T) == .@"struct";
 }
 
-pub fn isTuple(comptime T: type) bool {
+pub inline fn isTuple(comptime T: type) bool {
     return switch (@typeInfo(T)) {
         .@"struct" => |s| s.is_tuple,
         else => false,
     };
 }
 
-pub fn isGeneric(comptime fun: anytype) bool {
+pub inline fn isGeneric(comptime fun: anytype) bool {
     return @typeInfo(@TypeOf(fun)).@"fn".is_generic;
 }
 
-pub fn isOptional(comptime T: type) bool {
+pub inline fn isOptional(comptime T: type) bool {
     return @typeInfo(T) == .optional;
 }
 
-pub fn isOnePtr(comptime T: type) bool {
+pub inline fn isOnePtr(comptime T: type) bool {
     return switch (@typeInfo(T)) {
         .pointer => |p| p.size == .one,
         else => false,
     };
 }
 
-pub fn isSlice(comptime T: type) bool {
+pub inline fn isSlice(comptime T: type) bool {
     return switch (@typeInfo(T)) {
         .pointer => |p| p.size == .slice,
         else => false,
     };
 }
 
-pub fn isString(comptime T: type) bool {
+pub inline fn isString(comptime T: type) bool {
     return switch (@typeInfo(T)) {
         .pointer => |ptr| ptr.child == u8 or switch (@typeInfo(ptr.child)) {
             .array => |arr| arr.child == u8,
@@ -166,7 +166,7 @@ pub fn Unwrap(comptime T: type) type {
     };
 }
 
-pub fn hasDecl(comptime T: type, comptime name: []const u8) bool {
+pub inline fn hasDecl(comptime T: type, comptime name: []const u8) bool {
     return switch (@typeInfo(T)) {
         .@"struct", .@"union", .@"enum", .@"opaque" => @hasDecl(T, name),
         else => false,

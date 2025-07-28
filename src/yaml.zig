@@ -17,11 +17,11 @@ pub const Writer = struct {
     pub fn writeValue(self: *Writer, value: anytype) !void {
         const T = @TypeOf(value);
 
-        if (comptime meta.isString(T)) {
+        if (meta.isString(T)) {
             return self.writeString(value);
         }
 
-        if (comptime meta.isSlice(T)) {
+        if (meta.isSlice(T)) {
             return self.writeSlice(value);
         }
 
@@ -128,8 +128,8 @@ pub const Writer = struct {
     fn shouldInline(value: anytype) bool {
         const T = @TypeOf(value);
 
-        if (comptime meta.isString(T)) return true;
-        if (comptime meta.isSlice(T)) return value.len == 0;
+        if (meta.isString(T)) return true;
+        if (meta.isSlice(T)) return value.len == 0;
 
         return switch (@typeInfo(T)) {
             .@"struct" => |s| s.fields.len == 0,

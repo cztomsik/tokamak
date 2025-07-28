@@ -56,7 +56,7 @@ pub const Queue = struct {
         // We only stringify small payloads
         var buf: [512]u8 = undefined;
         var fbs = std.io.fixedBufferStream(&buf);
-        const data_str: []const u8 = if (comptime meta.isString(@TypeOf(data))) data else blk: {
+        const data_str: []const u8 = if (meta.isString(@TypeOf(data))) data else blk: {
             try std.json.stringify(data, .{}, fbs.writer());
             break :blk fbs.getWritten();
         };

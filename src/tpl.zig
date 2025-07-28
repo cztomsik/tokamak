@@ -195,7 +195,7 @@ pub const Value = union(enum) {
             .@"struct" => |s| if (s.is_tuple) .fromTuple(T, ptr) else .fromStruct(T, ptr),
             .array => |a| .fromSlice(a.child, ptr),
             .pointer => |p| {
-                if (comptime meta.isString(T)) return .{ .string = ptr.* };
+                if (meta.isString(T)) return .{ .string = ptr.* };
                 if (p.size == .slice) return .fromSlice(p.child, ptr.*);
 
                 @compileError("TODO " ++ @typeName(T));

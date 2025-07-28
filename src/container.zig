@@ -512,7 +512,7 @@ fn CompiledBundle(comptime ops: []const Op, comptime n_inst: usize, comptime n_d
 
         fn pushRef(self: *@This(), inj: *Injector, ptr: anytype) void {
             // std.debug.print("push ref {} {s}\n", .{ inj.refs.len, @typeName(@TypeOf(ptr)) });
-            self.refs[inj.refs.len] = .ref(if (comptime meta.isOnePtr(@TypeOf(ptr.*))) ptr.* else ptr);
+            self.refs[inj.refs.len] = .ref(if (meta.isOnePtr(@TypeOf(ptr.*))) ptr.* else ptr);
             inj.refs = self.refs[0 .. inj.refs.len + 1];
         }
 

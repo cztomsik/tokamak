@@ -47,7 +47,7 @@ pub const Route = struct {
         const H = struct {
             fn handleProvide(ctx: *Context) anyerror!void {
                 var child = .{try ctx.injector.call(fac, .{})};
-                defer if (comptime std.meta.hasMethod(@TypeOf(child[0]), "deinit")) child[0].deinit();
+                defer if (std.meta.hasMethod(@TypeOf(child[0]), "deinit")) child[0].deinit();
 
                 try ctx.nextScoped(&child);
             }

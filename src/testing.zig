@@ -24,7 +24,7 @@ pub fn expectError(res: anytype, expected: anyerror) !void {
 /// Like std.testing.expectEqual() but with flipped args and support for strings.
 pub fn expectEqual(res: anytype, expected: anytype) !void {
     // TODO: find all usages of expectEqualStrings and replace it with our expectEqual
-    if (comptime meta.isString(@TypeOf(res))) {
+    if (meta.isString(@TypeOf(res))) {
         return std.testing.expectEqualStrings(expected, res);
     }
 
@@ -154,7 +154,7 @@ const TableWriter = struct {
     }
 
     fn bufPrint(self: *TableWriter, value: anytype) ![]const u8 {
-        if (comptime meta.isString(@TypeOf(value))) {
+        if (meta.isString(@TypeOf(value))) {
             return value;
         }
 
