@@ -17,6 +17,7 @@ pub const RequestOptions = struct {
 
 pub const RequestBody = struct {
     ctx: *const anyopaque,
+    content_type: []const u8,
     render: *const fn (ctx: *const anyopaque, writer: std.io.AnyWriter) anyerror!void,
 
     pub fn json(ptr: anytype) RequestBody {
@@ -28,6 +29,7 @@ pub const RequestBody = struct {
 
         return .{
             .ctx = @ptrCast(ptr),
+            .content_type = "application/json",
             .render = @ptrCast(&H.stringify),
         };
     }
@@ -101,7 +103,7 @@ pub const StdClient = struct {
 
         var req = try self.std_client.open(options.method, url, .{
             .headers = .{
-                .content_type = .{ .override = "application/json" },
+                .content_type = if (options.body) |b| .{ .override = b.content_type } else .default,
             },
             .extra_headers = options.headers,
             .server_header_buffer = buf,
