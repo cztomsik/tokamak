@@ -166,6 +166,17 @@ pub fn Unwrap(comptime T: type) type {
     };
 }
 
+pub fn Const(comptime T: type) type {
+    return switch (@typeInfo(T)) {
+        .pointer => |p| {
+            var info = p;
+            info.is_const = true;
+            return @Type(.{ .pointer = info });
+        },
+        else => T,
+    };
+}
+
 pub inline fn hasDecl(comptime T: type, comptime name: []const u8) bool {
     return switch (@typeInfo(T)) {
         .@"struct", .@"union", .@"enum", .@"opaque" => @hasDecl(T, name),
