@@ -116,3 +116,9 @@ test {
 
     try std.testing.expectEqual(btn, (try doc.querySelector("span + .btn")).?);
 }
+
+// test "real-world html" {
+//     // curl https://www.w3.org/TR/css-grid-1/ > bench.html
+//     var doc = try Document.parseFromSlice(std.testing.allocator, @embedFile("bench.html"));
+//     defer doc.deinit();
+// }
