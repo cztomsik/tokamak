@@ -21,8 +21,14 @@ pub fn expectError(res: anytype, expected: anyerror) !void {
     return std.testing.expectError(expected, res);
 }
 
-/// Like std.testing.expectEqual() but with flipped args and support for strings.
-pub fn expectEqual(res: anytype, expected: anytype) !void {
+/// Like std.testing.expectEqual() but with flipped args and support for
+/// strings and optionals.
+pub fn expectEqual(res: anytype, expected: meta.Const(@TypeOf(res))) !void {
+    if (meta.isOptional(@TypeOf(res))) {
+        if (expected) |e| return expectEqual(res orelse return error.ExpectedValue, e);
+        if (res != null) return error.ExpectedNull;
+    }
+
     // TODO: find all usages of expectEqualStrings and replace it with our expectEqual
     if (meta.isString(@TypeOf(res))) {
         return std.testing.expectEqualStrings(expected, res);
