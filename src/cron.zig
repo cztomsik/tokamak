@@ -140,24 +140,20 @@ test Cron {
 }
 
 pub const Expr = struct {
-    minute: std.StaticBitSet(60), // 0-59
-    hour: std.StaticBitSet(24), // 0-23
-    day: std.StaticBitSet(32), // 1-31
-    month: std.StaticBitSet(13), // 1-12
-    weekday: std.StaticBitSet(7), // 0-6
+    minute: u60, // 0-59
+    hour: u24, // 0-23
+    day: u32, // 1-31
+    month: u13, // 1-12
+    weekday: u7, // 0-6
 
     pub fn match(self: *const Expr, step: time.Time) bool {
         const date = step.date();
 
-        return matchField(step.minute(), self.minute) and
-            matchField(step.hour(), self.hour) and
-            matchField(date.day, self.day) and
-            matchField(date.month, self.month) and
-            true; // matchField(?, self.weekday);
-    }
-
-    fn matchField(num: anytype, bitset: anytype) bool {
-        return bitset.isSet(num);
+        return isSet(self.minute, step.minute()) and
+            isSet(self.hour, step.hour()) and
+            isSet(self.day, date.day) and
+            isSet(self.month, date.month) and
+            true; // isSet(self.weekday, ?);
     }
 
     pub fn next(self: *const Expr, since: time.Time) time.Time {
@@ -182,20 +178,20 @@ pub const Expr = struct {
 
     fn parseField(comptime T: type, field: []const u8) !T {
         if (std.mem.eql(u8, field, "*")) {
-            return T.initFull();
+            return ~@as(T, 0);
         }
 
-        var res = T.initEmpty();
+        var mask: u64 = 0;
 
         var it = std.mem.tokenizeScalar(u8, field, ',');
         while (it.next()) |part| {
             if (std.mem.startsWith(u8, part, "*/")) {
-                const freq = try std.fmt.parseInt(T.MaskInt, part[2..], 10);
-                if (@mod(T.bit_length, freq) != 0) return error.InvalidFrequency;
+                const freq = try std.fmt.parseInt(u8, part[2..], 10);
+                if (@mod(@bitSizeOf(T), freq) != 0) return error.InvalidFrequency;
 
-                var i: T.MaskInt = 0;
-                while (i < T.bit_length) : (i += freq) {
-                    res.set(i);
+                var i: u8 = 0;
+                while (i < @bitSizeOf(T)) : (i += freq) {
+                    mask |= maskBit(i);
                 }
             } else if (std.mem.indexOf(u8, part, "-")) |i| {
                 const start = try std.fmt.parseInt(u8, part[0..i], 10);
@@ -204,61 +200,69 @@ pub const Expr = struct {
                 if (start > end) return error.InvalidRange;
 
                 for (start..end + 1) |n| {
-                    res.set(n);
+                    mask |= maskBit(@intCast(n));
                 }
             } else {
-                res.set(try std.fmt.parseInt(T.MaskInt, part, 10));
+                mask |= maskBit(try std.fmt.parseInt(u8, part, 10));
             }
         }
 
-        return res;
+        return @truncate(mask);
     }
 };
+
+fn maskBit(n: u32) u64 {
+    return @as(u64, 1) << @intCast(n);
+}
+
+fn isSet(mask: u64, bit: u32) bool {
+    return (mask & @as(u64, 1) << @intCast(bit)) != 0;
+}
 
 test "Expr.parse()" {
     const expect = std.testing.expect;
 
     const ex1 = try Expr.parse("* * * * *");
-    try expect(ex1.minute.mask == ~@as(u60, 0));
-    try expect(ex1.hour.mask == ~@as(u24, 0));
-    try expect(ex1.day.mask == ~@as(u32, 0));
-    try expect(ex1.month.mask == ~@as(u13, 0));
-    try expect(ex1.weekday.mask == ~@as(u7, 0));
+    try expect(ex1.minute == ~@as(u60, 0));
+    try expect(ex1.hour == ~@as(u24, 0));
+    try expect(ex1.day == ~@as(u32, 0));
+    try expect(ex1.month == ~@as(u13, 0));
+    try expect(ex1.weekday == ~@as(u7, 0));
 
     const ex2 = try Expr.parse("*/5 * * * *");
-    try expect(ex2.minute.isSet(0));
-    try expect(!ex2.minute.isSet(1));
-    try expect(ex2.minute.isSet(5));
-    try expect(!ex2.minute.isSet(6));
+    try expect(isSet(ex2.minute, 0));
+    try expect(!isSet(ex2.minute, 1));
+    try expect(isSet(ex2.minute, 5));
+    try expect(!isSet(ex2.minute, 6));
 
     const ex3 = try Expr.parse("0 0 31 1 *");
-    try expect(ex3.minute.isSet(0));
-    try expect(ex3.hour.isSet(0));
-    try expect(ex3.day.isSet(31));
-    try expect(ex3.month.isSet(1));
-    try expect(ex3.weekday.mask == ~@as(u7, 0));
+    try expect(isSet(ex3.minute, 0));
+    try expect(isSet(ex3.hour, 0));
+    try expect(isSet(ex3.day, 31));
+    try expect(isSet(ex3.month, 1));
+    try expect(ex3.weekday == ~@as(u7, 0));
 
     const ex4 = try Expr.parse("0-1 * * * *");
-    try expect(ex4.minute.isSet(0));
-    try expect(ex4.minute.isSet(1));
-    try expect(!ex4.minute.isSet(2));
+    try expect(isSet(ex4.minute, 0));
+    try expect(isSet(ex4.minute, 1));
+    try expect(!isSet(ex4.minute, 2));
 
     const ex5 = try Expr.parse("0,1-2 * * * *");
-    try expect(ex5.minute.isSet(0));
-    try expect(ex5.minute.isSet(1));
-    try expect(ex5.minute.isSet(2));
-    try expect(!ex5.minute.isSet(3));
+    try expect(isSet(ex5.minute, 0));
+    try expect(isSet(ex5.minute, 1));
+    try expect(isSet(ex5.minute, 2));
+    try expect(!isSet(ex5.minute, 3));
 
     const ex6 = try Expr.parse("0,1-2,4-5,*/5 * * * *");
-    try expect(ex6.minute.isSet(0));
-    try expect(ex6.minute.isSet(1));
-    try expect(ex6.minute.isSet(2));
-    try expect(!ex6.minute.isSet(3));
-    try expect(ex6.minute.isSet(4));
-    try expect(ex6.minute.isSet(5));
-    try expect(!ex6.minute.isSet(6));
-    try expect(ex6.minute.isSet(10));
-    try expect(ex6.minute.isSet(15));
+    try expect(isSet(ex6.minute, 0));
+    try expect(isSet(ex6.minute, 1));
+    try expect(isSet(ex6.minute, 2));
+    try expect(!isSet(ex6.minute, 3));
+    try expect(isSet(ex6.minute, 4));
+    try expect(isSet(ex6.minute, 5));
+    try expect(!isSet(ex6.minute, 6));
+    try expect(isSet(ex6.minute, 10));
+    try expect(isSet(ex6.minute, 15));
 }
 
 fn expectMatch(expr: []const u8, matches: anytype) !void {
