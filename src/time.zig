@@ -35,22 +35,53 @@ pub const Time = struct {
     }
 
     pub fn second(self: Time) u32 {
-        return @intCast(@mod(self.n(.seconds), 60));
+        return @intCast(@mod(self.total(.seconds), 60));
+    }
+
+    pub fn setSecond(self: Time, sec: u32) Time {
+        return self.add(.seconds, @as(i64, sec) - self.second());
     }
 
     pub fn minute(self: Time) u32 {
-        return @intCast(@mod(self.n(.minutes), 60));
+        return @intCast(@mod(self.total(.minutes), 60));
+    }
+
+    pub fn setMinute(self: Time, min: u32) Time {
+        return self.add(.minutes, @as(i64, min) - self.minute());
     }
 
     pub fn hour(self: Time) u32 {
-        return @intCast(@mod(self.n(.hours), 24));
+        return @intCast(@mod(self.total(.hours), 24));
+    }
+
+    pub fn setHour(self: Time, hr: u32) Time {
+        return self.add(.hours, @as(i64, hr) - self.hour());
+    }
+
+    pub fn next(self: Time, unit: enum { second, minute, hour, day }) Time {
+        return switch (unit) {
+            .second => self.add(.seconds, 1),
+            .minute => self.setSecond(0).add(.minutes, 1),
+            .hour => self.setSecond(0).setMinute(0).add(.hours, 1),
+            .day => self.setSecond(0).setMinute(0).setHour(0).add(.hours, 24),
+        };
     }
 
     pub fn date(self: Time) Date {
         return rata_to_date(@divTrunc(self.epoch, std.time.s_per_day) + RATA_TO_UNIX);
     }
 
-    fn n(self: Time, part: enum { seconds, minutes, hours }) i64 {
+    pub fn add(self: Time, part: enum { seconds, minutes, hours }, amount: i64) Time {
+        const n = switch (part) {
+            .seconds => amount,
+            .minutes => amount * std.time.s_per_min,
+            .hours => amount * std.time.s_per_hour,
+        };
+
+        return .{ .epoch = self.epoch + n };
+    }
+
+    fn total(self: Time, part: enum { seconds, minutes, hours }) i64 {
         return switch (part) {
             .seconds => self.epoch,
             .minutes => @divTrunc(self.epoch, std.time.s_per_min),
