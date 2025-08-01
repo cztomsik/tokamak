@@ -157,9 +157,37 @@ pub const Expr = struct {
     }
 
     pub fn next(self: *const Expr, since: time.Time) time.Time {
-        var res = since.next(.minute);
-        while (!self.match(res)) : (res = res.next(.minute)) {}
-        return res;
+        var res = since.setSecond(0);
+        // std.debug.print("{}\n", .{res});
+
+        while (true) {
+            if (findNext(self.minute, res.minute())) |min| {
+                res = res.setMinute(min);
+                if (self.match(res)) return res;
+            }
+            res = res.setMinute(findFirst(self.minute));
+
+            if (findNext(self.hour, res.hour())) |hour| {
+                res = res.setHour(hour);
+                if (self.match(res)) return res;
+            }
+            res = res.setHour(findFirst(self.hour));
+
+            // TODO: day/month, but we need to be careful about day wrapping
+        }
+    }
+
+    fn findNext(mask: anytype, curr: u32) ?u32 {
+        // std.debug.print("find next:  {b:.>32} {}\n", .{ mask, curr });
+        var n = curr + 1;
+        while (n < @bitSizeOf(@TypeOf(mask))) : (n += 1) {
+            if (isSet(mask, n)) return n;
+        } else return null;
+    }
+
+    fn findFirst(mask: anytype) u32 {
+        // std.debug.print("find first: {b:.>32}\n", .{mask});
+        return @intCast(@ctz(mask));
     }
 
     pub fn parse(expr: []const u8) !Expr {
@@ -331,5 +359,15 @@ test "expr.next()" {
     try expectNext("*/5 * * * *", .{
         .{ 0, 5 * 60 },
         .{ 5 * 60, 10 * 60 },
+    });
+
+    try expectNext("0 */6 * * *", .{
+        .{ 0, 6 * 3600 }, // 00:00 -> 06:00
+        .{ 6 * 3600, 12 * 3600 }, // 06:00 -> 12:00
+    });
+
+    try expectNext("30 2,14 * * *", .{
+        .{ 0, 2 * 3600 + 30 * 60 }, // 00:00 -> 02:30
+        .{ 2 * 3600 + 30 * 60, 14 * 3600 + 30 * 60 }, // 02:30 -> 14:30
     });
 }
