@@ -34,8 +34,28 @@ pub const Time = struct {
         return unix(std.time.timestamp());
     }
 
+    pub fn second(self: Time) u32 {
+        return @intCast(@mod(self.n(.seconds), 60));
+    }
+
+    pub fn minute(self: Time) u32 {
+        return @intCast(@mod(self.n(.minutes), 60));
+    }
+
+    pub fn hour(self: Time) u32 {
+        return @intCast(@mod(self.n(.hours), 24));
+    }
+
     pub fn date(self: Time) Date {
         return rata_to_date(@divTrunc(self.epoch, std.time.s_per_day) + RATA_TO_UNIX);
+    }
+
+    fn n(self: Time, part: enum { seconds, minutes, hours }) i64 {
+        return switch (part) {
+            .seconds => self.epoch,
+            .minutes => @divTrunc(self.epoch, std.time.s_per_min),
+            .hours => @divTrunc(self.epoch, std.time.s_per_hour),
+        };
     }
 };
 
