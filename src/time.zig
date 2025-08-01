@@ -5,6 +5,22 @@ const std = @import("std");
 
 const RATA_TO_UNIX = 719468;
 
+// Taken from the video
+pub fn isLeapYear(year: i32) bool {
+    const d: i32 = if (@mod(year, 100) != 0) 4 else 16;
+    return (year & (d - 1)) == 0;
+}
+
+// TODO: IIRC there was also some formula
+fn daysInMonth(year: i32, month: u8) u8 {
+    return switch (month) {
+        1, 3, 5, 7, 8, 10, 12 => 31,
+        4, 6, 9, 11 => 30,
+        2 => if (isLeapYear(year)) 29 else 28,
+        else => unreachable,
+    };
+}
+
 pub const Date = struct {
     year: i32,
     month: u8,
@@ -79,11 +95,14 @@ pub const Time = struct {
         return rata_to_date(@divTrunc(self.epoch, std.time.s_per_day) + RATA_TO_UNIX);
     }
 
-    pub fn add(self: Time, part: enum { seconds, minutes, hours }, amount: i64) Time {
+    pub fn add(self: Time, part: enum { seconds, minutes, hours, days, months, years }, amount: i64) Time {
         const n = switch (part) {
             .seconds => amount,
             .minutes => amount * std.time.s_per_min,
             .hours => amount * std.time.s_per_hour,
+            .days => amount * std.time.s_per_day,
+            .months => @panic("TODO"),
+            .years => return self.add(.days, if (isLeapYear(self.date().year)) 366 else 365),
         };
 
         return .{ .epoch = self.epoch + n };
@@ -192,6 +211,17 @@ test "basic usage" {
 
     const next_day = t3.next(.day);
     try testing.expectFmt(next_day, "2009-02-15 00:00:00 UTC");
+}
+
+test isLeapYear {
+    try testing.expect(!isLeapYear(1999));
+    try testing.expect(isLeapYear(2000));
+    try testing.expect(isLeapYear(2004));
+}
+
+test daysInMonth {
+    try testing.expectEqual(daysInMonth(1999, 2), 28);
+    try testing.expectEqual(daysInMonth(2000, 2), 29);
 }
 
 test rata_to_date {
