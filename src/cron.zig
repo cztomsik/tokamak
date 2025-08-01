@@ -1,25 +1,9 @@
 const std = @import("std");
+const time = @import("time.zig");
 const testing = @import("testing.zig");
 const Queue = @import("queue.zig").Queue;
 const MemQueue = @import("queue.zig").MemQueue;
 const log = std.log.scoped(.cron);
-const c = @cImport({
-    @cInclude("stdlib.h");
-    @cInclude("time.h");
-});
-
-// TODO: avoid libc
-fn localtime(epoch: i64) std.enums.EnumFieldStruct(std.meta.FieldEnum(Expr), u8, null) {
-    const tm = c.localtime(&epoch).*;
-
-    return .{
-        .minute = @intCast(tm.tm_min),
-        .hour = @intCast(tm.tm_hour),
-        .day = @intCast(tm.tm_mday),
-        .month = @intCast(tm.tm_mon + 1),
-        .weekday = @intCast(tm.tm_wday),
-    };
-}
 
 // pub const Config = struct {
 //     /// How many seconds in the past to start ticking from
@@ -158,20 +142,23 @@ test Cron {
 pub const Expr = struct {
     minute: std.StaticBitSet(60), // 0-59
     hour: std.StaticBitSet(24), // 0-23
-    day: std.StaticBitSet(32), // 1-31 !!!
-    month: std.StaticBitSet(13), // 1-12 !!!
+    day: std.StaticBitSet(32), // 1-31
+    month: std.StaticBitSet(13), // 1-12
     weekday: std.StaticBitSet(7), // 0-6
 
     pub fn match(self: *const Expr, epoch: i64) bool {
-        const tm = localtime(epoch);
+        const t = time.Time.unix(epoch);
+        const date = t.date();
 
-        inline for (std.meta.fields(Expr)) |f| {
-            if (!@field(self, f.name).isSet(@field(tm, f.name))) {
-                return false;
-            }
-        }
+        return matchField(t.minute(), self.minute) and
+            matchField(t.hour(), self.hour) and
+            matchField(date.day, self.day) and
+            matchField(date.month, self.month) and
+            true; // matchField(?, self.weekday);
+    }
 
-        return true;
+    fn matchField(num: anytype, bitset: anytype) bool {
+        return bitset.isSet(num);
     }
 
     pub fn next(self: *const Expr, now: i64) i64 {
@@ -286,9 +273,6 @@ fn expectMatch(expr: []const u8, matches: anytype) !void {
 }
 
 test "expr.match()" {
-    _ = c.setenv("TZ", "UTC", 1);
-    c.tzset();
-
     try expectMatch("* * * * *", .{
         .{ 0, true },
         .{ 60, true },
