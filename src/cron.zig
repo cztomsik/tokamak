@@ -20,7 +20,7 @@ pub const Job = struct {
 pub const Cron = struct {
     queue: *Queue,
     jobs: std.ArrayList(Job),
-    time: *const fn () i64 = std.time.timestamp,
+    time: *const fn () time.Time = time.Time.now,
     mutex: std.Thread.Mutex = .{},
     wait: std.Thread.Condition = .{},
 
@@ -44,7 +44,7 @@ pub const Cron = struct {
         defer self.mutex.unlock();
 
         const exp = try Expr.parse(expr);
-        const next = exp.next(self.time());
+        const next = exp.next(self.time()).epoch;
 
         try self.jobs.append(.{
             .name = name,
@@ -62,7 +62,7 @@ pub const Cron = struct {
 
         var step = self.time(); // - self.config.catchup_window;
 
-        while (step < self.time()) {
+        while (step.epoch < self.time().epoch) {
             log.debug("catching up to {}", .{step});
             step = try self.tick(step);
         }
@@ -71,7 +71,7 @@ pub const Cron = struct {
             step = try self.tick(step);
 
             // Wait until the next tick
-            const wait: u64 = @intCast(@max(0, step - self.time()));
+            const wait: u64 = @intCast(@max(0, step.epoch - self.time().epoch));
             log.debug("sleeping for {}", .{wait});
             self.wait.timedWait(&self.mutex, wait * std.time.ns_per_s) catch break;
         }
@@ -89,7 +89,7 @@ pub const Cron = struct {
                     .schedule_at = job.next,
                 });
 
-                job.next = job.schedule.next(now);
+                job.next = job.schedule.next(time.Time.unix(now)).epoch;
                 next_tick = @min(next_tick, job.next);
             }
         }
@@ -108,7 +108,7 @@ test Cron {
     defer cron.deinit();
 
     testing.time.value = 0;
-    cron.time = &testing.time.get;
+    cron.time = &testing.time.getTime;
 
     // Only used for listing
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
@@ -146,12 +146,11 @@ pub const Expr = struct {
     month: std.StaticBitSet(13), // 1-12
     weekday: std.StaticBitSet(7), // 0-6
 
-    pub fn match(self: *const Expr, epoch: i64) bool {
-        const t = time.Time.unix(epoch);
-        const date = t.date();
+    pub fn match(self: *const Expr, step: time.Time) bool {
+        const date = step.date();
 
-        return matchField(t.minute(), self.minute) and
-            matchField(t.hour(), self.hour) and
+        return matchField(step.minute(), self.minute) and
+            matchField(step.hour(), self.hour) and
             matchField(date.day, self.day) and
             matchField(date.month, self.month) and
             true; // matchField(?, self.weekday);
@@ -161,9 +160,9 @@ pub const Expr = struct {
         return bitset.isSet(num);
     }
 
-    pub fn next(self: *const Expr, now: i64) i64 {
-        var res = now + 60 - @mod(now, 60);
-        while (!self.match(res)) : (res += 60) {}
+    pub fn next(self: *const Expr, since: time.Time) time.Time {
+        var res = since.next(.minute);
+        while (!self.match(res)) : (res = res.next(.minute)) {}
         return res;
     }
 
@@ -268,7 +267,7 @@ fn expectMatch(expr: []const u8, matches: anytype) !void {
     inline for (matches) |m| {
         errdefer std.debug.print("match failed: {}\n", .{m});
 
-        try std.testing.expectEqual(m[1], ex.match(m[0]));
+        try std.testing.expectEqual(m[1], ex.match(.unix(m[0])));
     }
 }
 
@@ -312,7 +311,7 @@ fn expectNext(expr: []const u8, matches: anytype) !void {
     inline for (matches) |m| {
         errdefer std.debug.print("match failed: {}\n", .{m});
 
-        try std.testing.expectEqual(m[1], ex.next(m[0]));
+        try std.testing.expectEqual(m[1], ex.next(.unix(m[0])).epoch);
     }
 }
 

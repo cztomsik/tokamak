@@ -14,6 +14,10 @@ pub const time = struct {
     pub fn get() i64 {
         return value;
     }
+    
+    pub fn getTime() @import("time.zig").Time {
+        return @import("time.zig").Time.unix(value);
+    }
 };
 
 /// Like std.testing.expectError() but with flipped args.
