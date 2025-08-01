@@ -21,6 +21,14 @@ pub const Date = struct {
     pub fn today() Date {
         return Time.now().date();
     }
+
+    pub fn format(self: Date, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+        try writer.print("{d}-{d:0>2}-{d:0>2}", .{
+            @as(u32, @intCast(self.year)),
+            self.month,
+            self.day,
+        });
+    }
 };
 
 pub const Time = struct {
@@ -88,6 +96,15 @@ pub const Time = struct {
             .hours => @divTrunc(self.epoch, std.time.s_per_hour),
         };
     }
+
+    pub fn format(self: Time, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+        try writer.print("{} {d:0>2}:{d:0>2}:{d:0>2} UTC", .{
+            self.date(),
+            self.hour(),
+            self.minute(),
+            self.second(),
+        });
+    }
 };
 
 // https://github.com/cassioneri/eaf/blob/1509faf37a0e0f59f5d4f11d0456fd0973c08f85/eaf/gregorian.hpp#L42
@@ -143,6 +160,39 @@ fn remainder(n: i64, d: u32) u32 {
 }
 
 const testing = @import("testing.zig");
+
+test "basic usage" {
+    const t1 = Time.unix(1234567890);
+    try testing.expectFmt(t1, "2009-02-13 23:31:30 UTC");
+
+    try testing.expectEqual(t1.date(), .{
+        .year = 2009,
+        .month = 2,
+        .day = 13,
+    });
+
+    try testing.expectEqual(t1.hour(), 23);
+    try testing.expectEqual(t1.minute(), 31);
+    try testing.expectEqual(t1.second(), 30);
+
+    const t2 = t1.setHour(10).setMinute(15).setSecond(45);
+    try testing.expectFmt(t2, "2009-02-13 10:15:45 UTC");
+
+    const t3 = t2.add(.hours, 14).add(.minutes, 46).add(.seconds, 18);
+    try testing.expectFmt(t3, "2009-02-14 01:02:03 UTC");
+
+    const next_sec = t3.next(.second);
+    try testing.expectFmt(next_sec, "2009-02-14 01:02:04 UTC");
+
+    const next_min = t3.next(.minute);
+    try testing.expectFmt(next_min, "2009-02-14 01:03:00 UTC");
+
+    const next_hr = t3.next(.hour);
+    try testing.expectFmt(next_hr, "2009-02-14 02:00:00 UTC");
+
+    const next_day = t3.next(.day);
+    try testing.expectFmt(next_day, "2009-02-15 00:00:00 UTC");
+}
 
 test rata_to_date {
     try testing.expectEqual(rata_to_date(0), .ymd(0, 3, 1));
