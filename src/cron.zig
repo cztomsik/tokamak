@@ -157,25 +157,47 @@ pub const Expr = struct {
     }
 
     pub fn next(self: *const Expr, since: time.Time) time.Time {
-        var res = since.setSecond(0);
-        // std.debug.print("{}\n", .{res});
-
-        while (true) {
-            if (findNext(self.minute, res.minute())) |min| {
-                res = res.setMinute(min);
-                if (self.match(res)) return res;
-            }
-            res = res.setMinute(findFirst(self.minute));
-
-            if (findNext(self.hour, res.hour())) |hour| {
-                res = res.setHour(hour);
-                if (self.match(res)) return res;
-            }
-            res = res.setHour(findFirst(self.hour));
-
-            // TODO: day/month, but we need to be careful about day wrapping
-        }
+        var res = since.next(.minute);
+        while (!self.match(res)) : (res = res.next(.minute)) {}
+        return res;
     }
+
+    // pub fn next(self: *const Expr, since: time.Time) time.Time {
+    //     while (true) {
+    //         var res = since.setSecond(0);
+    //         // std.debug.print("{}\n", .{res});
+
+    //         if (findNext(self.minute, res.minute())) |min| {
+    //             res = res.setMinute(min);
+    //             if (self.match(res)) return res;
+    //         }
+    //         res = res.setMinute(findFirst(self.minute));
+
+    //         if (findNext(self.hour, res.hour())) |hour| {
+    //             res = res.setHour(hour);
+    //             if (self.match(res)) return res;
+    //         }
+    //         res = res.setHour(findFirst(self.hour));
+
+    //         // TODO: remove the loop once we fix this
+    //         // if (findNext(self.day, res.day())) |day| {
+    //         //     res = res.setDay(day);
+    //         //     if (self.match(res)) return res;
+    //         // }
+    //         // res = res.setDay(findFirst(self.day));
+
+    //         // if (findNext(self.month, res.month())) |month| {
+    //         //     res = res.setMonth(month);
+    //         //     if (self.match(res)) return res;
+    //         // }
+    //         // res = res.setMonth(findFirst(self.month));
+    //         // return res.add(.years, 1);
+
+    //         if (self.match(res)) return res;
+    //         res = res.add(.days, 1);
+    //         if (self.match(res)) return res;
+    //     }
+    // }
 
     fn findNext(mask: anytype, curr: u32) ?u32 {
         // std.debug.print("find next:  {b:.>32} {}\n", .{ mask, curr });
@@ -369,5 +391,14 @@ test "expr.next()" {
     try expectNext("30 2,14 * * *", .{
         .{ 0, 2 * 3600 + 30 * 60 }, // 00:00 -> 02:30
         .{ 2 * 3600 + 30 * 60, 14 * 3600 + 30 * 60 }, // 02:30 -> 14:30
+    });
+
+    try expectNext("0 0 * * *", .{
+        .{ 23 * 3600 + 59 * 60, 24 * 3600 }, // 23:59 -> 00:00 next day
+    });
+
+    try expectNext("0 0 15 * *", .{
+        .{ 0, 14 * 24 * 3600 }, // Jan 1 -> Jan 15
+        .{ 16 * 24 * 3600, 31 * 24 * 3600 + 14 * 24 * 3600 }, // Jan 17 -> Feb 15
     });
 }
