@@ -4,6 +4,7 @@
 const std = @import("std");
 
 const RATA_TO_UNIX = 719468;
+const EOD = 86_400 - 1;
 
 // Taken from the video
 pub fn isLeapYear(year: i32) bool {
@@ -82,6 +83,35 @@ pub const Time = struct {
         return self.add(.hours, @as(i64, hr) - self.hour());
     }
 
+    pub fn date(self: Time) Date {
+        return rata_to_date(@divTrunc(self.epoch, std.time.s_per_day) + RATA_TO_UNIX);
+    }
+
+    pub fn setDate(self: Time, dat: Date) Time {
+        var res: i64 = @mod(self.epoch, std.time.s_per_day);
+        res += (date_to_rata(dat) - RATA_TO_UNIX) * std.time.s_per_day;
+        return unix(res);
+    }
+
+    pub fn startOf(self: Time, unit: enum { second, minute, hour, day, month, year }) Time {
+        // TODO: continue :label?
+        return switch (unit) {
+            .second => self,
+            .minute => self.setSecond(0),
+            .hour => self.setSecond(0).setMinute(0),
+            .day => self.setSecond(0).setMinute(0).setHour(0),
+            .month => {
+                const d = self.date();
+                return unix(0).setDate(.ymd(d.year, d.month, 1));
+            },
+            .year => {
+                const d = self.date();
+                return unix(0).setDate(.ymd(d.year, 1, 1));
+            },
+        };
+    }
+
+    // TODO: rename to startOfNext?
     pub fn next(self: Time, unit: enum { second, minute, hour, day }) Time {
         return switch (unit) {
             .second => self.add(.seconds, 1),
@@ -91,8 +121,22 @@ pub const Time = struct {
         };
     }
 
-    pub fn date(self: Time) Date {
-        return rata_to_date(@divTrunc(self.epoch, std.time.s_per_day) + RATA_TO_UNIX);
+    pub fn endOf(self: Time, unit: enum { second, minute, hour, day, month, year }) Time {
+        // TODO: continue :label?
+        return switch (unit) {
+            .second => self,
+            .minute => self.setSecond(59),
+            .hour => self.setSecond(59).setMinute(59),
+            .day => self.setSecond(59).setMinute(59).setHour(23),
+            .month => {
+                const d = self.date();
+                return unix(EOD).setDate(.ymd(d.year, d.month, daysInMonth(d.year, d.month)));
+            },
+            .year => {
+                const d = self.date();
+                return unix(EOD).setDate(.ymd(d.year, 12, 31));
+            },
+        };
     }
 
     pub fn add(self: Time, part: enum { seconds, minutes, hours, days, months, years }, amount: i64) Time {
@@ -211,6 +255,40 @@ test "basic usage" {
 
     const next_day = t3.next(.day);
     try testing.expectFmt(next_day, "2009-02-15 00:00:00 UTC");
+
+    const start_of_min = t3.startOf(.minute);
+    try testing.expectFmt(start_of_min, "2009-02-14 01:02:00 UTC");
+
+    const start_of_hr = t3.startOf(.hour);
+    try testing.expectFmt(start_of_hr, "2009-02-14 01:00:00 UTC");
+
+    const start_of_day = t3.startOf(.day);
+    try testing.expectFmt(start_of_day, "2009-02-14 00:00:00 UTC");
+
+    const start_of_month = t3.startOf(.month);
+    try testing.expectFmt(start_of_month, "2009-02-01 00:00:00 UTC");
+
+    const start_of_year = t3.startOf(.year);
+    try testing.expectFmt(start_of_year, "2009-01-01 00:00:00 UTC");
+
+    const end_of_min = t3.endOf(.minute);
+    try testing.expectFmt(end_of_min, "2009-02-14 01:02:59 UTC");
+
+    const end_of_hr = t3.endOf(.hour);
+    try testing.expectFmt(end_of_hr, "2009-02-14 01:59:59 UTC");
+
+    const end_of_day = t3.endOf(.day);
+    try testing.expectFmt(end_of_day, "2009-02-14 23:59:59 UTC");
+
+    const end_of_month = t3.endOf(.month);
+    try testing.expectFmt(end_of_month, "2009-02-28 23:59:59 UTC");
+
+    const end_of_year = t3.endOf(.year);
+    try testing.expectFmt(end_of_year, "2009-12-31 23:59:59 UTC");
+
+    const leap_date = Time.unix(951782400); // 2000-02-29 00:00:00
+    const end_of_leap_month = leap_date.endOf(.month);
+    try testing.expectFmt(end_of_leap_month, "2000-02-29 23:59:59 UTC");
 }
 
 test isLeapYear {
