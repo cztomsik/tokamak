@@ -212,10 +212,13 @@ pub const Bundle = struct {
         self.add(M, .value(undefined));
         const start = self.findDep(M).?.state.instance.offset;
 
-        inline for (std.meta.fields(M)) |f| {
+        for (std.meta.fields(M)) |f| {
             // Add "inline" inst (without alloc)
             self.insertDep(.{
-                .state = .{ .instance = .{ .type = f.type, .offset = start + @offsetOf(M, f.name) } },
+                .state = .{ .instance = .{
+                    .type = f.type,
+                    .offset = if (f.is_comptime) start else start + @offsetOf(M, f.name),
+                } },
                 .type = f.type,
                 .provider = if (f.defaultValue()) |v| .value(v) else .auto,
             });
@@ -320,9 +323,10 @@ pub const Bundle = struct {
     }
 
     fn resolveOne(self: *Bundle, dep: *Dep) void {
-        if (dep.state == .override) {
-            @compileError("Unused override for " ++ @typeName(dep.type));
-        }
+        // TODO: Re-consider this, it's likely a mistake but it's also common to have shared Mocks module with more than we need.
+        // if (dep.state == .override) {
+        //     @compileError("Unused override for " ++ @typeName(dep.type));
+        // }
 
         if (dep.provider == .auto or dep.provider == .init) {
             if (std.meta.hasMethod(dep.type, "init")) {
