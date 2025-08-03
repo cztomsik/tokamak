@@ -498,8 +498,8 @@ fn CompiledBundle(comptime ops: []const Op, comptime n_inst: usize, comptime n_d
         }
 
         fn deinit(self: *@This(), ct: *Container) void {
-            inline for (ops) |op| {
-                switch (op) {
+            inline for (0..ops.len) |i| {
+                switch (ops[ops.len - 1 - i]) {
                     .dep => |dep| {
                         dep.deinitInstance(&self.data, &ct.injector);
                     },
