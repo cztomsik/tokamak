@@ -27,6 +27,15 @@ pub const Date = struct {
     month: u8,
     day: u8,
 
+    pub fn parse(str: []const u8) !Date {
+        var it = std.mem.splitScalar(u8, str, '-');
+        return ymd(
+            try std.fmt.parseInt(i32, it.next() orelse return error.Eof, 10),
+            try std.fmt.parseInt(u8, it.next() orelse return error.Eof, 10),
+            try std.fmt.parseInt(u8, it.next() orelse return error.Eof, 10),
+        );
+    }
+
     pub fn ymd(year: i32, month: u8, day: u8) Date {
         return .{
             .year = year,
