@@ -1,4 +1,5 @@
 // https://www.youtube.com/watch?v=0s9F4QWAl-E
+// https://onlinelibrary.wiley.com/doi/full/10.1002/spe.3172
 // https://howardhinnant.github.io/date_algorithms.html
 // https://en.wikipedia.org/wiki/Rata_Die
 const std = @import("std");
@@ -217,8 +218,8 @@ fn date_to_rata(date: Date) i32 {
     const C: i32 = @intCast(quotient(Y, 100));
 
     // Rata die.
-    const y_star: i32 = @intCast(quotient(1461 * Y, 4) - C + quotient(C, 4));
-    const m_star: u32 = (153 * M - 457) / 5;
+    const y_star: i32 = @intCast(quotient(1461 * Y, 4) - C + quotient(C, 4)); // n_days in all prev. years
+    const m_star: u32 = (153 * M - 457) / 5; // n_days in prev. months
 
     return y_star + @as(i32, @intCast(m_star)) + @as(i32, @intCast(D));
 }
