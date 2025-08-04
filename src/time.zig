@@ -7,6 +7,8 @@ const std = @import("std");
 const RATA_TO_UNIX = 719468;
 const EOD = 86_400 - 1;
 
+pub const TimeUnit = enum { second, minute, hour, day, month, year };
+
 // Taken from the video
 pub fn isLeapYear(year: i32) bool {
     const d: i32 = if (@mod(year, 100) != 0) 4 else 16;
@@ -103,7 +105,7 @@ pub const Time = struct {
         return unix(res);
     }
 
-    pub fn startOf(self: Time, unit: enum { second, minute, hour, day, month, year }) Time {
+    pub fn setStartOf(self: Time, unit: TimeUnit) Time {
         // TODO: continue :label?
         return switch (unit) {
             .second => self,
@@ -131,7 +133,7 @@ pub const Time = struct {
         };
     }
 
-    pub fn endOf(self: Time, unit: enum { second, minute, hour, day, month, year }) Time {
+    pub fn setEndOf(self: Time, unit: TimeUnit) Time {
         // TODO: continue :label?
         return switch (unit) {
             .second => self,
@@ -266,38 +268,38 @@ test "basic usage" {
     const next_day = t3.next(.day);
     try testing.expectFmt(next_day, "2009-02-15 00:00:00 UTC");
 
-    const start_of_min = t3.startOf(.minute);
+    const start_of_min = t3.setStartOf(.minute);
     try testing.expectFmt(start_of_min, "2009-02-14 01:02:00 UTC");
 
-    const start_of_hr = t3.startOf(.hour);
+    const start_of_hr = t3.setStartOf(.hour);
     try testing.expectFmt(start_of_hr, "2009-02-14 01:00:00 UTC");
 
-    const start_of_day = t3.startOf(.day);
+    const start_of_day = t3.setStartOf(.day);
     try testing.expectFmt(start_of_day, "2009-02-14 00:00:00 UTC");
 
-    const start_of_month = t3.startOf(.month);
+    const start_of_month = t3.setStartOf(.month);
     try testing.expectFmt(start_of_month, "2009-02-01 00:00:00 UTC");
 
-    const start_of_year = t3.startOf(.year);
+    const start_of_year = t3.setStartOf(.year);
     try testing.expectFmt(start_of_year, "2009-01-01 00:00:00 UTC");
 
-    const end_of_min = t3.endOf(.minute);
+    const end_of_min = t3.setEndOf(.minute);
     try testing.expectFmt(end_of_min, "2009-02-14 01:02:59 UTC");
 
-    const end_of_hr = t3.endOf(.hour);
+    const end_of_hr = t3.setEndOf(.hour);
     try testing.expectFmt(end_of_hr, "2009-02-14 01:59:59 UTC");
 
-    const end_of_day = t3.endOf(.day);
+    const end_of_day = t3.setEndOf(.day);
     try testing.expectFmt(end_of_day, "2009-02-14 23:59:59 UTC");
 
-    const end_of_month = t3.endOf(.month);
+    const end_of_month = t3.setEndOf(.month);
     try testing.expectFmt(end_of_month, "2009-02-28 23:59:59 UTC");
 
-    const end_of_year = t3.endOf(.year);
+    const end_of_year = t3.setEndOf(.year);
     try testing.expectFmt(end_of_year, "2009-12-31 23:59:59 UTC");
 
     const leap_date = Time.unix(951782400); // 2000-02-29 00:00:00
-    const end_of_leap_month = leap_date.endOf(.month);
+    const end_of_leap_month = leap_date.setEndOf(.month);
     try testing.expectFmt(end_of_leap_month, "2000-02-29 23:59:59 UTC");
 }
 
