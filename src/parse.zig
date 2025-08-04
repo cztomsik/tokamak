@@ -4,6 +4,10 @@ const meta = @import("meta.zig");
 /// Parse a string value into the requested type.
 /// Supports: optional, bool, int, enum, string, and slices (comma-separated).
 pub fn parseValue(comptime T: type, s: []const u8, arena: std.mem.Allocator) !T {
+    if (std.meta.hasFn(T, "parse")) {
+        return T.parse(s);
+    }
+
     return switch (@typeInfo(T)) {
         .bool => std.mem.eql(u8, s, "true"),
         .int => std.fmt.parseInt(T, s, 10),
