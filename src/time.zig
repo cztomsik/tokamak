@@ -86,14 +86,24 @@ pub const Date = struct {
 
     pub fn add(self: Date, part: DateUnit, amount: i64) Date {
         return switch (part) {
-            .day => {
-                const time = Time.unix(0).setDate(self);
-                return time.add(.days, amount).date();
+            .day => Time.unix(0).setDate(self).add(.days, amount).date(),
+            .month => {
+                const total_months = @as(i32, self.month) + @as(i32, @intCast(amount));
+                const new_year = self.year + @divFloor(total_months - 1, 12);
+                const new_month = @as(u8, @intCast(@mod(total_months - 1, 12) + 1));
+                return ymd(
+                    new_year,
+                    new_month,
+                    @min(self.day, daysInMonth(new_year, new_month)),
+                );
             },
-            .month => @panic("TODO"),
             .year => {
                 const new_year = self.year + @as(i32, @intCast(amount));
-                return ymd(new_year, self.month, self.day);
+                return ymd(
+                    new_year,
+                    self.month,
+                    @min(self.day, daysInMonth(new_year, self.month)),
+                );
             },
         };
     }
@@ -225,8 +235,8 @@ pub const Time = struct {
             .minutes => amount * std.time.s_per_min,
             .hours => amount * std.time.s_per_hour,
             .days => amount * std.time.s_per_day,
-            .months => @panic("TODO"),
-            .years => return self.add(.days, if (isLeapYear(self.date().year)) 366 else 365),
+            .months => return self.setDate(self.date().add(.month, amount)),
+            .years => return self.setDate(self.date().add(.year, amount)),
         };
 
         return .{ .epoch = self.epoch + n };
@@ -369,6 +379,12 @@ test "basic usage" {
     const leap_date = Time.unix(951782400); // 2000-02-29 00:00:00
     const end_of_leap_month = leap_date.setEndOf(.month);
     try testing.expectFmt(end_of_leap_month, "2000-02-29 23:59:59 UTC");
+
+    const yr_after_leap_month = leap_date.add(.years, 1);
+    try testing.expectFmt(yr_after_leap_month, "2001-02-28 00:00:00 UTC");
+
+    const next_leap_month = leap_date.add(.years, 4);
+    try testing.expectFmt(next_leap_month, "2004-02-29 00:00:00 UTC");
 }
 
 test isLeapYear {
