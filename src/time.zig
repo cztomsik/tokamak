@@ -8,6 +8,7 @@ const RATA_TO_UNIX = 719468;
 const EOD = 86_400 - 1;
 
 pub const TimeUnit = enum { second, minute, hour, day, month, year };
+pub const DateUnit = enum { day, month, year };
 
 // Taken from the video
 pub fn isLeapYear(year: i32) bool {
@@ -51,6 +52,57 @@ pub const Date = struct {
         return Time.now().date();
     }
 
+    pub fn yesterday() Date {
+        return today().add(.day, -1);
+    }
+
+    pub fn tomorrow() Date {
+        return today().add(.day, 1);
+    }
+
+    pub fn startOf(unit: DateUnit) Date {
+        return today().setStartOf(unit);
+    }
+
+    pub fn endOf(unit: DateUnit) Date {
+        return today().setEndOf(unit);
+    }
+
+    pub fn setStartOf(self: Date, unit: DateUnit) Date {
+        return switch (unit) {
+            .day => self,
+            .month => ymd(self.year, self.month, 1),
+            .year => ymd(self.year, 1, 1),
+        };
+    }
+
+    pub fn setEndOf(self: Date, unit: DateUnit) Date {
+        return switch (unit) {
+            .day => self,
+            .month => ymd(self.year, self.month, daysInMonth(self.year, self.month)),
+            .year => ymd(self.year, 12, 31),
+        };
+    }
+
+    pub fn add(self: Date, part: DateUnit, amount: i64) Date {
+        return switch (part) {
+            .day => {
+                const time = Time.unix(0).setDate(self);
+                return time.add(.days, amount).date();
+            },
+            .month => @panic("TODO"),
+            .year => {
+                const new_year = self.year + @as(i32, @intCast(amount));
+                return ymd(new_year, self.month, self.day);
+            },
+        };
+    }
+
+    pub fn dayOfWeek(self: Date) u8 {
+        const rata_day = date_to_rata(self);
+        return @mod(rata_day + 3, 7);
+    }
+
     pub fn format(self: Date, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
         try writer.print("{d}-{d:0>2}-{d:0>2}", .{
             @as(u32, @intCast(self.year)),
@@ -69,6 +121,22 @@ pub const Time = struct {
 
     pub fn now() Time {
         return unix(std.time.timestamp());
+    }
+
+    pub fn today() Time {
+        return unix(0).setDate(.today());
+    }
+
+    pub fn tomorrow() Time {
+        return unix(0).setDate(.tomorrow());
+    }
+
+    pub fn startOf(unit: TimeUnit) Time {
+        return Time.now().setStartOf(unit);
+    }
+
+    pub fn endOf(unit: TimeUnit) Time {
+        return Time.now().setEndOf(unit);
     }
 
     pub fn second(self: Time) u32 {
