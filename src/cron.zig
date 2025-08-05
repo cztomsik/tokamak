@@ -153,7 +153,7 @@ pub const Expr = struct {
             isSet(self.hour, step.hour()) and
             isSet(self.day, date.day) and
             isSet(self.month, date.month) and
-            true; // isSet(self.weekday, ?);
+            isSet(self.weekday, date.dayOfWeek());
     }
 
     pub fn next(self: *const Expr, since: time.Time) time.Time {
@@ -400,5 +400,10 @@ test "expr.next()" {
     try expectNext("0 0 15 * *", .{
         .{ 0, 14 * 24 * 3600 }, // Jan 1 -> Jan 15
         .{ 16 * 24 * 3600, 31 * 24 * 3600 + 14 * 24 * 3600 }, // Jan 17 -> Feb 15
+    });
+
+    try expectNext("0 9 * * 1", .{
+        .{ 0, 4 * 24 * 3600 + 9 * 3600 }, // Jan 1 (Thu) -> Jan 5 (Mon) 9:00
+        .{ 4 * 24 * 3600 + 9 * 3600, 11 * 24 * 3600 + 9 * 3600 }, // Jan 5 (Mon) -> Jan 12 (Mon) 9:00
     });
 }

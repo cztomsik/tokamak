@@ -110,7 +110,7 @@ pub const Date = struct {
 
     pub fn dayOfWeek(self: Date) u8 {
         const rata_day = date_to_rata(self);
-        return @mod(rata_day + 3, 7);
+        return @intCast(@mod(rata_day + 3, 7));
     }
 
     pub fn format(self: Date, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
