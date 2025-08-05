@@ -334,57 +334,39 @@ test "basic usage" {
     const t3 = t2.add(.hours, 14).add(.minutes, 46).add(.seconds, 18);
     try testing.expectFmt(t3, "2009-02-14 01:02:03 UTC");
 
-    const next_sec = t3.next(.second);
-    try testing.expectFmt(next_sec, "2009-02-14 01:02:04 UTC");
+    // t.next()
+    try testing.expectFmt(t3.next(.second), "2009-02-14 01:02:04 UTC");
+    try testing.expectFmt(t3.next(.minute), "2009-02-14 01:03:00 UTC");
+    try testing.expectFmt(t3.next(.hour), "2009-02-14 02:00:00 UTC");
+    try testing.expectFmt(t3.next(.day), "2009-02-15 00:00:00 UTC");
 
-    const next_min = t3.next(.minute);
-    try testing.expectFmt(next_min, "2009-02-14 01:03:00 UTC");
+    // t.setStartOf()
+    try testing.expectFmt(t3.setStartOf(.minute), "2009-02-14 01:02:00 UTC");
+    try testing.expectFmt(t3.setStartOf(.hour), "2009-02-14 01:00:00 UTC");
+    try testing.expectFmt(t3.setStartOf(.day), "2009-02-14 00:00:00 UTC");
+    try testing.expectFmt(t3.setStartOf(.month), "2009-02-01 00:00:00 UTC");
+    try testing.expectFmt(t3.setStartOf(.year), "2009-01-01 00:00:00 UTC");
 
-    const next_hr = t3.next(.hour);
-    try testing.expectFmt(next_hr, "2009-02-14 02:00:00 UTC");
+    // t.setEndOf()
+    try testing.expectFmt(t3.setEndOf(.minute), "2009-02-14 01:02:59 UTC");
+    try testing.expectFmt(t3.setEndOf(.hour), "2009-02-14 01:59:59 UTC");
+    try testing.expectFmt(t3.setEndOf(.day), "2009-02-14 23:59:59 UTC");
+    try testing.expectFmt(t3.setEndOf(.month), "2009-02-28 23:59:59 UTC");
+    try testing.expectFmt(t3.setEndOf(.year), "2009-12-31 23:59:59 UTC");
+}
 
-    const next_day = t3.next(.day);
-    try testing.expectFmt(next_day, "2009-02-15 00:00:00 UTC");
+test "edge-cases" {
+    const jan31 = Date.ymd(2023, 1, 31);
+    try testing.expectEqual(jan31.add(.month, 1), Date.ymd(2023, 2, 28));
+    try testing.expectEqual(jan31.add(.month, 2), Date.ymd(2023, 3, 31));
+    try testing.expectEqual(jan31.add(.month, -1), Date.ymd(2022, 12, 31));
+    try testing.expectEqual(jan31.add(.month, -2), Date.ymd(2022, 11, 30));
+    try testing.expectEqual(jan31.add(.year, 1).add(.month, 1), Date.ymd(2024, 2, 29));
 
-    const start_of_min = t3.setStartOf(.minute);
-    try testing.expectFmt(start_of_min, "2009-02-14 01:02:00 UTC");
-
-    const start_of_hr = t3.setStartOf(.hour);
-    try testing.expectFmt(start_of_hr, "2009-02-14 01:00:00 UTC");
-
-    const start_of_day = t3.setStartOf(.day);
-    try testing.expectFmt(start_of_day, "2009-02-14 00:00:00 UTC");
-
-    const start_of_month = t3.setStartOf(.month);
-    try testing.expectFmt(start_of_month, "2009-02-01 00:00:00 UTC");
-
-    const start_of_year = t3.setStartOf(.year);
-    try testing.expectFmt(start_of_year, "2009-01-01 00:00:00 UTC");
-
-    const end_of_min = t3.setEndOf(.minute);
-    try testing.expectFmt(end_of_min, "2009-02-14 01:02:59 UTC");
-
-    const end_of_hr = t3.setEndOf(.hour);
-    try testing.expectFmt(end_of_hr, "2009-02-14 01:59:59 UTC");
-
-    const end_of_day = t3.setEndOf(.day);
-    try testing.expectFmt(end_of_day, "2009-02-14 23:59:59 UTC");
-
-    const end_of_month = t3.setEndOf(.month);
-    try testing.expectFmt(end_of_month, "2009-02-28 23:59:59 UTC");
-
-    const end_of_year = t3.setEndOf(.year);
-    try testing.expectFmt(end_of_year, "2009-12-31 23:59:59 UTC");
-
-    const leap_date = Time.unix(951782400); // 2000-02-29 00:00:00
-    const end_of_leap_month = leap_date.setEndOf(.month);
-    try testing.expectFmt(end_of_leap_month, "2000-02-29 23:59:59 UTC");
-
-    const yr_after_leap_month = leap_date.add(.years, 1);
-    try testing.expectFmt(yr_after_leap_month, "2001-02-28 00:00:00 UTC");
-
-    const next_leap_month = leap_date.add(.years, 4);
-    try testing.expectFmt(next_leap_month, "2004-02-29 00:00:00 UTC");
+    const feb29 = Time.unix(951782400); // 2000-02-29 00:00:00
+    try testing.expectFmt(feb29.setEndOf(.month), "2000-02-29 23:59:59 UTC");
+    try testing.expectFmt(feb29.add(.years, 1), "2001-02-28 00:00:00 UTC");
+    try testing.expectFmt(feb29.add(.years, 4), "2004-02-29 00:00:00 UTC");
 }
 
 test isLeapYear {
