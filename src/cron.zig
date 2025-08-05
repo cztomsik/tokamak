@@ -5,27 +5,35 @@ const Queue = @import("queue.zig").Queue;
 const MemQueue = @import("queue.zig").MemQueue;
 const log = std.log.scoped(.cron);
 
-// pub const Config = struct {
-//     /// How many seconds in the past to start ticking from
-//     catchup_window: i64 = 30,
-// };
+const JobId = enum(usize) { _ };
+
+pub const Config = struct {
+    /// How many seconds in the past to start ticking from
+    catchup_window: i64 = 30,
+};
 
 pub const Job = struct {
+    id: JobId,
+    schedule: Expr,
     name: []const u8,
     data: []const u8,
-    schedule: Expr,
     next: i64,
 };
 
 pub const Cron = struct {
+    config: Config,
     queue: *Queue,
     jobs: std.ArrayList(Job),
     time: *const fn () time.Time = time.Time.now,
     mutex: std.Thread.Mutex = .{},
     wait: std.Thread.Condition = .{},
 
-    pub fn init(allocator: std.mem.Allocator, queue: *Queue) Cron {
+    // NOTE: global & shared
+    var next_id: std.atomic.Value(usize) = .init(1);
+
+    pub fn init(allocator: std.mem.Allocator, queue: *Queue, config: ?Config) Cron {
         return .{
+            .config = config orelse .{},
             .queue = queue,
             .jobs = .init(allocator),
         };
@@ -38,29 +46,42 @@ pub const Cron = struct {
         self.jobs.deinit();
     }
 
-    // TODO: return id
-    pub fn schedule(self: *Cron, name: []const u8, data: []const u8, expr: []const u8) !void {
+    pub fn schedule(self: *Cron, expr: []const u8, name: []const u8, data: []const u8) !JobId {
         self.mutex.lock();
         defer self.mutex.unlock();
 
+        const id: JobId = @enumFromInt(next_id.fetchAdd(1, .monotonic));
         const exp = try Expr.parse(expr);
         const next = exp.next(self.time()).epoch;
 
         try self.jobs.append(.{
+            .id = id,
+            .schedule = exp,
             .name = name,
             .data = data,
-            .schedule = exp,
             .next = next,
         });
+
+        return id;
     }
 
-    // TODO: unschedule(id)
+    pub fn unschedule(self: *Cron, id: JobId) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        for (self.jobs.items, 0..) |job, i| {
+            if (job.id == id) {
+                _ = self.jobs.swapRemove(i);
+                break;
+            }
+        }
+    }
 
     pub fn run(self: *Cron) !void {
         self.mutex.lock();
         defer self.mutex.unlock();
 
-        var step = self.time(); // - self.config.catchup_window;
+        var step = self.time() - self.config.catchup_window;
 
         while (step.epoch < self.time().epoch) {
             log.debug("catching up to {}", .{step});
@@ -104,7 +125,7 @@ test Cron {
 
     const queue = &mem_queue.interface;
 
-    var cron = Cron.init(testing.allocator, queue);
+    var cron = Cron.init(testing.allocator, queue, null);
     defer cron.deinit();
 
     testing.time.value = 0;
@@ -114,7 +135,7 @@ test Cron {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
 
-    try cron.schedule("bar", "baz", "* * * * *");
+    const id = try cron.schedule("* * * * *", "bar", "baz");
 
     try testing.expectTable(try queue.getAllJobs(arena.allocator()),
         \\| name | key | state   |
@@ -130,6 +151,16 @@ test Cron {
     );
 
     _ = try cron.tick(120);
+
+    try testing.expectTable(try queue.getAllJobs(arena.allocator()),
+        \\| name | key | state   |
+        \\|------|-----|---------|
+        \\| bar  | 60  | pending |
+        \\| bar  | 120 | pending |
+    );
+
+    cron.unschedule(id);
+    _ = try cron.tick(180);
 
     try testing.expectTable(try queue.getAllJobs(arena.allocator()),
         \\| name | key | state   |
