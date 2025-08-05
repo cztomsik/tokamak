@@ -105,7 +105,7 @@ pub const Cron = struct {
             if (job.next <= now) {
                 var buf: [20]u8 = undefined;
 
-                _ = try self.queue.enqueue(job.name, job.data, .{
+                try self.queue.push(job.name, job.data, .{
                     .key = std.fmt.bufPrintIntToSlice(&buf, job.next, 10, .lower, .{}),
                     .schedule_at = job.next,
                 });
@@ -137,14 +137,14 @@ test Cron {
 
     const id = try cron.schedule("* * * * *", "bar", "baz");
 
-    try testing.expectTable(try queue.getAllJobs(arena.allocator()),
+    try testing.expectTable(try queue.listJobs(arena.allocator(), .{}),
         \\| name | key | state   |
         \\|------|-----|---------|
     );
 
     _ = try cron.tick(60);
 
-    try testing.expectTable(try queue.getAllJobs(arena.allocator()),
+    try testing.expectTable(try queue.listJobs(arena.allocator(), .{}),
         \\| name | key | state   |
         \\|------|-----|---------|
         \\| bar  | 60  | pending |
@@ -152,7 +152,7 @@ test Cron {
 
     _ = try cron.tick(120);
 
-    try testing.expectTable(try queue.getAllJobs(arena.allocator()),
+    try testing.expectTable(try queue.listJobs(arena.allocator(), .{}),
         \\| name | key | state   |
         \\|------|-----|---------|
         \\| bar  | 60  | pending |
@@ -162,7 +162,7 @@ test Cron {
     cron.unschedule(id);
     _ = try cron.tick(180);
 
-    try testing.expectTable(try queue.getAllJobs(arena.allocator()),
+    try testing.expectTable(try queue.listJobs(arena.allocator(), .{}),
         \\| name | key | state   |
         \\|------|-----|---------|
         \\| bar  | 60  | pending |

@@ -37,22 +37,39 @@ pub const JobOptions = struct {
     schedule_at: ?i64 = null,
 };
 
+pub const JobFilter = struct {
+    name: ?[]const u8 = null,
+    state: ?JobState = null,
+    limit: u32 = 200,
+};
+
+pub const Command = union(enum) {
+    start_next: void,
+    submit: JobInfo,
+    start: JobId,
+    retry: JobId,
+    remove: JobId,
+    finish: struct {
+        id: JobId,
+        result: anyerror![]const u8,
+    },
+};
+
 pub const Queue = struct {
     pub const VTable = struct {
-        enqueueJob: *const fn (*Queue, JobInfo) anyerror!?JobId,
-        getJobInfo: *const fn (*Queue, std.mem.Allocator, JobId) anyerror!?JobInfo,
-        getAllJobs: *const fn (*Queue, std.mem.Allocator) anyerror![]JobInfo,
-        startNext: *const fn (*Queue, i64) anyerror!?JobId,
-        startJob: *const fn (*Queue, JobId) anyerror!bool,
-        retryJob: *const fn (*Queue, JobId) anyerror!void,
-        removeJob: *const fn (*Queue, JobId) anyerror!void,
-        handleResult: *const fn (*Queue, JobId, anyerror![]const u8, i64) anyerror!void,
+        findJob: *const fn (*Queue, std.mem.Allocator, JobId) anyerror!?JobInfo,
+        listJobs: *const fn (*Queue, std.mem.Allocator, JobFilter) anyerror![]const JobInfo,
+        exec: *const fn (*Queue, Command) anyerror!?JobId,
     };
 
     vtable: *const VTable,
     time: *const fn () i64 = std.time.timestamp,
 
-    pub fn enqueue(self: *Queue, name: []const u8, data: anytype, options: JobOptions) !?JobId {
+    pub fn push(self: *Queue, name: []const u8, data: anytype, options: JobOptions) !void {
+        _ = try self.submit(name, data, options);
+    }
+
+    pub fn submit(self: *Queue, name: []const u8, data: anytype, options: JobOptions) !?JobId {
         // We only stringify small payloads
         var buf: [512]u8 = undefined;
         var fbs = std.io.fixedBufferStream(&buf);
@@ -72,37 +89,38 @@ pub const Queue = struct {
             .state = .pending,
             .result = null,
             .@"error" = null,
-            .created_at = std.time.timestamp(),
+            .created_at = self.time(),
             .scheduled_at = options.schedule_at,
             .started_at = null,
             .completed_at = null,
         };
 
-        return self.vtable.enqueueJob(self, job);
+        return self.vtable.exec(self, .{ .submit = job });
     }
 
-    pub fn getJobInfo(self: *Queue, arena: std.mem.Allocator, id: JobId) !?JobInfo {
-        return self.vtable.getJobInfo(self, arena, id);
+    pub fn findJob(self: *Queue, arena: std.mem.Allocator, id: JobId) !?JobInfo {
+        return self.vtable.findJob(self, arena, id);
     }
 
-    pub fn getAllJobs(self: *Queue, arena: std.mem.Allocator) ![]JobInfo {
-        return self.vtable.getAllJobs(self, arena);
+    pub fn listJobs(self: *Queue, arena: std.mem.Allocator, filter: JobFilter) ![]const JobInfo {
+        return self.vtable.listJobs(self, arena, filter);
     }
 
     pub fn startNext(self: *Queue) !?JobId {
-        return self.vtable.startNext(self, self.time());
+        return self.vtable.exec(self, .{ .start_next = {} });
     }
 
     pub fn startJob(self: *Queue, id: JobId) !bool {
-        return self.vtable.startJob(self, id);
+        const result = try self.vtable.exec(self, .{ .start = id });
+        return result != null;
     }
 
     pub fn retryJob(self: *Queue, id: JobId) !void {
-        return self.vtable.retryJob(self, id);
+        _ = try self.vtable.exec(self, .{ .retry = id });
     }
 
     pub fn removeJob(self: *Queue, id: JobId) !void {
-        return self.vtable.removeJob(self, id);
+        _ = try self.vtable.exec(self, .{ .remove = id });
     }
 
     pub fn handleSuccess(self: *Queue, id: JobId, res: anytype) !void {
@@ -115,11 +133,11 @@ pub const Queue = struct {
                 break :blk fbs.getWritten();
             },
         };
-        return self.vtable.handleResult(self, id, result_str, self.time());
+        _ = try self.vtable.exec(self, .{ .finish = .{ .id = id, .result = result_str } });
     }
 
     pub fn handleFailure(self: *Queue, id: JobId, err: anyerror) !void {
-        return self.vtable.handleResult(self, id, err, self.time());
+        _ = try self.vtable.exec(self, .{ .finish = .{ .id = id, .result = err } });
     }
 };
 
@@ -140,14 +158,9 @@ pub const MemQueue = struct {
         return .{
             .interface = .{
                 .vtable = &.{
-                    .enqueueJob = &enqueueJob,
-                    .getJobInfo = &getJobInfo,
-                    .getAllJobs = &getAllJobs,
-                    .startNext = &startNext,
-                    .startJob = &startJob,
-                    .retryJob = &retryJob,
-                    .removeJob = &removeJob,
-                    .handleResult = &handleResult,
+                    .findJob = &findJob,
+                    .listJobs = &listJobs,
+                    .exec = &exec,
                 },
             },
 
@@ -174,21 +187,28 @@ pub const MemQueue = struct {
         self.keys.deinit(allocator);
     }
 
-    fn enqueueJob(queue: *Queue, job: JobInfo) !?JobId {
+    fn exec(queue: *Queue, cmd: Command) !?JobId {
         const self: *MemQueue = @fieldParentPtr("interface", queue);
         self.mutex.lock();
         defer self.mutex.unlock();
 
+        switch (cmd) {
+            .start_next => return self.startNext(queue.time()),
+            .submit => |job| return self.submitJob(job),
+            .start => |id| if (try self.startJob(id, queue.time())) return id,
+            .retry => |id| try self.retryJob(id),
+            .remove => |id| try self.removeJob(id),
+            .finish => |fin| try self.handleResult(fin.id, fin.result, queue.time()),
+        }
+
+        return null;
+    }
+
+    fn submitJob(self: *MemQueue, job: JobInfo) !?JobId {
         if (job.key) |key| {
             if (self.keys.get(key)) |id| {
                 if (self.jobs.find(@bitCast(id))) |existing| {
-                    if (existing.state == .pending) {
-                        // Update job (but copy the data)
-                        const old_data = existing.data;
-                        existing.data = try self.allocator.dupe(u8, job.data);
-                        existing.scheduled_at = job.scheduled_at;
-                        self.allocator.free(old_data);
-
+                    if (existing.state == .pending or existing.state == .running) {
                         return null;
                     }
                 }
@@ -199,11 +219,15 @@ pub const MemQueue = struct {
         }
 
         // No key specified, proceed normally
-        const copy = try meta.dupe(self.allocator, job);
+        const entry = try self.jobs.insertEntry();
+        errdefer self.jobs.remove(entry.id);
+
+        var copy = try meta.dupe(self.allocator, job);
         errdefer meta.free(self.allocator, copy);
 
-        const id: JobId = @bitCast(try self.jobs.insert(copy));
-        errdefer self.jobs.remove(@bitCast(id));
+        const id: JobId = @bitCast(entry.id);
+        copy.id = id;
+        entry.value.* = copy;
 
         if (copy.key) |key_copy| {
             // Now we can save the key (which we own)
@@ -218,43 +242,38 @@ pub const MemQueue = struct {
         return id;
     }
 
-    fn getJobInfo(queue: *Queue, arena: std.mem.Allocator, id: JobId) !?JobInfo {
+    fn findJob(queue: *Queue, arena: std.mem.Allocator, id: JobId) !?JobInfo {
         const self: *MemQueue = @fieldParentPtr("interface", queue);
         self.mutex.lock();
         defer self.mutex.unlock();
 
-        const job = self.jobs.find(@bitCast(id)) orelse {
-            return error.JobNotFound; // try self.getJob?
-        };
-
-        var copy = try meta.dupe(arena, job.*);
-        copy.id = @bitCast(job.id.?);
-
-        return copy;
+        if (self.jobs.find(@bitCast(id))) |job| {
+            return try meta.dupe(arena, job.*);
+        } else return null;
     }
 
-    fn getAllJobs(queue: *Queue, arena: std.mem.Allocator) ![]JobInfo {
+    fn listJobs(queue: *Queue, arena: std.mem.Allocator, filter: JobFilter) ![]const JobInfo {
         const self: *MemQueue = @fieldParentPtr("interface", queue);
         self.mutex.lock();
         defer self.mutex.unlock();
 
-        var res = std.ArrayList(JobInfo).init(arena);
+        var res = try std.ArrayList(JobInfo).initCapacity(arena, filter.limit);
+        defer res.deinit();
 
         var it = self.jobs.iter();
         while (it.next()) |entry| {
-            var copy = try meta.dupe(arena, entry.value.*);
-            copy.id = @bitCast(entry.id);
+            if (res.items.len == filter.limit) break;
+            if (filter.state) |s| if (entry.value.state != s) continue;
+            if (filter.name) |n| if (!std.mem.eql(u8, entry.value.name, n)) continue;
+
+            const copy = try meta.dupe(arena, entry.value.*);
             try res.append(copy);
         }
 
         return res.toOwnedSlice();
     }
 
-    fn startNext(queue: *Queue, time: i64) !?JobId {
-        const self: *MemQueue = @fieldParentPtr("interface", queue);
-        self.mutex.lock();
-        defer self.mutex.unlock();
-
+    fn startNext(self: *MemQueue, time: i64) !?JobId {
         while (self.upcoming.peek()) |sched| {
             if (sched.scheduled_at == null or sched.scheduled_at.? <= time) {
                 _ = self.upcoming.remove();
@@ -276,18 +295,14 @@ pub const MemQueue = struct {
         return null;
     }
 
-    fn startJob(queue: *Queue, id: JobId) !bool {
-        const self: *MemQueue = @fieldParentPtr("interface", queue);
-        self.mutex.lock();
-        defer self.mutex.unlock();
-
+    fn startJob(self: *MemQueue, id: JobId, time: i64) !bool {
         const job = self.jobs.find(@bitCast(id)) orelse {
             return error.JobNotFound; // try self.getJob?
         };
 
         if (job.state == .pending) {
             job.state = .running;
-            job.started_at = std.time.timestamp();
+            job.started_at = time;
             job.attempts += 1;
             return true;
         } else {
@@ -295,22 +310,14 @@ pub const MemQueue = struct {
         }
     }
 
-    fn retryJob(queue: *Queue, id: JobId) !void {
-        const self: *MemQueue = @fieldParentPtr("interface", queue);
-        self.mutex.lock();
-        defer self.mutex.unlock();
-
+    fn retryJob(self: *MemQueue, id: JobId) !void {
         if (self.jobs.find(@bitCast(id))) |job| {
             job.max_attempts = @min(job.max_attempts, job.attempts + 1);
             job.state = .pending;
         } else return error.JobNotFound;
     }
 
-    fn removeJob(queue: *Queue, id: JobId) !void {
-        const self: *MemQueue = @fieldParentPtr("interface", queue);
-        self.mutex.lock();
-        defer self.mutex.unlock();
-
+    fn removeJob(self: *MemQueue, id: JobId) !void {
         if (self.jobs.find(@bitCast(id))) |job| {
             if (job.key) |key| {
                 _ = self.keys.remove(key);
@@ -320,11 +327,7 @@ pub const MemQueue = struct {
         self.jobs.remove(@bitCast(id));
     }
 
-    fn handleResult(queue: *Queue, id: JobId, result: anyerror![]const u8, time: i64) !void {
-        const self: *MemQueue = @fieldParentPtr("interface", queue);
-        self.mutex.lock();
-        defer self.mutex.unlock();
-
+    fn handleResult(self: *MemQueue, id: JobId, result: anyerror![]const u8, time: i64) !void {
         const job = self.jobs.find(@bitCast(id)) orelse {
             return error.JobNotFound;
         };
@@ -389,11 +392,11 @@ test Queue {
     defer arena.deinit();
 
     // Enqueue
-    const id1 = (try queue.enqueue("job1", 123, .{})).?;
-    const id2 = (try queue.enqueue("job2", "foo", .{ .key = "foo", .max_attempts = 2 })).?;
-    _ = try queue.enqueue("job2", "bar", .{ .key = "foo" });
+    const id1 = try queue.submit("job1", 123, .{}) orelse unreachable;
+    const id2 = try queue.submit("job2", "bar", .{ .key = "foo", .max_attempts = 2 }) orelse unreachable;
+    try queue.push("job2", "xxx", .{ .key = "foo" });
 
-    try testing.expectTable(try queue.getAllJobs(arena.allocator()),
+    try testing.expectTable(try queue.listJobs(arena.allocator(), .{}),
         \\| name | key | data | state   | attempts |
         \\|------|-----|------|---------|----------|
         \\| job1 |     | 123  | pending | 0        |
@@ -404,7 +407,7 @@ test Queue {
     const next1 = (try queue.startNext()).?;
     try std.testing.expectEqual(id1, next1);
 
-    try testing.expectTable(try queue.getAllJobs(arena.allocator()),
+    try testing.expectTable(try queue.listJobs(arena.allocator(), .{}),
         \\| name | key | data | state   | attempts |
         \\|------|-----|------|---------|----------|
         \\| job1 |     | 123  | running | 1        |
@@ -414,7 +417,7 @@ test Queue {
     // Complete first
     try queue.handleSuccess(id1, "success");
 
-    try testing.expectTable(try queue.getAllJobs(arena.allocator()),
+    try testing.expectTable(try queue.listJobs(arena.allocator(), .{}),
         \\| name | key | data | state     | attempts | result    |
         \\|------|-----|------|-----------|----------|-----------|
         \\| job1 |     | 123  | completed | 1        | "success" |
@@ -425,7 +428,7 @@ test Queue {
     const next2 = (try queue.startNext()).?;
     try std.testing.expectEqual(id2, next2);
 
-    try testing.expectTable(try queue.getAllJobs(arena.allocator()),
+    try testing.expectTable(try queue.listJobs(arena.allocator(), .{}),
         \\| name | key | data | state     | attempts | result    |
         \\|------|-----|------|-----------|----------|-----------|
         \\| job1 |     | 123  | completed | 1        | "success" |
@@ -435,7 +438,7 @@ test Queue {
     // Fail second
     try queue.handleFailure(id2, error.TestError);
 
-    try testing.expectTable(try queue.getAllJobs(arena.allocator()),
+    try testing.expectTable(try queue.listJobs(arena.allocator(), .{}),
         \\| name | key | data | state     | attempts | result    | error     |
         \\|------|-----|------|-----------|----------|-----------|-----------|
         \\| job1 |     | 123  | completed | 1        | "success" |           |
@@ -452,7 +455,7 @@ test Queue {
     const next3 = (try queue.startNext()).?;
     try std.testing.expectEqual(id2, next3);
 
-    try testing.expectTable(try queue.getAllJobs(arena.allocator()),
+    try testing.expectTable(try queue.listJobs(arena.allocator(), .{}),
         \\| name | key | data | state     | attempts | result    | error     |
         \\|------|-----|------|-----------|----------|-----------|-----------|
         \\| job1 |     | 123  | completed | 1        | "success" |           |
@@ -462,7 +465,7 @@ test Queue {
     // Fail Second Again (should be final failure since max_attempts = 2)
     try queue.handleFailure(id2, error.AnotherError);
 
-    try testing.expectTable(try queue.getAllJobs(arena.allocator()),
+    try testing.expectTable(try queue.listJobs(arena.allocator(), .{}),
         \\| name | key | data | state     | attempts | result    | error        |
         \\|------|-----|------|-----------|----------|-----------|--------------|
         \\| job1 |     | 123  | completed | 1        | "success" |              |
@@ -471,4 +474,38 @@ test Queue {
 
     // No more jobs available
     try std.testing.expectEqual(null, try queue.startNext());
+
+    // Add more
+    try queue.push("test", "1", .{});
+    try queue.push("test", "2", .{});
+    try queue.push("other", "3", .{});
+
+    // Filter by name
+    try testing.expectTable(try queue.listJobs(arena.allocator(), .{ .name = "test" }),
+        \\| name | data |
+        \\|------|------|
+        \\| test | 1    |
+        \\| test | 2    |
+    );
+
+    // Filter by state
+    try testing.expectTable(try queue.listJobs(arena.allocator(), .{ .state = .pending }),
+        \\| name  | data |
+        \\|-------|------|
+        \\| test  | 1    |
+        \\| test  | 2    |
+        \\| other | 3    |
+    );
+
+    // Filter with limit
+    try testing.expectTable(try queue.listJobs(arena.allocator(), .{ .limit = 1 }),
+        \\| name | data |
+        \\|------|------|
+        \\| job1 | 123  |
+    );
+
+    // Test findJob
+    const job1 = try queue.findJob(arena.allocator(), id1);
+    try testing.expectEqual(job1.?.id, id1);
+    try testing.expectEqual(try queue.findJob(arena.allocator(), 999999), null);
 }
