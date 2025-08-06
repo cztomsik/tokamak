@@ -8,14 +8,13 @@ const Buf = @import("util.zig").Buf;
 // https://swtch.com/~rsc/regexp/regexp3.html
 pub const Regex = struct {
     code: []const Op,
-    threads: []Thread,
 
     pub fn compile(allocator: std.mem.Allocator, regex: []const u8) !Regex {
         var tokenizer: Tokenizer = .{ .input = regex };
         const len, const depth = try countAndValidate(&tokenizer);
 
-        const threads = try allocator.alloc(Thread, len * 2);
-        errdefer allocator.free(threads);
+        // TODO: we should first attempt to optimize the regex before failing.
+        if (len > 64) return error.RegexTooComplex;
 
         var code: Buf(Op) = try .initAlloc(allocator, len);
         errdefer code.deinit(allocator);
@@ -118,17 +117,15 @@ pub const Regex = struct {
 
         return .{
             .code = code.finish(),
-            .threads = threads,
         };
     }
 
     pub fn deinit(self: *Regex, allocator: std.mem.Allocator) void {
         allocator.free(self.code);
-        allocator.free(self.threads);
     }
 
     pub fn match(self: *Regex, text: []const u8) bool {
-        return pikevm(self.code, text, self.threads);
+        return pikevm(self.code, text);
     }
 
     fn countAndValidate(tokenizer: *Tokenizer) ![2]usize {
@@ -160,7 +157,7 @@ pub const Regex = struct {
             }
 
             can_repeat = switch (tok) {
-                .char, .dot, .rparen => true,
+                .char, .dot, .rparen, .que, .plus, .star => true,
                 else => false,
             };
         }
@@ -238,10 +235,6 @@ const Op = enum(i32) {
     }
 };
 
-const Thread = struct {
-    pc: usize,
-};
-
 fn encode(v: i32) Op {
     return @enumFromInt(@as(i32, @intCast(v)));
 }
@@ -254,34 +247,55 @@ fn decodeJmp(code: []const Op, pc: usize) usize {
     return @intCast(@as(isize, @intCast(pc)) + decode(code, pc));
 }
 
+fn maskPc(pc: usize) u64 {
+    return @as(u64, 1) << @intCast(pc);
+}
+
 // https://dl.acm.org/doi/10.1145/363347.363387
 // https://swtch.com/~rsc/regexp/regexp2.html#pike
 // TODO: captures
-fn pikevm(code: []const Op, text: []const u8, threads: []Thread) bool {
-    var clist = Buf(Thread).init(threads[0 .. threads.len / 2]);
-    var nlist = Buf(Thread).init(threads[threads.len / 2 ..]);
+fn pikevm(code: []const Op, text: []const u8) bool {
+    // We only support N ops so we can actually encode both [N]Thread lists as
+    // bitsets where each position represents the thread's PC. Even better, we
+    // get de-duping and "same-char" ticks for free.
+    var clist: u64 = 0;
+    var nlist: u64 = 0;
 
-    // Initial thread
-    clist.push(.{ .pc = 0 });
+    clist |= maskPc(0);
 
     var sp: usize = 0;
     while (true) : (sp += 1) {
-        // std.debug.print("sp={}\n", .{sp});
+        var guard: u64 = 0; // Which PCs we have already executed in this step
 
-        // TODO: I think it can still overflow but maybe we could just compute real max size for clist/nlist in count()?
-        var j: usize = 0; // ^/jmp/split needs to be processed before advancing
-        while (j < clist.len) : (j += 1) { // and we do that by pushing to clist
-            const pc = clist.buf[j].pc;
+        while (clist != 0) {
+            const pc = @ctz(clist); // Find the lowest bit
+            clist &= clist - 1; // Clear that bit (we go backwards so we can do -1)
+
+            // Guard against infinite recursion
+            const mask = maskPc(pc);
+            if ((guard & mask) != 0) continue;
+            guard |= mask;
 
             switch (code[pc]) {
-                .begin => if (sp == 0) clist.push(.{ .pc = pc + 1 }),
-                .end => if (sp == text.len) clist.push(.{ .pc = pc + 1 }), // TODO (the other version does not work yet either)
-                .char => if (sp < text.len and text[sp] == decode(code, pc + 1)) nlist.push(.{ .pc = pc + 2 }),
-                .any => if (sp < text.len) nlist.push(.{ .pc = pc + 1 }),
-                .jmp => clist.push(.{ .pc = decodeJmp(code, pc + 1) }),
+                .begin => {
+                    if (sp == 0) clist |= maskPc(pc + 1);
+                },
+                .end => {
+                    if (sp == text.len) clist |= maskPc(pc + 1);
+                },
+                .char => {
+                    if (sp < text.len and text[sp] == decode(code, pc + 1))
+                        nlist |= maskPc(pc + 2);
+                },
+                .any => {
+                    if (sp < text.len) nlist |= maskPc(pc + 1);
+                },
+                .jmp => {
+                    clist |= maskPc(decodeJmp(code, pc + 1));
+                },
                 .split => {
-                    clist.push(.{ .pc = decodeJmp(code, pc + 1) });
-                    clist.push(.{ .pc = decodeJmp(code, pc + 2) });
+                    clist |= maskPc(decodeJmp(code, pc + 1));
+                    clist |= maskPc(decodeJmp(code, pc + 2));
                 },
                 .match => return true,
                 else => return false,
@@ -289,8 +303,8 @@ fn pikevm(code: []const Op, text: []const u8, threads: []Thread) bool {
         }
 
         if (sp == text.len) break;
-        std.mem.swap(Buf(Thread), &clist, &nlist);
-        nlist.len = 0;
+        clist = nlist;
+        nlist = 0;
     }
 
     return false;
