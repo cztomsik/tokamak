@@ -189,10 +189,16 @@ const Tokenizer = struct {
     pos: usize = 0,
 
     fn next(self: *Tokenizer) ?Token {
-        // TODO: escaping (\\ -> char, \+ -> char, but \w -> alphanum)
         while (self.pos < self.input.len) {
             const ch = self.input[self.pos];
             self.pos += 1;
+
+            // TODO: This is incomplete, \d and \w should be parsed as meta-classes, etc.
+            if (ch == '\\' and self.pos < self.input.len) {
+                const next_ch = self.input[self.pos];
+                self.pos += 1;
+                return .{ .char = next_ch };
+            }
 
             return switch (ch) {
                 '.' => .dot,
@@ -327,6 +333,7 @@ test Tokenizer {
     try expectTokens("", &.{});
     try expectTokens("a.c+", &.{ .char, .dot, .char, .plus });
     try expectTokens("a?(b|c)*", &.{ .char, .que, .lparen, .char, .pipe, .char, .rparen, .star });
+    try expectTokens("\\.+\\+\\\\", &.{ .char, .plus, .char, .char });
 }
 
 fn expectCompile(regex: []const u8, expected: []const u8) !void {
