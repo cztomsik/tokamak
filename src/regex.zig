@@ -644,4 +644,44 @@ test "Regex.match()" {
     //     .{ "axxxb", true },
     //     .{ "axxx", false },
     // });
+
+    // Escaping
+    try expectMatches("\\.+", &.{
+        .{ ".", true },
+        .{ "..", true },
+        .{ "a", false },
+    });
+
+    try expectMatches(".*/.*\\.txt", &.{
+        .{ "/home/user/file.txt", true },
+        .{ "dir/test.txt", true },
+        .{ "file.pdf", false },
+        .{ "filetxt", false },
+    });
+}
+
+test "Something useful" {
+    try expectMatches(".*@.*", &.{
+        .{ "foo@bar.com", true },
+        .{ "invalid", false },
+    });
+
+    try expectMatches(".*\\.js", &.{
+        .{ "index.js", true },
+        .{ "app.min.js", true },
+        .{ "invalid", false },
+    });
+
+    try expectMatches("/api/.*", &.{
+        .{ "/api/users", true },
+        .{ "/api/users/123", true },
+        .{ "invalid", false },
+    });
+
+    try expectMatches("^#+ .*", &.{
+        .{ "# Heading 1", true },
+        .{ "## Heading 2", true },
+        .{ "#Invalid", false },
+        .{ "Invalid", false },
+    });
 }
