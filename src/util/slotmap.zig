@@ -9,6 +9,11 @@ pub fn SlotMap(comptime T: type) type {
             index: u32,
         };
 
+        pub const Entry = struct {
+            id: Id,
+            value: *T,
+        };
+
         pub const Slot = struct {
             gen: u32,
             value: T,
@@ -20,13 +25,8 @@ pub fn SlotMap(comptime T: type) type {
         };
 
         pub const Iterator = struct {
-            map: *const SlotMap(T),
+            map: *SlotMap(T),
             index: u32 = 0,
-
-            pub const Entry = struct {
-                id: Id,
-                value: *const T,
-            };
 
             pub fn next(self: *Iterator) ?Entry {
                 for (self.map.pages[(self.index / 64)..]) |*page| {
@@ -71,6 +71,12 @@ pub fn SlotMap(comptime T: type) type {
         }
 
         pub fn insert(self: *@This(), value: T) !Id {
+            const entry = try self.insertEntry();
+            entry.value.* = value;
+            return entry.id;
+        }
+
+        pub fn insertEntry(self: *@This()) !Entry {
             for (self.pages, 0..) |*p, pi| {
                 // Skip full
                 if (p.used == ~@as(u64, 0)) continue;
@@ -81,11 +87,13 @@ pub fn SlotMap(comptime T: type) type {
                     // Check if slot is free and not exhausted (gen != 0)
                     if (p.used & mask == 0 and p.slots[si].gen != 0) {
                         p.used |= mask;
-                        p.slots[si].value = value;
 
                         return .{
-                            .gen = p.slots[si].gen,
-                            .index = @intCast(pi * 64 + si),
+                            .id = .{
+                                .gen = p.slots[si].gen,
+                                .index = @intCast(pi * 64 + si),
+                            },
+                            .value = &p.slots[si].value,
                         };
                     }
                 }
@@ -111,7 +119,7 @@ pub fn SlotMap(comptime T: type) type {
             }
         }
 
-        pub fn iter(self: *const @This()) Iterator {
+        pub fn iter(self: *@This()) Iterator {
             return Iterator{
                 .map = self,
             };
