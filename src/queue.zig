@@ -44,9 +44,8 @@ pub const JobFilter = struct {
 };
 
 pub const Command = union(enum) {
-    start_next: void,
     submit: JobInfo,
-    start: JobId,
+    start_next: void,
     retry: JobId,
     remove: JobId,
     finish: struct {
@@ -65,19 +64,11 @@ pub const Queue = struct {
     vtable: *const VTable,
     time: *const fn () i64 = std.time.timestamp,
 
-    pub fn push(self: *Queue, name: []const u8, data: anytype, options: JobOptions) !void {
+    pub fn push(self: *Queue, name: []const u8, data: []const u8, options: JobOptions) !void {
         _ = try self.submit(name, data, options);
     }
 
-    pub fn submit(self: *Queue, name: []const u8, data: anytype, options: JobOptions) !?JobId {
-        // We only stringify small payloads
-        var buf: [512]u8 = undefined;
-        var fbs = std.io.fixedBufferStream(&buf);
-        const data_str: []const u8 = if (meta.isString(@TypeOf(data))) data else blk: {
-            try std.json.stringify(data, .{}, fbs.writer());
-            break :blk fbs.getWritten();
-        };
-
+    pub fn submit(self: *Queue, name: []const u8, data: []const u8, options: JobOptions) !?JobId {
         // NOTE: This is only transient struct and the backend MUST copy whatever it needs
         const job: JobInfo = .{
             .id = null,
@@ -85,7 +76,7 @@ pub const Queue = struct {
             .key = options.key,
             .attempts = 0,
             .max_attempts = options.max_attempts,
-            .data = data_str,
+            .data = data,
             .state = .pending,
             .result = null,
             .@"error" = null,
@@ -110,11 +101,6 @@ pub const Queue = struct {
         return self.vtable.exec(self, .{ .start_next = {} });
     }
 
-    pub fn startJob(self: *Queue, id: JobId) !bool {
-        const result = try self.vtable.exec(self, .{ .start = id });
-        return result != null;
-    }
-
     pub fn retryJob(self: *Queue, id: JobId) !void {
         _ = try self.vtable.exec(self, .{ .retry = id });
     }
@@ -123,21 +109,8 @@ pub const Queue = struct {
         _ = try self.vtable.exec(self, .{ .remove = id });
     }
 
-    pub fn handleSuccess(self: *Queue, id: JobId, res: anytype) !void {
-        var buf: [512]u8 = undefined;
-        var fbs = std.io.fixedBufferStream(&buf);
-        const result_str: []const u8 = switch (@TypeOf(res)) {
-            void => "",
-            else => blk: {
-                try std.json.stringify(res, .{}, fbs.writer());
-                break :blk fbs.getWritten();
-            },
-        };
-        _ = try self.vtable.exec(self, .{ .finish = .{ .id = id, .result = result_str } });
-    }
-
-    pub fn handleFailure(self: *Queue, id: JobId, err: anyerror) !void {
-        _ = try self.vtable.exec(self, .{ .finish = .{ .id = id, .result = err } });
+    pub fn finishJob(self: *Queue, id: JobId, res: anyerror![]const u8) !void {
+        _ = try self.vtable.exec(self, .{ .finish = .{ .id = id, .result = res } });
     }
 };
 
@@ -173,7 +146,7 @@ pub const MemQueue = struct {
 
     pub fn deinit(self: *MemQueue) void {
         self.mutex.lock();
-        // defer self.mutex.unlock();
+        defer self.mutex.unlock();
 
         const allocator = self.allocator;
 
@@ -193,9 +166,8 @@ pub const MemQueue = struct {
         defer self.mutex.unlock();
 
         switch (cmd) {
-            .start_next => return self.startNext(queue.time()),
             .submit => |job| return self.submitJob(job),
-            .start => |id| if (try self.startJob(id, queue.time())) return id,
+            .start_next => return self.startNext(queue.time()),
             .retry => |id| try self.retryJob(id),
             .remove => |id| try self.removeJob(id),
             .finish => |fin| try self.handleResult(fin.id, fin.result, queue.time()),
@@ -295,21 +267,6 @@ pub const MemQueue = struct {
         return null;
     }
 
-    fn startJob(self: *MemQueue, id: JobId, time: i64) !bool {
-        const job = self.jobs.find(@bitCast(id)) orelse {
-            return error.JobNotFound; // try self.getJob?
-        };
-
-        if (job.state == .pending) {
-            job.state = .running;
-            job.started_at = time;
-            job.attempts += 1;
-            return true;
-        } else {
-            return false;
-        }
-    }
-
     fn retryJob(self: *MemQueue, id: JobId) !void {
         if (self.jobs.find(@bitCast(id))) |job| {
             job.max_attempts = @min(job.max_attempts, job.attempts + 1);
@@ -392,7 +349,7 @@ test Queue {
     defer arena.deinit();
 
     // Enqueue
-    const id1 = try queue.submit("job1", 123, .{}) orelse unreachable;
+    const id1 = try queue.submit("job1", "123", .{}) orelse unreachable;
     const id2 = try queue.submit("job2", "bar", .{ .key = "foo", .max_attempts = 2 }) orelse unreachable;
     try queue.push("job2", "xxx", .{ .key = "foo" });
 
@@ -415,13 +372,13 @@ test Queue {
     );
 
     // Complete first
-    try queue.handleSuccess(id1, "success");
+    try queue.finishJob(id1, "success");
 
     try testing.expectTable(try queue.listJobs(arena.allocator(), .{}),
-        \\| name | key | data | state     | attempts | result    |
-        \\|------|-----|------|-----------|----------|-----------|
-        \\| job1 |     | 123  | completed | 1        | "success" |
-        \\| job2 | foo | bar  | pending   | 0        |           |
+        \\| name | key | data | state     | attempts | result  |
+        \\|------|-----|------|-----------|----------|---------|
+        \\| job1 |     | 123  | completed | 1        | success |
+        \\| job2 | foo | bar  | pending   | 0        |         |
     );
 
     // Start second
@@ -429,20 +386,20 @@ test Queue {
     try std.testing.expectEqual(id2, next2);
 
     try testing.expectTable(try queue.listJobs(arena.allocator(), .{}),
-        \\| name | key | data | state     | attempts | result    |
-        \\|------|-----|------|-----------|----------|-----------|
-        \\| job1 |     | 123  | completed | 1        | "success" |
-        \\| job2 | foo | bar  | running   | 1        |           |
+        \\| name | key | data | state     | attempts | result  |
+        \\|------|-----|------|-----------|----------|---------|
+        \\| job1 |     | 123  | completed | 1        | success |
+        \\| job2 | foo | bar  | running   | 1        |         |
     );
 
     // Fail second
-    try queue.handleFailure(id2, error.TestError);
+    try queue.finishJob(id2, error.TestError);
 
     try testing.expectTable(try queue.listJobs(arena.allocator(), .{}),
-        \\| name | key | data | state     | attempts | result    | error     |
-        \\|------|-----|------|-----------|----------|-----------|-----------|
-        \\| job1 |     | 123  | completed | 1        | "success" |           |
-        \\| job2 | foo | bar  | pending   | 1        |           | TestError |
+        \\| name | key | data | state     | attempts | result  | error     |
+        \\|------|-----|------|-----------|----------|---------|-----------|
+        \\| job1 |     | 123  | completed | 1        | success |           |
+        \\| job2 | foo | bar  | pending   | 1        |         | TestError |
     );
 
     // No more jobs for now
@@ -456,20 +413,20 @@ test Queue {
     try std.testing.expectEqual(id2, next3);
 
     try testing.expectTable(try queue.listJobs(arena.allocator(), .{}),
-        \\| name | key | data | state     | attempts | result    | error     |
-        \\|------|-----|------|-----------|----------|-----------|-----------|
-        \\| job1 |     | 123  | completed | 1        | "success" |           |
-        \\| job2 | foo | bar  | running   | 2        |           | TestError |
+        \\| name | key | data | state     | attempts | result  | error     |
+        \\|------|-----|------|-----------|----------|---------|-----------|
+        \\| job1 |     | 123  | completed | 1        | success |           |
+        \\| job2 | foo | bar  | running   | 2        |         | TestError |
     );
 
     // Fail Second Again (should be final failure since max_attempts = 2)
-    try queue.handleFailure(id2, error.AnotherError);
+    try queue.finishJob(id2, error.AnotherError);
 
     try testing.expectTable(try queue.listJobs(arena.allocator(), .{}),
-        \\| name | key | data | state     | attempts | result    | error        |
-        \\|------|-----|------|-----------|----------|-----------|--------------|
-        \\| job1 |     | 123  | completed | 1        | "success" |              |
-        \\| job2 | foo | bar  | failed    | 2        |           | AnotherError |
+        \\| name | key | data | state     | attempts | result  | error        |
+        \\|------|-----|------|-----------|----------|---------|--------------|
+        \\| job1 |     | 123  | completed | 1        | success |              |
+        \\| job2 | foo | bar  | failed    | 2        |         | AnotherError |
     );
 
     // No more jobs available
