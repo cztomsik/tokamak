@@ -39,7 +39,8 @@ pub const Regex = struct {
 
     pub fn compile(allocator: std.mem.Allocator, regex: []const u8) !Regex {
         var tokenizer: Tokenizer = .{ .input = regex };
-        const len, const depth = try countAndValidate(&tokenizer);
+        var len, const depth, const anchored = try countAndValidate(&tokenizer);
+        if (!anchored) len += 1; // Implicit .dotall at the beginning
 
         // TODO: we should first attempt to optimize the regex before failing.
         if (len > 64) return error.RegexTooComplex;
@@ -52,6 +53,12 @@ pub const Regex = struct {
 
         var prev_atom: i32 = 0;
         var hole_other_branch: i32 = -1;
+
+        // Implicit .dotall for unanchored patterns
+        if (!anchored) {
+            code.push(.dotall);
+            prev_atom = 1;
+        }
 
         while (tokenizer.next()) |tok| {
             const end: i32 = @intCast(code.len);
@@ -156,17 +163,21 @@ pub const Regex = struct {
         return pikevm(self.code, text);
     }
 
-    fn countAndValidate(tokenizer: *Tokenizer) ![2]usize {
+    fn countAndValidate(tokenizer: *Tokenizer) !struct { usize, usize, bool } {
         var len: usize = 1; // we always append match
         var depth: usize = 0; // current grouping level
         var max_depth: usize = 0; // stack size we need for compilation
         var can_repeat: bool = false; // repeating & empty groups
+        var anchored: bool = false;
 
         while (tokenizer.next()) |tok| {
             if (!can_repeat) switch (tok) {
                 .que, .plus, .star => return error.NothingToRepeat,
                 else => {},
             };
+
+            if (tok == .caret and depth == 0) anchored = true;
+            if (tok == .pipe and depth == 0) anchored = false;
 
             switch (tok) {
                 .lparen => {
@@ -195,7 +206,7 @@ pub const Regex = struct {
         }
 
         tokenizer.pos = 0; // reset back
-        return .{ len, max_depth };
+        return .{ len, max_depth, anchored };
     }
 };
 
@@ -254,6 +265,7 @@ const Tokenizer = struct {
 const Op = enum(i32) {
     begin,
     end,
+    dotall,
     char, // u8
     any,
     match,
@@ -263,7 +275,7 @@ const Op = enum(i32) {
 
     fn name(self: Op) []const u8 {
         return switch (self) {
-            .begin, .end, .char, .any, .match, .jmp, .split => @tagName(self),
+            .dotall, .begin, .end, .char, .any, .match, .jmp, .split => @tagName(self),
             else => "???",
         };
     }
@@ -316,6 +328,10 @@ fn pikevm(code: []const Op, text: []const u8) bool {
                 },
                 .end => {
                     if (sp == text.len) clist |= maskPc(pc + 1);
+                },
+                .dotall => {
+                    clist |= maskPc(pc + 1);
+                    if (sp < text.len) nlist |= maskPc(pc);
                 },
                 .char => {
                     if (sp < text.len and text[sp] == decode(code, pc + 1))
@@ -415,139 +431,169 @@ test "Regex.compile()" {
     try testing.expectError(Regex.compile(undefined, ")"), error.NothingToClose);
     try testing.expectError(Regex.compile(undefined, "("), error.UnclosedGroup);
 
-    try expectCompile("", "  0: match");
+    try expectCompile("",
+        \\  0: dotall
+        \\  1: match
+    );
+
+    try expectCompile(".",
+        \\  0: dotall
+        \\  1: any
+        \\  2: match
+    );
+
+    try expectCompile("^.",
+        \\  0: begin
+        \\  1: any
+        \\  2: match
+    );
 
     try expectCompile("abc",
-        \\  0: char a
-        \\  2: char b
-        \\  4: char c
-        \\  6: match
-    );
-
-    try expectCompile("a.c",
-        \\  0: char a
-        \\  2: any
-        \\  3: char c
-        \\  5: match
-    );
-
-    try expectCompile("a?c",
-        \\  0: split :3 :5
-        \\  3: char a
+        \\  0: dotall
+        \\  1: char a
+        \\  3: char b
         \\  5: char c
         \\  7: match
     );
 
+    try expectCompile("a.c",
+        \\  0: dotall
+        \\  1: char a
+        \\  3: any
+        \\  4: char c
+        \\  6: match
+    );
+
+    try expectCompile("a?c",
+        \\  0: dotall
+        \\  1: split :4 :6
+        \\  4: char a
+        \\  6: char c
+        \\  8: match
+    );
+
     try expectCompile("ab?c",
-        \\  0: char a
-        \\  2: split :5 :7
-        \\  5: char b
-        \\  7: char c
-        \\  9: match
+        \\  0: dotall
+        \\  1: char a
+        \\  3: split :6 :8
+        \\  6: char b
+        \\  8: char c
+        \\ 10: match
     );
 
     try expectCompile("a+b",
-        \\  0: char a
-        \\  2: split :0 :5
-        \\  5: char b
-        \\  7: match
+        \\  0: dotall
+        \\  1: char a
+        \\  3: split :1 :6
+        \\  6: char b
+        \\  8: match
     );
 
     try expectCompile("a*b",
-        \\  0: split :3 :7
-        \\  3: char a
-        \\  5: jmp :0
-        \\  7: char b
-        \\  9: match
+        \\  0: dotall
+        \\  1: split :4 :8
+        \\  4: char a
+        \\  6: jmp :1
+        \\  8: char b
+        \\ 10: match
     );
 
     try expectCompile("a|b",
-        \\  0: split :3 :7
-        \\  3: char a
-        \\  5: jmp :9
-        \\  7: char b
-        \\  9: match
+        \\  0: dotall
+        \\  1: split :4 :8
+        \\  4: char a
+        \\  6: jmp :10
+        \\  8: char b
+        \\ 10: match
     );
 
     try expectCompile("ab|c",
-        \\  0: char a
-        \\  2: split :5 :9
-        \\  5: char b
-        \\  7: jmp :11
-        \\  9: char c
-        \\ 11: match
-    );
-
-    try expectCompile("a|b|c",
-        \\  0: split :3 :7
-        \\  3: char a
-        \\  5: jmp :12
-        \\  7: split :10 :14
-        \\ 10: char b
-        \\ 12: jmp :16
-        \\ 14: char c
-        \\ 16: match
-    );
-
-    try expectCompile("(ab)?de",
-        \\  0: split :3 :7
-        \\  3: char a
-        \\  5: char b
-        \\  7: char d
-        \\  9: char e
-        \\ 11: match
-    );
-
-    try expectCompile("(ab)+de",
-        \\  0: char a
-        \\  2: char b
-        \\  4: split :0 :7
-        \\  7: char d
-        \\  9: char e
-        \\ 11: match
-    );
-
-    try expectCompile("(a|b)?",
-        \\  0: split :3 :12
+        \\  0: dotall
+        \\  1: char a
         \\  3: split :6 :10
-        \\  6: char a
+        \\  6: char b
         \\  8: jmp :12
-        \\ 10: char b
+        \\ 10: char c
         \\ 12: match
     );
 
+    try expectCompile("a|b|c",
+        \\  0: dotall
+        \\  1: split :4 :8
+        \\  4: char a
+        \\  6: jmp :13
+        \\  8: split :11 :15
+        \\ 11: char b
+        \\ 13: jmp :17
+        \\ 15: char c
+        \\ 17: match
+    );
+
+    try expectCompile("(ab)?de",
+        \\  0: dotall
+        \\  1: split :4 :8
+        \\  4: char a
+        \\  6: char b
+        \\  8: char d
+        \\ 10: char e
+        \\ 12: match
+    );
+
+    try expectCompile("(ab)+de",
+        \\  0: dotall
+        \\  1: char a
+        \\  3: char b
+        \\  5: split :1 :8
+        \\  8: char d
+        \\ 10: char e
+        \\ 12: match
+    );
+
+    try expectCompile("(a|b)?",
+        \\  0: dotall
+        \\  1: split :4 :13
+        \\  4: split :7 :11
+        \\  7: char a
+        \\  9: jmp :13
+        \\ 11: char b
+        \\ 13: match
+    );
+
     try expectCompile("(a|b)*c",
-        \\  0: split :3 :14
-        \\  3: split :6 :10
-        \\  6: char a
-        \\  8: jmp :12
-        \\ 10: char b
-        \\ 12: jmp :0
-        \\ 14: char c
-        \\ 16: match
+        \\  0: dotall
+        \\  1: split :4 :15
+        \\  4: split :7 :11
+        \\  7: char a
+        \\  9: jmp :13
+        \\ 11: char b
+        \\ 13: jmp :1
+        \\ 15: char c
+        \\ 17: match
     );
 
     try expectCompile("(a|b|c)+d",
-        \\  0: split :3 :7
-        \\  3: char a
-        \\  5: jmp :12
-        \\  7: split :10 :14
-        \\ 10: char b
-        \\ 12: jmp :16
-        \\ 14: char c
-        \\ 16: split :0 :19
-        \\ 19: char d
-        \\ 21: match
+        \\  0: dotall
+        \\  1: split :4 :8
+        \\  4: char a
+        \\  6: jmp :13
+        \\  8: split :11 :15
+        \\ 11: char b
+        \\ 13: jmp :17
+        \\ 15: char c
+        \\ 17: split :1 :20
+        \\ 20: char d
+        \\ 22: match
     );
 
     try expectCompile("a(b|c)+",
-        \\  0: char a
-        \\  2: split :5 :9
-        \\  5: char b
-        \\  7: jmp :11
-        \\  9: char c
-        \\ 11: split :2 :14
-        \\ 14: match
+        \\  0: dotall
+        \\  1: char a
+        \\  3: split :6 :10
+        \\  6: char b
+        \\  8: jmp :12
+        \\ 10: char c
+        \\ 12: split :3 :15
+        \\ 15: match
     );
 }
 
@@ -571,6 +617,7 @@ test "Regex.match()" {
     try expectMatches("hello", &.{
         .{ "hello", true },
         .{ "hello world", true },
+        .{ "say hello", true },
         .{ "hi", false },
     });
 
@@ -620,7 +667,7 @@ test "Regex.match()" {
     });
 
     // Group
-    try expectMatches("(abc)?def", &.{
+    try expectMatches("^(abc)?def", &.{
         .{ "abcdef", true },
         .{ "def", true },
         .{ "adef", false },
@@ -656,8 +703,8 @@ test "Regex.match()" {
 
     try expectMatches("world$", &.{
         .{ "world", true },
-        // .{ "hello world", true },
-        // .{ "world peace", false },
+        .{ "hello world", true },
+        .{ "world peace", false },
     });
 
     // Empty
@@ -667,11 +714,12 @@ test "Regex.match()" {
     try expectMatch("", "any", true);
 
     // Combination
-    // try expectMatches("^a.*b$", &.{
-    //     .{ "ab", true },
-    //     .{ "axxxb", true },
-    //     .{ "axxx", false },
-    // });
+    try expectMatches("^a.*b$", &.{
+        .{ "ab", true },
+        .{ "axxxb", true },
+        .{ "axxx", false },
+        .{ "baxxx", false },
+    });
 
     // Escaping
     try expectMatches("\\.+", &.{
