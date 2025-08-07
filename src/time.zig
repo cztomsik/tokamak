@@ -2,6 +2,7 @@
 // https://onlinelibrary.wiley.com/doi/full/10.1002/spe.3172
 // https://howardhinnant.github.io/date_algorithms.html
 // https://en.wikipedia.org/wiki/Rata_Die
+// https://research.swtch.com/leap
 const std = @import("std");
 
 const RATA_TO_UNIX = 719468;
