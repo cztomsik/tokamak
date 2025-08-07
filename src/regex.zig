@@ -2,6 +2,34 @@ const builtin = @import("builtin");
 const std = @import("std");
 const Buf = @import("util.zig").Buf;
 
+pub const Grep = struct {
+    buf: []u8,
+    reader: std.io.AnyReader,
+    regex: *Regex,
+    line: usize = 0,
+
+    pub fn init(buf: []u8, reader: std.io.AnyReader, regex: *Regex) Grep {
+        return .{
+            .buf = buf,
+            .reader = reader,
+            .regex = regex,
+        };
+    }
+
+    pub fn next(self: *Grep) ?[]const u8 {
+        while (self.nextLine()) |line| {
+            if (self.regex.match(line)) return line;
+        } else return null;
+    }
+
+    fn nextLine(self: *Grep) ?[]const u8 {
+        const line = (self.reader.readUntilDelimiterOrEof(self.buf, '\n') catch return null) orelse return null;
+        const trimmed = std.mem.trimRight(u8, line, "\r");
+        self.line += 1;
+        return trimmed;
+    }
+};
+
 // https://www.cs.princeton.edu/courses/archive/spr09/cos333/beautiful.html
 // https://swtch.com/~rsc/regexp/regexp1.html
 // https://swtch.com/~rsc/regexp/regexp2.html
