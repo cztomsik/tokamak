@@ -15,6 +15,7 @@ const Cli = struct {
         .cmd1("hn", "Show top Hacker News stories", hn_top),
         .cmd1("gh", "List GitHub repos", gh_repos),
         .cmd2("scrape", "Scrape a URL with optional CSS selector", scrape),
+        .cmd2("grep", "Search for pattern in file", grep),
         .cmd3("substr", "Get substring with bounds checking", substr),
     },
 
@@ -48,6 +49,21 @@ const Cli = struct {
     fn substr(str: []const u8, start: ?usize, end: ?usize) ![]const u8 {
         if ((start orelse 0) > str.len or (end orelse str.len) > str.len) return error.OutOfBounds;
         return str[start orelse 0 .. end orelse str.len];
+    }
+
+    fn grep(allocator: std.mem.Allocator, pattern: []const u8, file_path: []const u8) !void {
+        var regex = try tk.regex.Regex.compile(allocator, pattern);
+        defer regex.deinit(allocator);
+
+        const file = try std.fs.cwd().openFile(file_path, .{});
+        defer file.close();
+
+        var buf: [4096]u8 = undefined;
+        var grepper = tk.regex.Grep.init(&buf, file.reader().any(), &regex);
+
+        while (grepper.next()) |line| {
+            std.debug.print("{d}: {s}\n", .{ grepper.line, line });
+        }
     }
 };
 
