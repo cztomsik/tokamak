@@ -124,10 +124,7 @@ const Compiler = struct {
 
                 .plus => {
                     self.push(.{
-                        .isplit = .{
-                            self.atom - end - 1, // repeat
-                            1, // jump out otherwise
-                        },
+                        .iplus = self.atom - end - 1,
                     });
                 },
 
@@ -218,6 +215,11 @@ const Compiler = struct {
                     code[pc + 2] += base + 2;
                 },
 
+                .iplus => {
+                    code[pc] = @intFromEnum(OpCode.plus);
+                    code[pc + 1] += base + 1;
+                },
+
                 else => {},
             }
 
@@ -268,8 +270,8 @@ const Compiler = struct {
                     depth -= 1;
                 },
                 .dot, .dotstar, .word, .non_word, .digit, .non_digit, .space, .non_space, .dollar, .caret => len += 1,
-                .char => len += 2,
-                .que, .plus => len += 3,
+                .char, .plus => len += 2,
+                .que => len += 3,
                 .star, .pipe => len += 5,
             }
 
@@ -379,15 +381,17 @@ const Op = union(enum) {
     match,
     jmp: u32,
     split: [2]u32,
+    plus: u32,
 
     // intermediate - replaced during optimize()
     ijmp: i32,
     isplit: [2]i32,
+    iplus: i32,
     _,
 
     fn name(self: Op) []const u8 {
         return switch (self) {
-            .begin, .end, .char, .dot, .dotstar, .word, .non_word, .digit, .non_digit, .space, .non_space, .match, .jmp, .split => @tagName(self),
+            .begin, .end, .char, .dot, .dotstar, .word, .non_word, .digit, .non_digit, .space, .non_space, .match, .jmp, .split, .plus => @tagName(self),
             else => "???",
         };
     }
@@ -399,7 +403,7 @@ const Op = union(enum) {
     fn opLen(code: OpCode) usize {
         return switch (code) {
             .split, .isplit => 3,
-            .char, .jmp, .ijmp => 2,
+            .char, .jmp, .plus, .ijmp, .iplus => 2,
             else => 1,
         };
     }
@@ -410,10 +414,12 @@ const Op = union(enum) {
         switch (self) {
             else => {},
             .char => |ch| pc[1] = @intCast(ch),
-            .ijmp => |addr| pc[1] = addr,
-            .isplit => |addrs| pc[1..3].* = addrs,
+            .ijmp => |off| pc[1] = off,
+            .isplit => |offs| pc[1..3].* = offs,
+            .iplus => |off| pc[1] = off,
             .jmp => |addr| pc[1] = @bitCast(addr),
             .split => |addrs| pc[1..3].* = @bitCast(addrs),
+            .plus => |addr| pc[1] = @bitCast(addr),
         }
     }
 
@@ -425,8 +431,10 @@ const Op = union(enum) {
             .char => .{ .char = @intCast(pc[1]) },
             .jmp => .{ .jmp = @bitCast(pc[1]) },
             .split => .{ .split = @bitCast(pc[1..3].*) },
+            .plus => .{ .plus = @bitCast(pc[1]) },
             .ijmp => .{ .ijmp = pc[1] },
             .isplit => .{ .isplit = pc[1..3].* },
+            .iplus => .{ .iplus = pc[1] },
         };
     }
 };
@@ -503,8 +511,12 @@ fn pikevm(code: []const i32, text: []const u8) bool {
                     clist |= maskPc(addrs[0]);
                     clist |= maskPc(addrs[1]);
                 },
+                .plus => |addr| {
+                    clist |= maskPc(addr);
+                    clist |= maskPc(pc + 2);
+                },
                 .match => return true,
-                .ijmp, .isplit => unreachable,
+                .ijmp, .isplit, .iplus => unreachable,
                 else => return false,
             }
         }
@@ -566,6 +578,7 @@ fn expectCompile(regex: []const u8, expected: []const u8) !void {
             .char => |ch| try w.print(" {c}", .{ch}),
             .jmp => |addr| try w.print(" :{d}", .{addr}),
             .split => |addrs| try w.print(" :{d} :{d}", .{ addrs[0], addrs[1] }),
+            .plus => |addr| try w.print(" :{d}", .{addr}),
             else => {},
         }
 
@@ -636,9 +649,9 @@ test "Regex.compile()" {
     try expectCompile("a+b",
         \\  0: dotstar
         \\  1: char a
-        \\  3: split :1 :6
-        \\  6: char b
-        \\  8: match
+        \\  3: plus :1
+        \\  5: char b
+        \\  7: match
     );
 
     try expectCompile("a*b",
@@ -704,10 +717,10 @@ test "Regex.compile()" {
         \\  0: dotstar
         \\  1: char a
         \\  3: char b
-        \\  5: split :1 :8
-        \\  8: char d
-        \\ 10: char e
-        \\ 12: match
+        \\  5: plus :1
+        \\  7: char d
+        \\  9: char e
+        \\ 11: match
     );
 
     try expectCompile("(a|b)?",
@@ -741,9 +754,9 @@ test "Regex.compile()" {
         \\ 11: char b
         \\ 13: jmp :17
         \\ 15: char c
-        \\ 17: split :1 :20
-        \\ 20: char d
-        \\ 22: match
+        \\ 17: plus :1
+        \\ 19: char d
+        \\ 21: match
     );
 
     try expectCompile("a(b|c)+",
@@ -753,29 +766,29 @@ test "Regex.compile()" {
         \\  6: char b
         \\  8: jmp :12
         \\ 10: char c
-        \\ 12: split :3 :15
-        \\ 15: match
+        \\ 12: plus :3
+        \\ 14: match
     );
 
     // TODO: No idea if this is correct but at least the jumps are valid.
     try expectCompile("^(\\w+\\.(js|ts)|^foo)",
         \\  0: begin
-        \\  1: split :4 :25
+        \\  1: split :4 :24
         \\  4: word
-        \\  5: split :4 :8
-        \\  8: char .
-        \\ 10: split :13 :19
-        \\ 13: char j
-        \\ 15: char s
-        \\ 17: jmp :23
-        \\ 19: char t
-        \\ 21: char s
-        \\ 23: jmp :32
-        \\ 25: begin
-        \\ 26: char f
-        \\ 28: char o
-        \\ 30: char o
-        \\ 32: match
+        \\  5: plus :4
+        \\  7: char .
+        \\  9: split :12 :18
+        \\ 12: char j
+        \\ 14: char s
+        \\ 16: jmp :22
+        \\ 18: char t
+        \\ 20: char s
+        \\ 22: jmp :31
+        \\ 24: begin
+        \\ 25: char f
+        \\ 27: char o
+        \\ 29: char o
+        \\ 31: match
     );
 }
 
