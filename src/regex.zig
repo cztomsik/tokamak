@@ -38,120 +38,14 @@ pub const Regex = struct {
     code: []const Op,
 
     pub fn compile(allocator: std.mem.Allocator, regex: []const u8) !Regex {
-        var tokenizer: Tokenizer = .{ .input = regex };
-        var len, const depth, const anchored = try countAndValidate(&tokenizer);
-        if (!anchored) len += 1; // Implicit .dotall at the beginning
+        var compiler = try Compiler.init(allocator, regex);
+        defer compiler.deinit();
 
-        // TODO: we should first attempt to optimize the regex before failing.
-        if (len > 64) return error.RegexTooComplex;
-
-        var code: Buf(Op) = try .initAlloc(allocator, len);
-        errdefer code.deinit(allocator);
-
-        var stack: Buf([2]i32) = try .initAlloc(allocator, depth);
-        defer stack.deinit(allocator);
-
-        var prev_atom: i32 = 0;
-        var hole_other_branch: i32 = -1;
-
-        // Implicit .dotall for unanchored patterns
-        if (!anchored) {
-            code.push(.dotall);
-            prev_atom = 1;
-        }
-
-        while (tokenizer.next()) |tok| {
-            const end: i32 = @intCast(code.len);
-
-            switch (tok) {
-                .char => |ch| {
-                    prev_atom = end;
-                    code.push(.char);
-                    code.push(encode(ch));
-                },
-
-                .dot => {
-                    code.push(.any);
-                    prev_atom = end;
-                },
-
-                .que => {
-                    code.insertSlice(@intCast(prev_atom), &.{
-                        .split,
-                        encode(2), // run the check
-                        encode(end - prev_atom + 1), // jump out otherwise
-                    });
-                },
-
-                .plus => {
-                    code.push(.split);
-                    code.push(encode(prev_atom - end - 1)); // repeat
-                    code.push(encode(1)); // jump out otherwise
-                },
-
-                .star => {
-                    code.insertSlice(@intCast(prev_atom), &.{
-                        .split,
-                        encode(2), // run the check
-                        encode(end - prev_atom + 3), // jump out otherwise
-                    });
-
-                    code.push(.jmp);
-                    code.push(encode(prev_atom - end - 4)); // keep repeating
-                },
-
-                .pipe => {
-                    // TODO: groups? can we just put it in the stack?
-                    code.insertSlice(@intCast(prev_atom), &.{
-                        .split,
-                        encode(2), // LHS branch (which ends with holey-jmp)
-                        encode(end - prev_atom + 3), // RHS
-                    });
-
-                    // Point any previous hole to our newly created holey-jmp (double-jump)
-                    // NOTE: we could probably inline/flatten these in a second-pass (optimization?)
-                    if (hole_other_branch > 0) {
-                        code.buf[@intCast(hole_other_branch)] = encode(@as(i32, @intCast(code.len)) - hole_other_branch); // relative to the jmp itself
-                    }
-
-                    // Create a jump with a hole
-                    code.push(.jmp);
-                    hole_other_branch = @intCast(code.len);
-                    code.push(encode(if (comptime builtin.is_test) 0x7FFFFFFF else 1)); // so it blows if we don't fill it
-                },
-
-                .lparen => {
-                    stack.push(.{ end, hole_other_branch });
-                    prev_atom = end;
-                    hole_other_branch = -1;
-                },
-
-                .rparen => {
-                    if (hole_other_branch > 0) {
-                        code.buf[@intCast(hole_other_branch)] = encode(end - hole_other_branch); // relative to the jmp itself
-                    }
-
-                    const x = stack.pop().?;
-                    prev_atom = x[0];
-                    hole_other_branch = x[1];
-                },
-
-                .caret => code.push(.begin),
-                .dollar => code.push(.end),
-            }
-        }
-
-        // Pending pipe?
-        if (hole_other_branch > 0) {
-            const end: i32 = @intCast(code.len);
-            code.buf[@intCast(hole_other_branch)] = encode(end - hole_other_branch); // relative to the jmp itself
-        }
-
-        // Add final match
-        code.push(.match);
+        try compiler.compile();
+        compiler.optimize();
 
         return .{
-            .code = code.finish(),
+            .code = try compiler.finish(),
         };
     }
 
@@ -161,6 +55,160 @@ pub const Regex = struct {
 
     pub fn match(self: *Regex, text: []const u8) bool {
         return pikevm(self.code, text);
+    }
+};
+
+const Compiler = struct {
+    allocator: std.mem.Allocator,
+    tokenizer: Tokenizer,
+    code: Buf(Op),
+    stack: Buf([2]i32),
+    anchored: bool,
+    prev_atom: i32 = 0,
+    hole_other_branch: i32 = -1,
+
+    fn init(allocator: std.mem.Allocator, regex: []const u8) !Compiler {
+        var tokenizer: Tokenizer = .{ .input = regex };
+        var len, const depth, const anchored = try countAndValidate(&tokenizer);
+        if (!anchored) len += 1; // Implicit .dotstar at the beginning
+
+        // TODO: we should first attempt to optimize the regex before failing.
+        if (len > 64) return error.RegexTooComplex;
+
+        var code: Buf(Op) = try .initAlloc(allocator, len);
+        errdefer code.deinit(allocator);
+
+        var stack: Buf([2]i32) = try .initAlloc(allocator, depth);
+        errdefer stack.deinit(allocator);
+
+        return .{
+            .allocator = allocator,
+            .tokenizer = tokenizer,
+            .code = code,
+            .stack = stack,
+            .anchored = anchored,
+        };
+    }
+
+    fn deinit(self: *Compiler) void {
+        self.code.deinit(self.allocator);
+        self.stack.deinit(self.allocator);
+    }
+
+    fn compile(self: *Compiler) !void {
+        // Implicit .dotstar for unanchored patterns
+        if (!self.anchored) {
+            self.emit(.dotstar);
+            self.prev_atom = 1;
+        }
+
+        while (self.tokenizer.next()) |tok| {
+            const end: i32 = @intCast(self.code.len);
+
+            switch (tok) {
+                .char => |ch| {
+                    self.prev_atom = end;
+                    self.emit(.char);
+                    self.emit(encode(ch));
+                },
+
+                .dot => {
+                    self.emit(.any);
+                    self.prev_atom = end;
+                },
+
+                .dotstar => {
+                    self.emit(.dotstar);
+                    self.prev_atom = end;
+                },
+
+                .que => {
+                    self.code.insertSlice(@intCast(self.prev_atom), &.{
+                        .split,
+                        encode(2), // run the check
+                        encode(end - self.prev_atom + 1), // jump out otherwise
+                    });
+                },
+
+                .plus => {
+                    self.emit(.split);
+                    self.emit(encode(self.prev_atom - end - 1)); // repeat
+                    self.emit(encode(1)); // jump out otherwise
+                },
+
+                .star => {
+                    self.code.insertSlice(@intCast(self.prev_atom), &.{
+                        .split,
+                        encode(2), // run the check
+                        encode(end - self.prev_atom + 3), // jump out otherwise
+                    });
+
+                    self.emit(.jmp);
+                    self.emit(encode(self.prev_atom - end - 4)); // keep repeating
+                },
+
+                .pipe => {
+                    // TODO: groups? can we just put it in the stack?
+                    self.code.insertSlice(@intCast(self.prev_atom), &.{
+                        .split,
+                        encode(2), // LHS branch (which ends with holey-jmp)
+                        encode(end - self.prev_atom + 3), // RHS
+                    });
+
+                    // Point any previous hole to our newly created holey-jmp (double-jump)
+                    // NOTE: we could probably inline/flatten these in a second-pass (optimization?)
+                    if (self.hole_other_branch > 0) {
+                        self.code.buf[@intCast(self.hole_other_branch)] = encode(@as(i32, @intCast(self.code.len)) - self.hole_other_branch); // relative to the jmp itself
+                    }
+
+                    // Create a jump with a hole
+                    self.emit(.jmp);
+                    self.hole_other_branch = @intCast(self.code.len);
+                    self.emit(encode(if (comptime builtin.is_test) 0x7FFFFFFF else 1)); // so it blows if we don't fill it
+                },
+
+                .lparen => {
+                    self.stack.push(.{ end, self.hole_other_branch });
+                    self.prev_atom = end;
+                    self.hole_other_branch = -1;
+                },
+
+                .rparen => {
+                    if (self.hole_other_branch > 0) {
+                        self.code.buf[@intCast(self.hole_other_branch)] = encode(end - self.hole_other_branch); // relative to the jmp itself
+                    }
+
+                    const x = self.stack.pop().?;
+                    self.prev_atom = x[0];
+                    self.hole_other_branch = x[1];
+                },
+
+                .caret => self.emit(.begin),
+                .dollar => self.emit(.end),
+            }
+        }
+
+        // Pending pipe?
+        if (self.hole_other_branch > 0) {
+            const end: i32 = @intCast(self.code.len);
+            self.code.buf[@intCast(self.hole_other_branch)] = encode(end - self.hole_other_branch); // relative to the jmp itself
+        }
+
+        // Add final match
+        self.emit(.match);
+    }
+
+    fn optimize(self: *Compiler) void {
+        // TODO
+        _ = self;
+    }
+
+    fn emit(self: *Compiler, op: Op) void {
+        self.code.push(op);
+    }
+
+    fn finish(self: *Compiler) ![]const Op {
+        return self.code.finish();
     }
 
     fn countAndValidate(tokenizer: *Tokenizer) !struct { usize, usize, bool } {
