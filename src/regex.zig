@@ -62,11 +62,11 @@ const Compiler = struct {
     allocator: std.mem.Allocator,
     tokenizer: Tokenizer,
     code: Buf(i32),
-    stack: Buf([2]i32),
+    stack: Buf([3]i32),
     anchored: bool,
-    start: i32 = 0, // TODO: groups?
-    prev_atom: i32 = 0,
-    hole_other_branch: i32 = -1,
+    start: i32 = 0,
+    atom: i32 = 0,
+    hole: i32 = -1,
 
     fn init(allocator: std.mem.Allocator, regex: []const u8) !Compiler {
         var tokenizer: Tokenizer = .{ .input = regex };
@@ -75,7 +75,7 @@ const Compiler = struct {
         var code: Buf(i32) = try .initAlloc(allocator, len);
         errdefer code.deinit(allocator);
 
-        var stack: Buf([2]i32) = try .initAlloc(allocator, depth);
+        var stack: Buf([3]i32) = try .initAlloc(allocator, depth);
         errdefer stack.deinit(allocator);
 
         if (len > 64) {
@@ -109,15 +109,15 @@ const Compiler = struct {
 
             switch (tok) {
                 inline else => |arg, t| {
-                    self.prev_atom = end;
+                    self.atom = end;
                     self.push(@unionInit(Op, @tagName(t), arg));
                 },
 
                 .que => {
-                    self.insert(self.prev_atom, .{
+                    self.insert(self.atom, .{
                         .isplit = .{
                             2, // run the check
-                            end - self.prev_atom + 1, // jump out otherwise
+                            end - self.atom + 1, // jump out otherwise
                         },
                     });
                 },
@@ -125,22 +125,22 @@ const Compiler = struct {
                 .plus => {
                     self.push(.{
                         .isplit = .{
-                            self.prev_atom - end - 1, // repeat
+                            self.atom - end - 1, // repeat
                             1, // jump out otherwise
                         },
                     });
                 },
 
                 .star => {
-                    self.insert(self.prev_atom, .{
+                    self.insert(self.atom, .{
                         .isplit = .{
                             2, // run the check
-                            end - self.prev_atom + 3, // jump out otherwise
+                            end - self.atom + 3, // jump out otherwise
                         },
                     });
 
                     // Keep repeating
-                    self.push(.{ .ijmp = self.prev_atom - end - 4 });
+                    self.push(.{ .ijmp = self.atom - end - 4 });
                 },
 
                 .pipe => {
@@ -153,35 +153,34 @@ const Compiler = struct {
 
                     // Point any previous hole to our newly created holey-jmp (double-jump)
                     // NOTE: we could probably inline/flatten these in a second-pass (optimization?)
-                    if (self.hole_other_branch > 0) {
-                        self.code.buf[@intCast(self.hole_other_branch)] = @as(i32, @intCast(self.code.len)) - self.hole_other_branch; // relative to the jmp itself
+                    if (self.hole > 0) {
+                        self.code.buf[@intCast(self.hole)] = @as(i32, @intCast(self.code.len)) - self.hole; // relative to the jmp itself
                     }
 
                     // Create a jump with a hole
                     self.push(.{ .ijmp = if (comptime builtin.is_test) 0x7FFFFFFF else 1 }); // so it blows if we don't fill it
-                    self.hole_other_branch = @intCast(self.code.len - 1);
 
-                    // TODO: Is this correct?
                     self.start = @intCast(self.code.len);
+                    self.hole = @intCast(self.code.len - 1);
                 },
 
                 .lparen => {
-                    self.stack.push(.{ end, self.hole_other_branch });
-                    self.prev_atom = end;
-                    self.hole_other_branch = -1;
+                    self.stack.push(.{ self.start, end, self.hole });
 
-                    // TODO: Is this correct?
                     self.start = @intCast(self.code.len);
+                    self.atom = end;
+                    self.hole = -1;
                 },
 
                 .rparen => {
-                    if (self.hole_other_branch > 0) {
-                        self.code.buf[@intCast(self.hole_other_branch)] = end - self.hole_other_branch; // relative to the jmp itself
+                    if (self.hole > 0) {
+                        self.code.buf[@intCast(self.hole)] = end - self.hole; // relative to the jmp itself
                     }
 
                     const x = self.stack.pop().?;
-                    self.prev_atom = x[0];
-                    self.hole_other_branch = x[1];
+                    self.start = x[0];
+                    self.atom = x[1];
+                    self.hole = x[2];
                 },
 
                 .caret => self.push(.begin),
@@ -190,9 +189,9 @@ const Compiler = struct {
         }
 
         // Pending pipe?
-        if (self.hole_other_branch > 0) {
+        if (self.hole > 0) {
             const end: i32 = @intCast(self.code.len);
-            self.code.buf[@intCast(self.hole_other_branch)] = end - self.hole_other_branch; // relative to the jmp itself
+            self.code.buf[@intCast(self.hole)] = end - self.hole; // relative to the jmp itself
         }
 
         // Add final match
