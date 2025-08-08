@@ -76,6 +76,8 @@ pub fn Buf(comptime T: type) type {
 
         /// Return the final result
         pub fn finish(self: *@This()) []const T {
+            defer self.* = .{};
+
             if (@inComptime()) {
                 const copy = self.buf[0..self.len].*;
                 return &copy;
