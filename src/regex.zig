@@ -154,33 +154,33 @@ const Compiler = struct {
 
                 .que => {
                     self.code.insertSlice(@intCast(self.prev_atom), &.{
-                        .split,
+                        .isplit,
                         encode(2), // run the check
                         encode(end - self.prev_atom + 1), // jump out otherwise
                     });
                 },
 
                 .plus => {
-                    self.emit(.split);
+                    self.emit(.isplit);
                     self.emit(encode(self.prev_atom - end - 1)); // repeat
                     self.emit(encode(1)); // jump out otherwise
                 },
 
                 .star => {
                     self.code.insertSlice(@intCast(self.prev_atom), &.{
-                        .split,
+                        .isplit,
                         encode(2), // run the check
                         encode(end - self.prev_atom + 3), // jump out otherwise
                     });
 
-                    self.emit(.jmp);
+                    self.emit(.ijmp);
                     self.emit(encode(self.prev_atom - end - 4)); // keep repeating
                 },
 
                 .pipe => {
                     // TODO: groups? can we just put it in the stack?
                     self.code.insertSlice(@intCast(self.prev_atom), &.{
-                        .split,
+                        .isplit,
                         encode(2), // LHS branch (which ends with holey-jmp)
                         encode(end - self.prev_atom + 3), // RHS
                     });
@@ -192,7 +192,7 @@ const Compiler = struct {
                     }
 
                     // Create a jump with a hole
-                    self.emit(.jmp);
+                    self.emit(.ijmp);
                     self.hole_other_branch = @intCast(self.code.len);
                     self.emit(encode(if (comptime builtin.is_test) 0x7FFFFFFF else 1)); // so it blows if we don't fill it
                 },
@@ -229,8 +229,31 @@ const Compiler = struct {
     }
 
     fn optimize(self: *Compiler) void {
-        // TODO
-        _ = self;
+        const code = self.code.buf[0..self.code.len];
+        var pc: usize = 0;
+
+        while (pc < code.len) {
+            switch (code[pc]) {
+                // ijmp -> jmp
+                .ijmp => {
+                    code[pc] = .jmp;
+                    code[pc + 1] = encode(decodeRelJmp(code, pc + 1));
+                    pc += 2;
+                },
+
+                // isplit -> split
+                .isplit => {
+                    code[pc] = .split;
+                    code[pc + 1] = encode(decodeRelJmp(code, pc + 1));
+                    code[pc + 2] = encode(decodeRelJmp(code, pc + 2));
+                    pc += 3;
+                },
+
+                .split => pc += 3,
+                .char, .jmp => pc += 2,
+                else => pc += 1,
+            }
+        }
     }
 
     fn emit(self: *Compiler, op: Op) void {
@@ -357,11 +380,6 @@ const Tokenizer = struct {
     }
 };
 
-// TODO: would be nice if we could avoid i32, but we perform code-insertions
-//       which can make already created absolute jumps invalid
-//       we could either fix them just-in-time, or we could simply emit
-//       @bitCast() relative jumps and then, resolve them in a second-pass,
-//       which should be there anyway, so we can get rid of those mid-jumps.
 const Op = enum(i32) {
     begin,
     end,
@@ -375,8 +393,12 @@ const Op = enum(i32) {
     space,
     non_space,
     match,
-    jmp, // i32
-    split, // i32, i32
+    jmp, // u32
+    split, // u32, u32
+
+    // intermediate - replaced during optimize()
+    ijmp, // i32
+    isplit, // i32, i32
     _,
 
     fn name(self: Op) []const u8 {
@@ -387,7 +409,7 @@ const Op = enum(i32) {
     }
 };
 
-fn encode(v: i32) Op {
+fn encode(v: anytype) Op {
     return @enumFromInt(@as(i32, @intCast(v)));
 }
 
@@ -396,6 +418,10 @@ fn decode(code: []const Op, pc: usize) i32 {
 }
 
 fn decodeJmp(code: []const Op, pc: usize) usize {
+    return @intCast(decode(code, pc));
+}
+
+fn decodeRelJmp(code: []const Op, pc: usize) usize {
     return @intCast(@as(isize, @intCast(pc)) + decode(code, pc));
 }
 
@@ -472,6 +498,7 @@ fn pikevm(code: []const Op, text: []const u8) bool {
                     clist |= maskPc(decodeJmp(code, pc + 2));
                 },
                 .match => return true,
+                .ijmp, .isplit => unreachable,
                 else => return false,
             }
         }
@@ -544,8 +571,8 @@ fn expectCompile(regex: []const u8, expected: []const u8) !void {
         }
 
         pc += switch (op) {
-            .split => 3,
-            .char, .jmp => 2,
+            .split, .isplit => 3,
+            .char, .jmp, .ijmp => 2,
             else => 1,
         };
     }
