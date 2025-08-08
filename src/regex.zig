@@ -237,14 +237,14 @@ const Compiler = struct {
                     if (!can_repeat) return error.EmptyGroup;
                     depth -= 1;
                 },
-                .dot, .dollar, .caret => len += 1,
+                .dot, .dotstar, .dollar, .caret => len += 1,
                 .char => len += 2,
                 .que, .plus => len += 3,
                 .star, .pipe => len += 5,
             }
 
             can_repeat = switch (tok) {
-                .char, .dot, .rparen, .que, .plus, .star => true,
+                .char, .dot, .dotstar, .rparen, .que, .plus, .star => true,
                 else => false,
             };
         }
@@ -261,6 +261,7 @@ const Compiler = struct {
 const Token = union(enum) {
     char: u8,
     dot,
+    dotstar,
     que,
     plus,
     star,
@@ -288,7 +289,14 @@ const Tokenizer = struct {
             }
 
             return switch (ch) {
-                '.' => .dot,
+                '.' => {
+                    if (self.pos < self.input.len and self.input[self.pos] == '*') {
+                        self.pos += 1;
+                        return .dotstar;
+                    }
+
+                    return .dot;
+                },
                 '?' => .que,
                 '+' => .plus,
                 '*' => .star,
@@ -426,6 +434,7 @@ test Tokenizer {
     try expectTokens("a.c+", &.{ .char, .dot, .char, .plus });
     try expectTokens("a?(b|c)*", &.{ .char, .que, .lparen, .char, .pipe, .char, .rparen, .star });
     try expectTokens("\\.+\\+\\\\", &.{ .char, .plus, .char, .char });
+    try expectTokens(".*", &.{.dotstar});
 }
 
 fn expectCompile(regex: []const u8, expected: []const u8) !void {
@@ -545,6 +554,15 @@ test "Regex.compile()" {
         \\  8: char b
         \\ 10: match
     );
+
+    // TODO: update anchor detection for leading .dotstar
+    // try expectCompile(".*foo",
+    //     \\  0: dotstar
+    //     \\  1: char f
+    //     \\  3: char o
+    //     \\  5: char o
+    //     \\  7: match
+    // );
 
     try expectCompile("a|b",
         \\  0: dotstar
