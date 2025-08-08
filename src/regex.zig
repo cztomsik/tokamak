@@ -142,6 +142,16 @@ const Compiler = struct {
                     self.prev_atom = end;
                 },
 
+                .space => {
+                    self.emit(.space);
+                    self.prev_atom = end;
+                },
+
+                .non_space => {
+                    self.emit(.non_space);
+                    self.prev_atom = end;
+                },
+
                 .que => {
                     self.code.insertSlice(@intCast(self.prev_atom), &.{
                         .split,
@@ -257,14 +267,14 @@ const Compiler = struct {
                     if (!can_repeat) return error.EmptyGroup;
                     depth -= 1;
                 },
-                .dot, .dotstar, .word, .non_word, .digit, .non_digit, .dollar, .caret => len += 1,
+                .dot, .dotstar, .word, .non_word, .digit, .non_digit, .space, .non_space, .dollar, .caret => len += 1,
                 .char => len += 2,
                 .que, .plus => len += 3,
                 .star, .pipe => len += 5,
             }
 
             can_repeat = switch (tok) {
-                .char, .dot, .dotstar, .rparen, .que, .plus, .star, .word, .non_word, .digit, .non_digit => true,
+                .char, .dot, .dotstar, .rparen, .que, .plus, .star, .word, .non_word, .digit, .non_digit, .space, .non_space => true,
                 else => false,
             };
         }
@@ -286,6 +296,8 @@ const Token = union(enum) {
     non_word,
     digit,
     non_digit,
+    space,
+    non_space,
     que,
     plus,
     star,
@@ -314,6 +326,8 @@ const Tokenizer = struct {
                     'W' => .non_word,
                     'd' => .digit,
                     'D' => .non_digit,
+                    's' => .space,
+                    'S' => .non_space,
                     else => .{ .char = next_ch },
                 };
             }
@@ -358,6 +372,8 @@ const Op = enum(i32) {
     non_word,
     digit,
     non_digit,
+    space,
+    non_space,
     match,
     jmp, // i32
     split, // i32, i32
@@ -365,7 +381,7 @@ const Op = enum(i32) {
 
     fn name(self: Op) []const u8 {
         return switch (self) {
-            .begin, .end, .char, .dot, .dotstar, .word, .non_word, .digit, .non_digit, .match, .jmp, .split => @tagName(self),
+            .begin, .end, .char, .dot, .dotstar, .word, .non_word, .digit, .non_digit, .space, .non_space, .match, .jmp, .split => @tagName(self),
             else => "???",
         };
     }
@@ -442,6 +458,12 @@ fn pikevm(code: []const Op, text: []const u8) bool {
                 .non_digit => {
                     if (sp < text.len and !std.ascii.isDigit(text[sp])) nlist |= maskPc(pc + 1);
                 },
+                .space => {
+                    if (sp < text.len and std.ascii.isWhitespace(text[sp])) nlist |= maskPc(pc + 1);
+                },
+                .non_space => {
+                    if (sp < text.len and !std.ascii.isWhitespace(text[sp])) nlist |= maskPc(pc + 1);
+                },
                 .jmp => {
                     clist |= maskPc(decodeJmp(code, pc + 1));
                 },
@@ -485,6 +507,7 @@ test Tokenizer {
     try expectTokens("a?(b|c)*", &.{ .char, .que, .lparen, .char, .pipe, .char, .rparen, .star });
     try expectTokens("\\.+\\+\\\\", &.{ .char, .plus, .char, .char });
     try expectTokens(".*\\w\\W\\d\\D+", &.{ .dotstar, .word, .non_word, .digit, .non_digit, .plus });
+    try expectTokens("\\s\\S+", &.{ .space, .non_space, .plus });
 }
 
 fn expectCompile(regex: []const u8, expected: []const u8) !void {
