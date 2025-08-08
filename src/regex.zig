@@ -70,17 +70,18 @@ const Compiler = struct {
 
     fn init(allocator: std.mem.Allocator, regex: []const u8) !Compiler {
         var tokenizer: Tokenizer = .{ .input = regex };
-        var len, const depth, const anchored = try countAndValidate(&tokenizer);
-        if (!anchored) len += 1; // Implicit .dotstar at the beginning
-
-        // TODO: we should first attempt to optimize the regex before failing.
-        if (len > 64) return error.RegexTooComplex;
+        const len, const depth, const anchored = try countAndValidate(&tokenizer);
 
         var code: Buf(Op) = try .initAlloc(allocator, len);
         errdefer code.deinit(allocator);
 
         var stack: Buf([2]i32) = try .initAlloc(allocator, depth);
         errdefer stack.deinit(allocator);
+
+        if (len > 64) {
+            // TODO: we should first attempt to optimize the regex before failing.
+            return error.RegexTooComplex;
+        }
 
         return .{
             .allocator = allocator,
@@ -203,13 +204,12 @@ const Compiler = struct {
         const code = self.code.buf[0..self.code.len];
         var pc: usize = 0;
 
-        while (pc < code.len) {
+        while (pc < code.len) : (pc += code[pc].len()) {
             switch (code[pc]) {
                 // ijmp -> jmp
                 .ijmp => {
                     code[pc] = .jmp;
                     code[pc + 1] = encode(decodeRelJmp(code, pc + 1));
-                    pc += 2;
                 },
 
                 // isplit -> split
@@ -217,12 +217,9 @@ const Compiler = struct {
                     code[pc] = .split;
                     code[pc + 1] = encode(decodeRelJmp(code, pc + 1));
                     code[pc + 2] = encode(decodeRelJmp(code, pc + 2));
-                    pc += 3;
                 },
 
-                .split => pc += 3,
-                .char, .jmp => pc += 2,
-                else => pc += 1,
+                else => {},
             }
         }
     }
@@ -277,7 +274,12 @@ const Compiler = struct {
             return error.UnclosedGroup;
         }
 
-        tokenizer.pos = 0; // reset back
+        if (!anchored) {
+            len += 1; // Implicit .dotstar at the beginning
+        }
+
+        // Reset and return
+        tokenizer.pos = 0;
         return .{ len, max_depth, anchored };
     }
 };
@@ -376,6 +378,14 @@ const Op = enum(i32) {
         return switch (self) {
             .begin, .end, .char, .dot, .dotstar, .word, .non_word, .digit, .non_digit, .space, .non_space, .match, .jmp, .split => @tagName(self),
             else => "???",
+        };
+    }
+
+    fn len(self: Op) usize {
+        return switch (self) {
+            .split, .isplit => 3,
+            .char, .jmp, .ijmp => 2,
+            else => 1,
         };
     }
 };
@@ -541,11 +551,7 @@ fn expectCompile(regex: []const u8, expected: []const u8) !void {
             else => {},
         }
 
-        pc += switch (op) {
-            .split, .isplit => 3,
-            .char, .jmp, .ijmp => 2,
-            else => 1,
-        };
+        pc += op.len();
     }
 
     try std.testing.expectEqualStrings(expected, buf.items);
