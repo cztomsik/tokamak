@@ -64,6 +64,7 @@ const Compiler = struct {
     code: Buf(Op),
     stack: Buf([2]i32),
     anchored: bool,
+    start: i32 = 0, // TODO: groups?
     prev_atom: i32 = 0,
     hole_other_branch: i32 = -1,
 
@@ -99,7 +100,7 @@ const Compiler = struct {
         // Implicit .dotstar for unanchored patterns
         if (!self.anchored) {
             self.emit(.dotstar);
-            self.prev_atom = 1;
+            self.start = 1;
         }
 
         while (self.tokenizer.next()) |tok| {
@@ -112,44 +113,9 @@ const Compiler = struct {
                     self.emit(encode(ch));
                 },
 
-                .dot => {
-                    self.emit(.dot);
+                inline else => |_, t| {
                     self.prev_atom = end;
-                },
-
-                .dotstar => {
-                    self.emit(.dotstar);
-                    self.prev_atom = end;
-                },
-
-                .word => {
-                    self.emit(.word);
-                    self.prev_atom = end;
-                },
-
-                .non_word => {
-                    self.emit(.non_word);
-                    self.prev_atom = end;
-                },
-
-                .digit => {
-                    self.emit(.digit);
-                    self.prev_atom = end;
-                },
-
-                .non_digit => {
-                    self.emit(.non_digit);
-                    self.prev_atom = end;
-                },
-
-                .space => {
-                    self.emit(.space);
-                    self.prev_atom = end;
-                },
-
-                .non_space => {
-                    self.emit(.non_space);
-                    self.prev_atom = end;
+                    self.emit(@field(Op, @tagName(t)));
                 },
 
                 .que => {
@@ -178,11 +144,10 @@ const Compiler = struct {
                 },
 
                 .pipe => {
-                    // TODO: groups? can we just put it in the stack?
-                    self.code.insertSlice(@intCast(self.prev_atom), &.{
+                    self.code.insertSlice(@intCast(self.start), &.{
                         .isplit,
                         encode(2), // LHS branch (which ends with holey-jmp)
-                        encode(end - self.prev_atom + 3), // RHS
+                        encode(end - self.start + 3), // RHS
                     });
 
                     // Point any previous hole to our newly created holey-jmp (double-jump)
@@ -195,12 +160,18 @@ const Compiler = struct {
                     self.emit(.ijmp);
                     self.hole_other_branch = @intCast(self.code.len);
                     self.emit(encode(if (comptime builtin.is_test) 0x7FFFFFFF else 1)); // so it blows if we don't fill it
+
+                    // TODO: Is this correct?
+                    self.start = @intCast(self.code.len);
                 },
 
                 .lparen => {
                     self.stack.push(.{ end, self.hole_other_branch });
                     self.prev_atom = end;
                     self.hole_other_branch = -1;
+
+                    // TODO: Is this correct?
+                    self.start = @intCast(self.code.len);
                 },
 
                 .rparen => {
@@ -675,8 +646,8 @@ test "Regex.compile()" {
 
     try expectCompile("ab|c",
         \\  0: dotstar
-        \\  1: char a
-        \\  3: split :6 :10
+        \\  1: split :4 :10
+        \\  4: char a
         \\  6: char b
         \\  8: jmp :12
         \\ 10: char c
@@ -828,7 +799,7 @@ test "Regex.match()" {
     try expectMatches("ab|c", &.{
         .{ "ab", true },
         .{ "ac", true },
-        .{ "c", false },
+        .{ "c", true },
         .{ "d", false },
     });
 
