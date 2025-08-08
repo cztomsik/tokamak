@@ -35,7 +35,7 @@ pub const Grep = struct {
 // https://swtch.com/~rsc/regexp/regexp2.html
 // https://swtch.com/~rsc/regexp/regexp3.html
 pub const Regex = struct {
-    code: []const Op,
+    code: []const i32,
 
     pub fn compile(allocator: std.mem.Allocator, regex: []const u8) !Regex {
         var compiler = try Compiler.init(allocator, regex);
@@ -61,7 +61,7 @@ pub const Regex = struct {
 const Compiler = struct {
     allocator: std.mem.Allocator,
     tokenizer: Tokenizer,
-    code: Buf(Op),
+    code: Buf(i32),
     stack: Buf([2]i32),
     anchored: bool,
     start: i32 = 0, // TODO: groups?
@@ -72,7 +72,7 @@ const Compiler = struct {
         var tokenizer: Tokenizer = .{ .input = regex };
         const len, const depth, const anchored = try countAndValidate(&tokenizer);
 
-        var code: Buf(Op) = try .initAlloc(allocator, len);
+        var code: Buf(i32) = try .initAlloc(allocator, len);
         errdefer code.deinit(allocator);
 
         var stack: Buf([2]i32) = try .initAlloc(allocator, depth);
@@ -100,7 +100,7 @@ const Compiler = struct {
     fn compile(self: *Compiler) !void {
         // Implicit .dotstar for unanchored patterns
         if (!self.anchored) {
-            self.emit(.dotstar);
+            self.push(.dotstar);
             self.start = 1;
         }
 
@@ -108,59 +108,58 @@ const Compiler = struct {
             const end: i32 = @intCast(self.code.len);
 
             switch (tok) {
-                .char => |ch| {
+                inline else => |arg, t| {
                     self.prev_atom = end;
-                    self.emit(.char);
-                    self.emit(encode(ch));
-                },
-
-                inline else => |_, t| {
-                    self.prev_atom = end;
-                    self.emit(@field(Op, @tagName(t)));
+                    self.push(@unionInit(Op, @tagName(t), arg));
                 },
 
                 .que => {
-                    self.code.insertSlice(@intCast(self.prev_atom), &.{
-                        .isplit,
-                        encode(2), // run the check
-                        encode(end - self.prev_atom + 1), // jump out otherwise
+                    self.insert(self.prev_atom, .{
+                        .isplit = .{
+                            2, // run the check
+                            end - self.prev_atom + 1, // jump out otherwise
+                        },
                     });
                 },
 
                 .plus => {
-                    self.emit(.isplit);
-                    self.emit(encode(self.prev_atom - end - 1)); // repeat
-                    self.emit(encode(1)); // jump out otherwise
+                    self.push(.{
+                        .isplit = .{
+                            self.prev_atom - end - 1, // repeat
+                            1, // jump out otherwise
+                        },
+                    });
                 },
 
                 .star => {
-                    self.code.insertSlice(@intCast(self.prev_atom), &.{
-                        .isplit,
-                        encode(2), // run the check
-                        encode(end - self.prev_atom + 3), // jump out otherwise
+                    self.insert(self.prev_atom, .{
+                        .isplit = .{
+                            2, // run the check
+                            end - self.prev_atom + 3, // jump out otherwise
+                        },
                     });
 
-                    self.emit(.ijmp);
-                    self.emit(encode(self.prev_atom - end - 4)); // keep repeating
+                    // Keep repeating
+                    self.push(.{ .ijmp = self.prev_atom - end - 4 });
                 },
 
                 .pipe => {
-                    self.code.insertSlice(@intCast(self.start), &.{
-                        .isplit,
-                        encode(2), // LHS branch (which ends with holey-jmp)
-                        encode(end - self.start + 3), // RHS
+                    self.insert(self.start, .{
+                        .isplit = .{
+                            2, // LHS branch (which ends with holey-jmp)
+                            end - self.start + 3, // RHS
+                        },
                     });
 
                     // Point any previous hole to our newly created holey-jmp (double-jump)
                     // NOTE: we could probably inline/flatten these in a second-pass (optimization?)
                     if (self.hole_other_branch > 0) {
-                        self.code.buf[@intCast(self.hole_other_branch)] = encode(@as(i32, @intCast(self.code.len)) - self.hole_other_branch); // relative to the jmp itself
+                        self.code.buf[@intCast(self.hole_other_branch)] = @as(i32, @intCast(self.code.len)) - self.hole_other_branch; // relative to the jmp itself
                     }
 
                     // Create a jump with a hole
-                    self.emit(.ijmp);
-                    self.hole_other_branch = @intCast(self.code.len);
-                    self.emit(encode(if (comptime builtin.is_test) 0x7FFFFFFF else 1)); // so it blows if we don't fill it
+                    self.push(.{ .ijmp = if (comptime builtin.is_test) 0x7FFFFFFF else 1 }); // so it blows if we don't fill it
+                    self.hole_other_branch = @intCast(self.code.len - 1);
 
                     // TODO: Is this correct?
                     self.start = @intCast(self.code.len);
@@ -177,7 +176,7 @@ const Compiler = struct {
 
                 .rparen => {
                     if (self.hole_other_branch > 0) {
-                        self.code.buf[@intCast(self.hole_other_branch)] = encode(end - self.hole_other_branch); // relative to the jmp itself
+                        self.code.buf[@intCast(self.hole_other_branch)] = end - self.hole_other_branch; // relative to the jmp itself
                     }
 
                     const x = self.stack.pop().?;
@@ -185,50 +184,61 @@ const Compiler = struct {
                     self.hole_other_branch = x[1];
                 },
 
-                .caret => self.emit(.begin),
-                .dollar => self.emit(.end),
+                .caret => self.push(.begin),
+                .dollar => self.push(.end),
             }
         }
 
         // Pending pipe?
         if (self.hole_other_branch > 0) {
             const end: i32 = @intCast(self.code.len);
-            self.code.buf[@intCast(self.hole_other_branch)] = encode(end - self.hole_other_branch); // relative to the jmp itself
+            self.code.buf[@intCast(self.hole_other_branch)] = end - self.hole_other_branch; // relative to the jmp itself
         }
 
         // Add final match
-        self.emit(.match);
+        self.push(.match);
     }
 
     fn optimize(self: *Compiler) void {
         const code = self.code.buf[0..self.code.len];
         var pc: usize = 0;
 
-        while (pc < code.len) : (pc += code[pc].len()) {
-            switch (code[pc]) {
-                // ijmp -> jmp
+        while (pc < code.len) {
+            const op_code: OpCode = @enumFromInt(code[pc]);
+            const base: i32 = @intCast(pc);
+
+            switch (op_code) {
                 .ijmp => {
-                    code[pc] = .jmp;
-                    code[pc + 1] = encode(decodeRelJmp(code, pc + 1));
+                    code[pc] = @intFromEnum(OpCode.jmp);
+                    code[pc + 1] += base + 1;
                 },
 
-                // isplit -> split
                 .isplit => {
-                    code[pc] = .split;
-                    code[pc + 1] = encode(decodeRelJmp(code, pc + 1));
-                    code[pc + 2] = encode(decodeRelJmp(code, pc + 2));
+                    code[pc] = @intFromEnum(OpCode.split);
+                    code[pc + 1] += base + 1;
+                    code[pc + 2] += base + 2;
                 },
 
                 else => {},
             }
+
+            pc += Op.opLen(op_code);
         }
     }
 
-    fn emit(self: *Compiler, op: Op) void {
-        self.code.push(op);
+    fn push(self: *Compiler, op: Op) void {
+        op.encode(self.code.buf[self.code.len..].ptr);
+        self.code.len += op.len();
     }
 
-    fn finish(self: *Compiler) ![]const Op {
+    fn insert(self: *Compiler, pos: i32, op: Op) void {
+        // TODO: find a better way...
+        var buf: [3]i32 = undefined;
+        op.encode(@as([]i32, buf[0..]).ptr);
+        self.code.insertSlice(@intCast(pos), buf[0..op.len()]);
+    }
+
+    fn finish(self: *Compiler) ![]const i32 {
         return self.code.finish();
     }
 
@@ -353,10 +363,12 @@ const Tokenizer = struct {
     }
 };
 
-const Op = enum(i32) {
+const OpCode = std.meta.Tag(Op);
+
+const Op = union(enum) {
     begin,
     end,
-    char, // u8
+    char: u8,
     dot,
     dotstar,
     word,
@@ -366,12 +378,12 @@ const Op = enum(i32) {
     space,
     non_space,
     match,
-    jmp, // u32
-    split, // u32, u32
+    jmp: u32,
+    split: [2]u32,
 
     // intermediate - replaced during optimize()
-    ijmp, // i32
-    isplit, // i32, i32
+    ijmp: i32,
+    isplit: [2]i32,
     _,
 
     fn name(self: Op) []const u8 {
@@ -382,29 +394,43 @@ const Op = enum(i32) {
     }
 
     fn len(self: Op) usize {
-        return switch (self) {
+        return opLen(self);
+    }
+
+    fn opLen(code: OpCode) usize {
+        return switch (code) {
             .split, .isplit => 3,
             .char, .jmp, .ijmp => 2,
             else => 1,
         };
     }
+
+    fn encode(self: Op, pc: [*]i32) void {
+        pc[0] = @intFromEnum(self);
+
+        switch (self) {
+            else => {},
+            .char => |ch| pc[1] = @intCast(ch),
+            .ijmp => |addr| pc[1] = addr,
+            .isplit => |addrs| pc[1..3].* = addrs,
+            .jmp => |addr| pc[1] = @bitCast(addr),
+            .split => |addrs| pc[1..3].* = @bitCast(addrs),
+        }
+    }
+
+    fn decode(pc: [*]const i32) Op {
+        const kind: OpCode = @enumFromInt(pc[0]);
+
+        return switch (kind) {
+            inline else => |t| @field(Op, @tagName(t)),
+            .char => .{ .char = @intCast(pc[1]) },
+            .jmp => .{ .jmp = @bitCast(pc[1]) },
+            .split => .{ .split = @bitCast(pc[1..3].*) },
+            .ijmp => .{ .ijmp = pc[1] },
+            .isplit => .{ .isplit = pc[1..3].* },
+        };
+    }
 };
-
-fn encode(v: anytype) Op {
-    return @enumFromInt(@as(i32, @intCast(v)));
-}
-
-fn decode(code: []const Op, pc: usize) i32 {
-    return @intFromEnum(code[pc]);
-}
-
-fn decodeJmp(code: []const Op, pc: usize) usize {
-    return @intCast(decode(code, pc));
-}
-
-fn decodeRelJmp(code: []const Op, pc: usize) usize {
-    return @intCast(@as(isize, @intCast(pc)) + decode(code, pc));
-}
 
 fn maskPc(pc: usize) u64 {
     return @as(u64, 1) << @intCast(pc);
@@ -413,7 +439,7 @@ fn maskPc(pc: usize) u64 {
 // https://dl.acm.org/doi/10.1145/363347.363387
 // https://swtch.com/~rsc/regexp/regexp2.html#pike
 // TODO: captures
-fn pikevm(code: []const Op, text: []const u8) bool {
+fn pikevm(code: []const i32, text: []const u8) bool {
     // We only support N ops so we can actually encode both [N]Thread lists as
     // bitsets where each position represents the thread's PC. Even better, we
     // get de-duping and "same-char" ticks for free.
@@ -435,7 +461,7 @@ fn pikevm(code: []const Op, text: []const u8) bool {
             if ((guard & mask) != 0) continue;
             guard |= mask;
 
-            switch (code[pc]) {
+            switch (Op.decode(code[pc..].ptr)) {
                 .begin => {
                     if (sp == 0) clist |= maskPc(pc + 1);
                 },
@@ -446,8 +472,8 @@ fn pikevm(code: []const Op, text: []const u8) bool {
                     clist |= maskPc(pc + 1);
                     if (sp < text.len) nlist |= maskPc(pc);
                 },
-                .char => {
-                    if (sp < text.len and text[sp] == decode(code, pc + 1))
+                .char => |ch| {
+                    if (sp < text.len and text[sp] == ch)
                         nlist |= maskPc(pc + 2);
                 },
                 .dot => {
@@ -471,12 +497,12 @@ fn pikevm(code: []const Op, text: []const u8) bool {
                 .non_space => {
                     if (sp < text.len and !std.ascii.isWhitespace(text[sp])) nlist |= maskPc(pc + 1);
                 },
-                .jmp => {
-                    clist |= maskPc(decodeJmp(code, pc + 1));
+                .jmp => |addr| {
+                    clist |= maskPc(addr);
                 },
-                .split => {
-                    clist |= maskPc(decodeJmp(code, pc + 1));
-                    clist |= maskPc(decodeJmp(code, pc + 2));
+                .split => |addrs| {
+                    clist |= maskPc(addrs[0]);
+                    clist |= maskPc(addrs[1]);
                 },
                 .match => return true,
                 .ijmp, .isplit => unreachable,
@@ -529,7 +555,7 @@ fn expectCompile(regex: []const u8, expected: []const u8) !void {
     var pc: usize = 0;
 
     while (pc < re.code.len) {
-        const op = re.code[pc];
+        const op = Op.decode(re.code[pc..].ptr);
 
         if (pc > 0) {
             try w.writeByte('\n');
@@ -538,16 +564,9 @@ fn expectCompile(regex: []const u8, expected: []const u8) !void {
         try w.print("{d:>3}: {s}", .{ pc, op.name() });
 
         switch (op) {
-            .char => try w.print(" {c}", .{
-                @as(u8, @intCast(decode(re.code, pc + 1))),
-            }),
-            .jmp => try w.print(" :{d}", .{
-                decodeJmp(re.code, pc + 1),
-            }),
-            .split => try w.print(" :{d} :{d}", .{
-                decodeJmp(re.code, pc + 1),
-                decodeJmp(re.code, pc + 2),
-            }),
+            .char => |ch| try w.print(" {c}", .{ch}),
+            .jmp => |addr| try w.print(" :{d}", .{addr}),
+            .split => |addrs| try w.print(" :{d} :{d}", .{ addrs[0], addrs[1] }),
             else => {},
         }
 
