@@ -113,12 +113,32 @@ const Compiler = struct {
                 },
 
                 .dot => {
-                    self.emit(.any);
+                    self.emit(.dot);
                     self.prev_atom = end;
                 },
 
                 .dotstar => {
                     self.emit(.dotstar);
+                    self.prev_atom = end;
+                },
+
+                .word => {
+                    self.emit(.word);
+                    self.prev_atom = end;
+                },
+
+                .non_word => {
+                    self.emit(.non_word);
+                    self.prev_atom = end;
+                },
+
+                .digit => {
+                    self.emit(.digit);
+                    self.prev_atom = end;
+                },
+
+                .non_digit => {
+                    self.emit(.non_digit);
                     self.prev_atom = end;
                 },
 
@@ -237,14 +257,14 @@ const Compiler = struct {
                     if (!can_repeat) return error.EmptyGroup;
                     depth -= 1;
                 },
-                .dot, .dotstar, .dollar, .caret => len += 1,
+                .dot, .dotstar, .word, .non_word, .digit, .non_digit, .dollar, .caret => len += 1,
                 .char => len += 2,
                 .que, .plus => len += 3,
                 .star, .pipe => len += 5,
             }
 
             can_repeat = switch (tok) {
-                .char, .dot, .dotstar, .rparen, .que, .plus, .star => true,
+                .char, .dot, .dotstar, .rparen, .que, .plus, .star, .word, .non_word, .digit, .non_digit => true,
                 else => false,
             };
         }
@@ -262,6 +282,10 @@ const Token = union(enum) {
     char: u8,
     dot,
     dotstar,
+    word,
+    non_word,
+    digit,
+    non_digit,
     que,
     plus,
     star,
@@ -281,11 +305,17 @@ const Tokenizer = struct {
             const ch = self.input[self.pos];
             self.pos += 1;
 
-            // TODO: This is incomplete, \d and \w should be parsed as meta-classes, etc.
             if (ch == '\\' and self.pos < self.input.len) {
                 const next_ch = self.input[self.pos];
                 self.pos += 1;
-                return .{ .char = next_ch };
+
+                return switch (next_ch) {
+                    'w' => .word,
+                    'W' => .non_word,
+                    'd' => .digit,
+                    'D' => .non_digit,
+                    else => .{ .char = next_ch },
+                };
             }
 
             return switch (ch) {
@@ -321,9 +351,13 @@ const Tokenizer = struct {
 const Op = enum(i32) {
     begin,
     end,
-    dotstar,
     char, // u8
-    any,
+    dot,
+    dotstar,
+    word,
+    non_word,
+    digit,
+    non_digit,
     match,
     jmp, // i32
     split, // i32, i32
@@ -331,7 +365,7 @@ const Op = enum(i32) {
 
     fn name(self: Op) []const u8 {
         return switch (self) {
-            .dotstar, .begin, .end, .char, .any, .match, .jmp, .split => @tagName(self),
+            .begin, .end, .char, .dot, .dotstar, .word, .non_word, .digit, .non_digit, .match, .jmp, .split => @tagName(self),
             else => "???",
         };
     }
@@ -393,8 +427,20 @@ fn pikevm(code: []const Op, text: []const u8) bool {
                     if (sp < text.len and text[sp] == decode(code, pc + 1))
                         nlist |= maskPc(pc + 2);
                 },
-                .any => {
+                .dot => {
                     if (sp < text.len) nlist |= maskPc(pc + 1);
+                },
+                .word => {
+                    if (sp < text.len and isWord(text[sp])) nlist |= maskPc(pc + 1);
+                },
+                .non_word => {
+                    if (sp < text.len and !isWord(text[sp])) nlist |= maskPc(pc + 1);
+                },
+                .digit => {
+                    if (sp < text.len and std.ascii.isDigit(text[sp])) nlist |= maskPc(pc + 1);
+                },
+                .non_digit => {
+                    if (sp < text.len and !std.ascii.isDigit(text[sp])) nlist |= maskPc(pc + 1);
                 },
                 .jmp => {
                     clist |= maskPc(decodeJmp(code, pc + 1));
@@ -416,6 +462,10 @@ fn pikevm(code: []const Op, text: []const u8) bool {
     return false;
 }
 
+fn isWord(ch: u8) bool {
+    return std.ascii.isAlphabetic(ch) or std.ascii.isDigit(ch) or ch == '_';
+}
+
 const testing = @import("testing.zig");
 
 fn expectTokens(regex: []const u8, tokens: []const std.meta.Tag(Token)) !void {
@@ -434,7 +484,7 @@ test Tokenizer {
     try expectTokens("a.c+", &.{ .char, .dot, .char, .plus });
     try expectTokens("a?(b|c)*", &.{ .char, .que, .lparen, .char, .pipe, .char, .rparen, .star });
     try expectTokens("\\.+\\+\\\\", &.{ .char, .plus, .char, .char });
-    try expectTokens(".*", &.{.dotstar});
+    try expectTokens(".*\\w\\W\\d\\D+", &.{ .dotstar, .word, .non_word, .digit, .non_digit, .plus });
 }
 
 fn expectCompile(regex: []const u8, expected: []const u8) !void {
@@ -495,13 +545,13 @@ test "Regex.compile()" {
 
     try expectCompile(".",
         \\  0: dotstar
-        \\  1: any
+        \\  1: dot
         \\  2: match
     );
 
     try expectCompile("^.",
         \\  0: begin
-        \\  1: any
+        \\  1: dot
         \\  2: match
     );
 
@@ -516,7 +566,7 @@ test "Regex.compile()" {
     try expectCompile("a.c",
         \\  0: dotstar
         \\  1: char a
-        \\  3: any
+        \\  3: dot
         \\  4: char c
         \\  6: match
     );
