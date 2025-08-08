@@ -756,6 +756,27 @@ test "Regex.compile()" {
         \\ 12: split :3 :15
         \\ 15: match
     );
+
+    // TODO: No idea if this is correct but at least the jumps are valid.
+    try expectCompile("^(\\w+\\.(js|ts)|^foo)",
+        \\  0: begin
+        \\  1: split :4 :25
+        \\  4: word
+        \\  5: split :4 :8
+        \\  8: char .
+        \\ 10: split :13 :19
+        \\ 13: char j
+        \\ 15: char s
+        \\ 17: jmp :23
+        \\ 19: char t
+        \\ 21: char s
+        \\ 23: jmp :32
+        \\ 25: begin
+        \\ 26: char f
+        \\ 28: char o
+        \\ 30: char o
+        \\ 32: match
+    );
 }
 
 fn expectMatch(regex: []const u8, text: []const u8, expected: bool) !void {
