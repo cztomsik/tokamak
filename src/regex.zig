@@ -265,7 +265,7 @@ const Tokenizer = struct {
 const Op = enum(i32) {
     begin,
     end,
-    dotall,
+    dotstar,
     char, // u8
     any,
     match,
@@ -275,7 +275,7 @@ const Op = enum(i32) {
 
     fn name(self: Op) []const u8 {
         return switch (self) {
-            .dotall, .begin, .end, .char, .any, .match, .jmp, .split => @tagName(self),
+            .dotstar, .begin, .end, .char, .any, .match, .jmp, .split => @tagName(self),
             else => "???",
         };
     }
@@ -329,7 +329,7 @@ fn pikevm(code: []const Op, text: []const u8) bool {
                 .end => {
                     if (sp == text.len) clist |= maskPc(pc + 1);
                 },
-                .dotall => {
+                .dotstar => {
                     clist |= maskPc(pc + 1);
                     if (sp < text.len) nlist |= maskPc(pc);
                 },
@@ -432,12 +432,12 @@ test "Regex.compile()" {
     try testing.expectError(Regex.compile(undefined, "("), error.UnclosedGroup);
 
     try expectCompile("",
-        \\  0: dotall
+        \\  0: dotstar
         \\  1: match
     );
 
     try expectCompile(".",
-        \\  0: dotall
+        \\  0: dotstar
         \\  1: any
         \\  2: match
     );
@@ -449,7 +449,7 @@ test "Regex.compile()" {
     );
 
     try expectCompile("abc",
-        \\  0: dotall
+        \\  0: dotstar
         \\  1: char a
         \\  3: char b
         \\  5: char c
@@ -457,7 +457,7 @@ test "Regex.compile()" {
     );
 
     try expectCompile("a.c",
-        \\  0: dotall
+        \\  0: dotstar
         \\  1: char a
         \\  3: any
         \\  4: char c
@@ -465,7 +465,7 @@ test "Regex.compile()" {
     );
 
     try expectCompile("a?c",
-        \\  0: dotall
+        \\  0: dotstar
         \\  1: split :4 :6
         \\  4: char a
         \\  6: char c
@@ -473,7 +473,7 @@ test "Regex.compile()" {
     );
 
     try expectCompile("ab?c",
-        \\  0: dotall
+        \\  0: dotstar
         \\  1: char a
         \\  3: split :6 :8
         \\  6: char b
@@ -482,7 +482,7 @@ test "Regex.compile()" {
     );
 
     try expectCompile("a+b",
-        \\  0: dotall
+        \\  0: dotstar
         \\  1: char a
         \\  3: split :1 :6
         \\  6: char b
@@ -490,7 +490,7 @@ test "Regex.compile()" {
     );
 
     try expectCompile("a*b",
-        \\  0: dotall
+        \\  0: dotstar
         \\  1: split :4 :8
         \\  4: char a
         \\  6: jmp :1
@@ -499,7 +499,7 @@ test "Regex.compile()" {
     );
 
     try expectCompile("a|b",
-        \\  0: dotall
+        \\  0: dotstar
         \\  1: split :4 :8
         \\  4: char a
         \\  6: jmp :10
@@ -508,7 +508,7 @@ test "Regex.compile()" {
     );
 
     try expectCompile("ab|c",
-        \\  0: dotall
+        \\  0: dotstar
         \\  1: char a
         \\  3: split :6 :10
         \\  6: char b
@@ -518,7 +518,7 @@ test "Regex.compile()" {
     );
 
     try expectCompile("a|b|c",
-        \\  0: dotall
+        \\  0: dotstar
         \\  1: split :4 :8
         \\  4: char a
         \\  6: jmp :13
@@ -530,7 +530,7 @@ test "Regex.compile()" {
     );
 
     try expectCompile("(ab)?de",
-        \\  0: dotall
+        \\  0: dotstar
         \\  1: split :4 :8
         \\  4: char a
         \\  6: char b
@@ -540,7 +540,7 @@ test "Regex.compile()" {
     );
 
     try expectCompile("(ab)+de",
-        \\  0: dotall
+        \\  0: dotstar
         \\  1: char a
         \\  3: char b
         \\  5: split :1 :8
@@ -550,7 +550,7 @@ test "Regex.compile()" {
     );
 
     try expectCompile("(a|b)?",
-        \\  0: dotall
+        \\  0: dotstar
         \\  1: split :4 :13
         \\  4: split :7 :11
         \\  7: char a
@@ -560,7 +560,7 @@ test "Regex.compile()" {
     );
 
     try expectCompile("(a|b)*c",
-        \\  0: dotall
+        \\  0: dotstar
         \\  1: split :4 :15
         \\  4: split :7 :11
         \\  7: char a
@@ -572,7 +572,7 @@ test "Regex.compile()" {
     );
 
     try expectCompile("(a|b|c)+d",
-        \\  0: dotall
+        \\  0: dotstar
         \\  1: split :4 :8
         \\  4: char a
         \\  6: jmp :13
@@ -586,7 +586,7 @@ test "Regex.compile()" {
     );
 
     try expectCompile("a(b|c)+",
-        \\  0: dotall
+        \\  0: dotstar
         \\  1: char a
         \\  3: split :6 :10
         \\  6: char b
