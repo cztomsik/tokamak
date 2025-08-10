@@ -26,6 +26,7 @@ pub const queue = @import("queue.zig");
 pub const reddit = @import("reddit.zig");
 pub const regex = @import("regex.zig");
 pub const sax = @import("sax.zig");
+pub const sort = @import("sort.zig");
 pub const selector = @import("selector.zig");
 pub const sendmail = @import("sendmail.zig");
 pub const testing = @import("testing.zig");
