@@ -4,9 +4,19 @@
 // https://en.wikipedia.org/wiki/Rata_Die
 // https://research.swtch.com/leap
 const std = @import("std");
+const sort = @import("sort.zig");
 
+const RATA_MIN = date_to_rata(Date.MIN);
+const RATA_MAX = date_to_rata(Date.MAX);
 const RATA_TO_UNIX = 719468;
 const EOD = 86_400 - 1;
+
+// TODO: Decide if we want to use std.debug.assert(), @panic() or just throw an error
+fn checkRange(num: anytype, min: @TypeOf(num), max: @TypeOf(num)) void {
+    if (sort.lt(num, min) or sort.gt(num, max)) {
+        std.log.warn("Value {} is not in range [{}, {}]", .{ num, min, max });
+    }
+}
 
 pub const TimeUnit = enum { second, minute, hour, day, month, year };
 pub const DateUnit = enum { day, month, year };
@@ -31,6 +41,15 @@ pub const Date = struct {
     year: i32,
     month: u8,
     day: u8,
+
+    pub const MIN = Date.ymd(-1467999, 1, 1);
+    pub const MAX = Date.ymd(1471744, 12, 31);
+
+    pub fn cmp(a: Date, b: Date) std.math.Order {
+        if (a.year != b.year) return sort.cmp(a.year, b.year);
+        if (a.month != b.month) return sort.cmp(a.month, b.month);
+        return sort.cmp(a.day, b.day);
+    }
 
     pub fn parse(str: []const u8) !Date {
         var it = std.mem.splitScalar(u8, str, '-');
@@ -263,6 +282,8 @@ pub const Time = struct {
 
 // https://github.com/cassioneri/eaf/blob/1509faf37a0e0f59f5d4f11d0456fd0973c08f85/eaf/gregorian.hpp#L42
 fn rata_to_date(N: i64) Date {
+    checkRange(N, RATA_MIN, RATA_MAX);
+
     // Century.
     const N_1: i64 = 4 * N + 3;
     const C: i64 = quotient(N_1, 146097);
@@ -291,6 +312,8 @@ fn rata_to_date(N: i64) Date {
 
 // https://github.com/cassioneri/eaf/blob/1509faf37a0e0f59f5d4f11d0456fd0973c08f85/eaf/gregorian.hpp#L88
 fn date_to_rata(date: Date) i32 {
+    checkRange(date, Date.MIN, Date.MAX);
+
     // Map.
     const J: u32 = @intFromBool(date.month <= 2);
     const Y: i32 = date.year - @as(i32, @intCast(J));
@@ -299,7 +322,7 @@ fn date_to_rata(date: Date) i32 {
     const C: i32 = @intCast(quotient(Y, 100));
 
     // Rata die.
-    const y_star: i32 = @intCast(quotient(1461 * Y, 4) - C + quotient(C, 4)); // n_days in all prev. years
+    const y_star: i32 = @intCast(quotient(1461 * @as(i64, Y), 4) - C + quotient(C, 4)); // n_days in all prev. years
     const m_star: u32 = (153 * M - 457) / 5; // n_days in prev. months
 
     return y_star + @as(i32, @intCast(m_star)) + @as(i32, @intCast(D));
@@ -382,11 +405,17 @@ test daysInMonth {
 }
 
 test rata_to_date {
+    try testing.expectEqual(rata_to_date(RATA_MIN), Date.MIN);
+    try testing.expectEqual(rata_to_date(RATA_MAX), Date.MAX);
+
     try testing.expectEqual(rata_to_date(0), .ymd(0, 3, 1));
     try testing.expectEqual(rata_to_date(RATA_TO_UNIX), .ymd(1970, 1, 1));
 }
 
 test date_to_rata {
+    try testing.expectEqual(date_to_rata(Date.MIN), RATA_MIN);
+    try testing.expectEqual(date_to_rata(Date.MAX), RATA_MAX);
+
     try testing.expectEqual(date_to_rata(.ymd(0, 3, 1)), 0);
     try testing.expectEqual(date_to_rata(.ymd(1970, 1, 1)), RATA_TO_UNIX);
 }
