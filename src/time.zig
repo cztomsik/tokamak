@@ -21,20 +21,19 @@ fn checkRange(num: anytype, min: @TypeOf(num), max: @TypeOf(num)) void {
 pub const TimeUnit = enum { second, minute, hour, day, month, year };
 pub const DateUnit = enum { day, month, year };
 
-// Taken from the video
+// https://www.youtube.com/watch?v=0s9F4QWAl-E&t=2120
 pub fn isLeapYear(year: i32) bool {
     const d: i32 = if (@mod(year, 100) != 0) 4 else 16;
     return (year & (d - 1)) == 0;
 }
 
-// TODO: IIRC there was also some formula
+// https://www.youtube.com/watch?v=0s9F4QWAl-E&t=2257
 fn daysInMonth(year: i32, month: u8) u8 {
-    return switch (month) {
-        1, 3, 5, 7, 8, 10, 12 => 31,
-        4, 6, 9, 11 => 30,
-        2 => if (isLeapYear(year)) 29 else 28,
-        else => unreachable,
-    };
+    if (month == 2) {
+        return if (isLeapYear(year)) 29 else 28;
+    }
+
+    return 30 | (month ^ (month >> 3));
 }
 
 pub const Date = struct {
@@ -402,6 +401,8 @@ test isLeapYear {
 test daysInMonth {
     try testing.expectEqual(daysInMonth(1999, 2), 28);
     try testing.expectEqual(daysInMonth(2000, 2), 29);
+    try testing.expectEqual(daysInMonth(2000, 7), 31);
+    try testing.expectEqual(daysInMonth(2000, 8), 31);
 }
 
 test rata_to_date {
