@@ -365,11 +365,26 @@ const Tokenizer = struct {
     }
 };
 
+// TODO: We should probably use packed union because then we can remove i32
+//       entirely, and we will still be able to easily re-interpret memory.
+//       I think we will need to let go Op as union(enum) but I was not 100%
+//       happy about it anyway. So something like `op.code.len()` -  but it will
+//       be non-trivial change, so let's keep it for later. We could also "inline"
+//       some args directly (and save "op space"), and maybe, we could also
+//       put large args into a separate array, and only save an index into it.
+//
+//       Alternate idea: We could remove encoding/decoding entirely, because
+//       our code will never be longer than N, which fits into u8, so [2]u8
+//       should still be plenty of space for i32. The original intention for i32
+//       was because of utf-8 but given how non-common it is, we could simply
+//       push all non-ascii codepoints into a separate list, and use indices
 const OpCode = std.meta.Tag(Op);
 
 const Op = union(enum) {
     begin,
     end,
+
+    // Char ops
     char: u8,
     dot,
     dotstar,
@@ -379,12 +394,19 @@ const Op = union(enum) {
     non_digit,
     space,
     non_space,
-    match,
+
+    // Char classes [\w_]
+    // char_class: u8, // index into regex.char_classes
+
+    // Branching
     jmp: u32,
     split: [2]u32,
     plus: u32,
 
-    // intermediate - replaced during optimize()
+    // Final op
+    match,
+
+    // Intermediate - replaced during optimize()
     ijmp: i32,
     isplit: [2]i32,
     iplus: i32,
@@ -406,6 +428,20 @@ const Op = union(enum) {
             .split, .isplit => 3,
             .char, .jmp, .plus, .ijmp, .iplus => 2,
             else => 1,
+        };
+    }
+
+    fn matchChar(self: Op, ch: u8) bool {
+        return switch (self) {
+            .char => self.char == ch,
+            .dot => true,
+            .word => isWord(ch),
+            .non_word => !isWord(ch),
+            .digit => std.ascii.isDigit(ch),
+            .non_digit => !std.ascii.isDigit(ch),
+            .space => std.ascii.isWhitespace(ch),
+            .non_space => !std.ascii.isWhitespace(ch),
+            else => unreachable,
         };
     }
 
@@ -469,7 +505,9 @@ fn pikevm(code: []const i32, text: []const u8) bool {
             if ((guard & mask) != 0) continue;
             guard |= mask;
 
-            switch (Op.decode(code[pc..].ptr)) {
+            const op = Op.decode(code[pc..].ptr);
+
+            switch (op) {
                 .begin => {
                     if (sp == 0) clist |= maskPc(pc + 1);
                 },
@@ -484,26 +522,8 @@ fn pikevm(code: []const i32, text: []const u8) bool {
                     if (sp < text.len and text[sp] == ch)
                         nlist |= maskPc(pc + 2);
                 },
-                .dot => {
-                    if (sp < text.len) nlist |= maskPc(pc + 1);
-                },
-                .word => {
-                    if (sp < text.len and isWord(text[sp])) nlist |= maskPc(pc + 1);
-                },
-                .non_word => {
-                    if (sp < text.len and !isWord(text[sp])) nlist |= maskPc(pc + 1);
-                },
-                .digit => {
-                    if (sp < text.len and std.ascii.isDigit(text[sp])) nlist |= maskPc(pc + 1);
-                },
-                .non_digit => {
-                    if (sp < text.len and !std.ascii.isDigit(text[sp])) nlist |= maskPc(pc + 1);
-                },
-                .space => {
-                    if (sp < text.len and std.ascii.isWhitespace(text[sp])) nlist |= maskPc(pc + 1);
-                },
-                .non_space => {
-                    if (sp < text.len and !std.ascii.isWhitespace(text[sp])) nlist |= maskPc(pc + 1);
+                .dot, .word, .non_word, .digit, .non_digit, .space, .non_space => {
+                    if (sp < text.len and op.matchChar(text[sp])) nlist |= maskPc(pc + 1);
                 },
                 .jmp => |addr| {
                     clist |= maskPc(addr);
