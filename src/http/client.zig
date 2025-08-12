@@ -20,6 +20,10 @@ pub const RequestBody = struct {
     content_type: []const u8,
     render: *const fn (ctx: *const anyopaque, writer: std.io.AnyWriter) anyerror!void,
 
+    pub fn write(self: RequestBody, writer: std.io.AnyWriter) !void {
+        try self.render(self.ctx, writer);
+    }
+
     pub fn json(ptr: anytype) RequestBody {
         const H = struct {
             fn stringify(ctx: @TypeOf(ptr), writer: std.io.AnyWriter) anyerror!void {
@@ -117,8 +121,7 @@ pub const StdClient = struct {
         try req.send();
 
         if (options.body) |body| {
-            var w = req.writer();
-            try body.render(body.ctx, w.any());
+            try body.write(req.writer().any());
             try req.finish();
         }
 
