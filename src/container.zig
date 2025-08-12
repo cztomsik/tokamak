@@ -453,7 +453,11 @@ fn CompiledBundle(comptime ops: []const Op, comptime n_inst: usize, comptime n_d
             self.pushRef(inj, &ct.allocator);
 
             var pc: usize = 0;
-            errdefer dump(pc);
+            errdefer {
+                std.debug.print("Failed to init: pc={}\n", .{pc});
+                dump(pc);
+                self.deinitBackwards(ct, pc);
+            }
 
             inline for (ops) |op| {
                 switch (op) {
@@ -478,38 +482,30 @@ fn CompiledBundle(comptime ops: []const Op, comptime n_inst: usize, comptime n_d
                 }
 
                 pc += 1;
+            }
+        }
 
-                // TODO: deinitFrom(pc)?
-                errdefer {
-                    switch (op) {
+        fn deinit(self: *@This(), ct: *Container) void {
+            self.deinitBackwards(ct, ops.len);
+        }
+
+        fn deinitBackwards(self: *@This(), ct: *Container, pc: usize) void {
+            inline for (0..ops.len) |i| {
+                const j = ops.len - 1 - i;
+
+                if (pc > j) {
+                    switch (ops[ops.len - 1 - i]) {
                         .dep => |dep| {
-                            dep.deinitInstance(&self.data, inj);
+                            dep.deinitInstance(&self.data, &ct.injector);
                         },
 
                         .hook => |hook| {
                             if (hook.kind == .deinit) {
                                 // TODO: this is not 100% right (child scopes)
-                                inj.call0(hook.fun.unwrap()) catch unreachable;
+                                ct.injector.call0(hook.fun.unwrap()) catch unreachable;
                             }
                         },
                     }
-                }
-            }
-        }
-
-        fn deinit(self: *@This(), ct: *Container) void {
-            inline for (0..ops.len) |i| {
-                switch (ops[ops.len - 1 - i]) {
-                    .dep => |dep| {
-                        dep.deinitInstance(&self.data, &ct.injector);
-                    },
-
-                    .hook => |hook| {
-                        if (hook.kind == .deinit) {
-                            // TODO: this is not 100% right (child scopes)
-                            ct.injector.call0(hook.fun.unwrap()) catch unreachable;
-                        }
-                    },
                 }
             }
         }
@@ -639,4 +635,40 @@ test "M.configure()" {
 
     const s2 = try ct.injector.get(*S2);
     try std.testing.expectEqual(123, s2.dep.x);
+}
+
+test "partial deinit" {
+    const H = struct {
+        fn Alloc(comptime T: type) type {
+            return struct {
+                ptr: *T,
+
+                pub fn init(allocator: std.mem.Allocator) !@This() {
+                    return .{ .ptr = try allocator.create(T) };
+                }
+
+                pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
+                    allocator.destroy(self.ptr);
+                }
+            };
+        }
+    };
+
+    const Fail = struct {
+        pub fn init(_: *std.ArrayList(u8), _: *std.ArrayList(i8)) !@This() {
+            return error.SomethingWentWrong;
+        }
+
+        pub fn deinit(_: *@This()) void {
+            unreachable;
+        }
+    };
+
+    const App = struct {
+        dep1: H.Alloc(u8),
+        dep2: H.Alloc(i8),
+        fail: Fail,
+    };
+
+    _ = Container.init(std.testing.allocator, &.{App}) catch {};
 }
