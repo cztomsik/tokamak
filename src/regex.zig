@@ -31,6 +31,7 @@ pub const Grep = struct {
 };
 
 // https://www.cs.princeton.edu/courses/archive/spr09/cos333/beautiful.html
+// https://dl.acm.org/doi/pdf/10.1145/363347.363387
 // https://swtch.com/~rsc/regexp/regexp1.html
 // https://swtch.com/~rsc/regexp/regexp2.html
 // https://swtch.com/~rsc/regexp/regexp3.html
