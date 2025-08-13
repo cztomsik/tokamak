@@ -36,6 +36,7 @@ pub const Grep = struct {
 // https://swtch.com/~rsc/regexp/regexp2.html
 // https://swtch.com/~rsc/regexp/regexp3.html
 pub const Regex = struct {
+    // [ops_main][...ops_clz]
     code: []const Op,
 
     pub fn compile(allocator: std.mem.Allocator, regex: []const u8) !Regex {
@@ -62,24 +63,33 @@ pub const Regex = struct {
 const Compiler = struct {
     allocator: std.mem.Allocator,
     tokenizer: Tokenizer,
-    code: Buf(Op),
+    ops_main: Buf(Op),
+    ops_clz: Buf(Op),
     stack: Buf([3]i8),
     anchored: bool,
     start: i8 = 0,
     atom: i8 = 0,
     hole: i8 = 0,
+    clz_start: u8 = 0,
+
+    const Info = struct {
+        anchored: bool,
+        depth: usize,
+        n_main: usize,
+        n_clz: usize,
+    };
 
     fn init(allocator: std.mem.Allocator, regex: []const u8) !Compiler {
         var tokenizer: Tokenizer = .{ .input = regex };
-        const len, const depth, const anchored = try countAndValidate(&tokenizer);
+        const info = try analyze(&tokenizer);
 
-        var code: Buf(Op) = try .initAlloc(allocator, len);
-        errdefer code.deinit(allocator);
+        const code = try allocator.alloc(Op, info.n_main + info.n_clz);
+        errdefer allocator.free(code);
 
-        var stack: Buf([3]i8) = try .initAlloc(allocator, depth);
+        var stack: Buf([3]i8) = try .initAlloc(allocator, info.depth);
         errdefer stack.deinit(allocator);
 
-        if (len > 64) {
+        if (info.n_main > 64) {
             // TODO: we should first attempt to optimize the regex before failing.
             return error.RegexTooComplex;
         }
@@ -87,14 +97,15 @@ const Compiler = struct {
         return .{
             .allocator = allocator,
             .tokenizer = tokenizer,
-            .code = code,
+            .ops_main = .init(code[0..info.n_main]),
+            .ops_clz = .init(code[info.n_main..]),
             .stack = stack,
-            .anchored = anchored,
+            .anchored = info.anchored,
         };
     }
 
     fn deinit(self: *Compiler) void {
-        self.code.deinit(self.allocator);
+        self.allocator.free(self.ops_main.buf.ptr[0 .. self.ops_main.buf.len + self.ops_clz.buf.len]);
         self.stack.deinit(self.allocator);
     }
 
@@ -106,11 +117,14 @@ const Compiler = struct {
         }
 
         while (self.tokenizer.next()) |tok| {
-            const end: i8 = @intCast(self.code.len);
+            const end: i8 = @intCast(self.ops_main.len);
 
             switch (tok) {
                 inline else => |arg, t| {
-                    self.atom = end;
+                    if (!self.tokenizer.in_bracket) {
+                        self.atom = end;
+                    }
+
                     self.push(@unionInit(Op, @tagName(t), arg));
                 },
 
@@ -152,32 +166,41 @@ const Compiler = struct {
                     // Point any previous hole to our newly created holey-jmp (double-jump)
                     // NOTE: we could probably inline/flatten these in a second-pass (optimization?)
                     if (self.hole > 0) {
-                        self.code.buf[@intCast(self.hole)].ijmp = @as(i8, @intCast(self.code.len)) - self.hole;
+                        self.ops_main.buf[@intCast(self.hole)].ijmp = @as(i8, @intCast(self.ops_main.len)) - self.hole;
                     }
 
                     // Create a jump with a hole
-                    self.hole = @intCast(self.code.len);
+                    self.hole = @intCast(self.ops_main.len);
                     self.push(.{ .ijmp = if (comptime builtin.is_test) 0x7F else 1 }); // so it blows if we don't fill it
-                    self.start = @intCast(self.code.len);
+                    self.start = @intCast(self.ops_main.len);
                 },
 
                 .lparen => {
                     self.stack.push(.{ self.start, end, self.hole });
 
-                    self.start = @intCast(self.code.len);
+                    self.start = @intCast(self.ops_main.len);
                     self.atom = end;
                     self.hole = 0;
                 },
 
                 .rparen => {
                     if (self.hole > 0) {
-                        self.code.buf[@intCast(self.hole)].ijmp = end - self.hole;
+                        self.ops_main.buf[@intCast(self.hole)].ijmp = end - self.hole;
                     }
 
                     const x = self.stack.pop().?;
                     self.start = x[0];
                     self.atom = x[1];
                     self.hole = x[2];
+                },
+
+                .lbracket => {
+                    self.clz_start = @intCast(self.ops_main.buf.len + self.ops_clz.len);
+                },
+
+                .rbracket => {
+                    self.atom = end;
+                    self.push(.{ .char_class = .{ self.clz_start, @intCast(self.ops_main.buf.len + self.ops_clz.len) } });
                 },
 
                 .caret => self.push(.begin),
@@ -187,8 +210,8 @@ const Compiler = struct {
 
         // Pending pipe?
         if (self.hole > 0) {
-            const end: i8 = @intCast(self.code.len);
-            self.code.buf[@intCast(self.hole)].ijmp = end - self.hole;
+            const end: i8 = @intCast(self.ops_main.len);
+            self.ops_main.buf[@intCast(self.hole)].ijmp = end - self.hole;
         }
 
         // Add final match
@@ -196,7 +219,7 @@ const Compiler = struct {
     }
 
     fn optimize(self: *Compiler) void {
-        for (self.code.buf[0..self.code.len], 0..) |*op, pc| {
+        for (self.ops_main.buf[0..self.ops_main.len], 0..) |*op, pc| {
             const base: i8 = @intCast(pc);
 
             switch (op.*) {
@@ -217,19 +240,27 @@ const Compiler = struct {
     }
 
     fn push(self: *Compiler, op: Op) void {
-        self.code.push(op);
+        if (self.tokenizer.in_bracket) {
+            self.ops_clz.push(op);
+        } else {
+            self.ops_main.push(op);
+        }
     }
 
     fn insert(self: *Compiler, pos: i8, op: Op) void {
-        self.code.insert(@intCast(pos), op);
+        std.debug.assert(!self.tokenizer.in_bracket);
+        self.ops_main.insert(@intCast(pos), op);
     }
 
     fn finish(self: *Compiler) ![]const Op {
-        return self.code.finish();
+        // Save the ptr first bc. finish() would invalidate it
+        const ptr = self.ops_main.buf.ptr;
+        return ptr[0 .. self.ops_main.finish().len + self.ops_clz.finish().len];
     }
 
-    fn countAndValidate(tokenizer: *Tokenizer) !struct { usize, usize, bool } {
-        var len: usize = 1; // we always append match
+    fn analyze(tokenizer: *Tokenizer) !Info {
+        var n_main: usize = 1; // we always append match
+        var n_clz: usize = 0; // total count of ops inside brackets
         var depth: usize = 0; // current grouping level
         var max_depth: usize = 0; // stack size we need for compilation
         var can_repeat: bool = false; // repeating & empty groups
@@ -250,16 +281,26 @@ const Compiler = struct {
                     max_depth = @max(depth, max_depth);
                 },
                 .rparen => {
-                    if (depth == 0) return error.NothingToClose;
+                    if (depth == 0) return error.NoGroupToClose;
                     if (!can_repeat) return error.EmptyGroup;
                     depth -= 1;
                 },
-                .pipe, .star => len += 2,
-                else => len += 1,
+                .lbracket => {
+                    n_main += 1;
+                },
+                .rbracket => {},
+                .pipe, .star => n_main += 2,
+                else => {
+                    if (tokenizer.in_bracket) {
+                        n_clz += 1;
+                    } else {
+                        n_main += 1;
+                    }
+                },
             }
 
             can_repeat = switch (tok) {
-                .char, .dot, .dotstar, .rparen, .que, .plus, .star, .word, .non_word, .digit, .non_digit, .space, .non_space => true,
+                .char, .dot, .dotstar, .rparen, .rbracket, .que, .plus, .star, .word, .non_word, .digit, .non_digit, .space, .non_space => true,
                 else => false,
             };
         }
@@ -268,13 +309,23 @@ const Compiler = struct {
             return error.UnclosedGroup;
         }
 
+        if (tokenizer.in_bracket) {
+            return error.UnclosedBracket;
+        }
+
         if (!anchored) {
-            len += 1; // Implicit .dotstar at the beginning
+            n_main += 1; // Implicit .dotstar at the beginning
         }
 
         // Reset and return
         tokenizer.pos = 0;
-        return .{ len, max_depth, anchored };
+
+        return .{
+            .n_main = n_main,
+            .n_clz = n_clz,
+            .depth = max_depth,
+            .anchored = anchored,
+        };
     }
 };
 
@@ -294,12 +345,15 @@ const Token = union(enum) {
     pipe,
     lparen,
     rparen,
+    lbracket,
+    rbracket,
     dollar,
     caret,
 };
 
 const Tokenizer = struct {
     input: []const u8,
+    in_bracket: bool = false,
     pos: usize = 0,
 
     fn next(self: *Tokenizer) ?Token {
@@ -322,6 +376,17 @@ const Tokenizer = struct {
                 };
             }
 
+            // TODO: ranges, ^, escapes?
+            if (self.in_bracket) {
+                return switch (ch) {
+                    ']' => {
+                        self.in_bracket = false;
+                        return .rbracket;
+                    },
+                    else => .{ .char = ch },
+                };
+            }
+
             return switch (ch) {
                 '.' => {
                     if (self.pos < self.input.len and self.input[self.pos] == '*') {
@@ -337,6 +402,11 @@ const Tokenizer = struct {
                 '|' => .pipe,
                 '(' => .lparen,
                 ')' => .rparen,
+                '[' => {
+                    self.in_bracket = true;
+                    return .lbracket;
+                },
+                ']' => .rbracket,
                 '^' => .caret,
                 '$' => .dollar,
                 else => .{ .char = ch },
@@ -363,7 +433,7 @@ const Op = union(enum) {
     non_space,
 
     // Char classes [\w_]
-    // char_class: u8, // index into regex.char_classes
+    char_class: [2]u8, // [start, end]
 
     // Branching
     jmp: u8,
@@ -378,20 +448,6 @@ const Op = union(enum) {
     isplit: [2]i8,
     iplus: i8,
     _,
-
-    fn matchChar(self: Op, ch: u8) bool {
-        return switch (self) {
-            .char => self.char == ch,
-            .dot => true,
-            .word => isWord(ch),
-            .non_word => !isWord(ch),
-            .digit => std.ascii.isDigit(ch),
-            .non_digit => !std.ascii.isDigit(ch),
-            .space => std.ascii.isWhitespace(ch),
-            .non_space => !std.ascii.isWhitespace(ch),
-            else => unreachable,
-        };
-    }
 };
 
 fn maskPc(pc: usize) u64 {
@@ -437,7 +493,10 @@ fn pikevm(code: []const Op, text: []const u8) bool {
                     if (sp < text.len) nlist |= maskPc(pc);
                 },
                 .char, .dot, .word, .non_word, .digit, .non_digit, .space, .non_space => {
-                    if (sp < text.len and op.matchChar(text[sp])) nlist |= maskPc(pc + 1);
+                    if (sp < text.len and matchChar(op, text[sp])) nlist |= maskPc(pc + 1);
+                },
+                .char_class => |clz| {
+                    if (sp < text.len and matchCharClass(code[clz[0]..clz[1]], text[sp])) nlist |= maskPc(pc + 1);
                 },
                 .jmp => |addr| {
                     clist |= maskPc(addr);
@@ -464,6 +523,26 @@ fn pikevm(code: []const Op, text: []const u8) bool {
     return false;
 }
 
+fn matchChar(op: Op, ch: u8) bool {
+    return switch (op) {
+        .char => op.char == ch,
+        .dot => true,
+        .word => isWord(ch),
+        .non_word => !isWord(ch),
+        .digit => std.ascii.isDigit(ch),
+        .non_digit => !std.ascii.isDigit(ch),
+        .space => std.ascii.isWhitespace(ch),
+        .non_space => !std.ascii.isWhitespace(ch),
+        else => unreachable,
+    };
+}
+
+fn matchCharClass(char_ops: []const Op, ch: u8) bool {
+    for (char_ops) |op| {
+        if (matchChar(op, ch)) return true;
+    } else return false;
+}
+
 fn isWord(ch: u8) bool {
     return std.ascii.isAlphabetic(ch) or std.ascii.isDigit(ch) or ch == '_';
 }
@@ -488,6 +567,11 @@ test Tokenizer {
     try expectTokens("\\.+\\+\\\\", &.{ .char, .plus, .char, .char });
     try expectTokens(".*\\w\\W\\d\\D+", &.{ .dotstar, .word, .non_word, .digit, .non_digit, .plus });
     try expectTokens("\\s\\S+", &.{ .space, .non_space, .plus });
+    try expectTokens("[abc]", &.{ .lbracket, .char, .char, .char, .rbracket });
+    try expectTokens("[ab.]", &.{ .lbracket, .char, .char, .char, .rbracket });
+    try expectTokens("[\\w.]", &.{ .lbracket, .word, .char, .rbracket });
+    // TODO: Fix this when we have ranges
+    try expectTokens("[a-z]", &.{ .lbracket, .char, .char, .char, .rbracket });
 }
 
 fn expectCompile(regex: []const u8, expected: []const u8) !void {
@@ -522,7 +606,7 @@ test "Regex.compile()" {
     try testing.expectError(Regex.compile(undefined, "+"), error.NothingToRepeat);
     try testing.expectError(Regex.compile(undefined, "*"), error.NothingToRepeat);
     try testing.expectError(Regex.compile(undefined, "()"), error.EmptyGroup);
-    try testing.expectError(Regex.compile(undefined, ")"), error.NothingToClose);
+    try testing.expectError(Regex.compile(undefined, ")"), error.NoGroupToClose);
     try testing.expectError(Regex.compile(undefined, "("), error.UnclosedGroup);
 
     try expectCompile("",
@@ -857,6 +941,13 @@ test "Regex.match()" {
         .{ "dir/test.txt", true },
         .{ "file.pdf", false },
         .{ "filetxt", false },
+    });
+
+    try expectMatches("^[\\w_]+", &.{
+        .{ "foo", true },
+        .{ "foo_bar", true },
+        .{ "@foo", false },
+        .{ "", false },
     });
 }
 
