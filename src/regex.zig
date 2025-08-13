@@ -67,7 +67,7 @@ const Compiler = struct {
     anchored: bool,
     start: i8 = 0,
     atom: i8 = 0,
-    hole: i8 = -1,
+    hole: i8 = 0,
 
     fn init(allocator: std.mem.Allocator, regex: []const u8) !Compiler {
         var tokenizer: Tokenizer = .{ .input = regex };
@@ -152,14 +152,13 @@ const Compiler = struct {
                     // Point any previous hole to our newly created holey-jmp (double-jump)
                     // NOTE: we could probably inline/flatten these in a second-pass (optimization?)
                     if (self.hole > 0) {
-                        self.code.buf[@intCast(self.hole)].ijmp = @as(i8, @intCast(self.code.len)) - self.hole + 1;
+                        self.code.buf[@intCast(self.hole)].ijmp = @as(i8, @intCast(self.code.len)) - self.hole;
                     }
 
                     // Create a jump with a hole
+                    self.hole = @intCast(self.code.len);
                     self.push(.{ .ijmp = if (comptime builtin.is_test) 0x7F else 1 }); // so it blows if we don't fill it
-
                     self.start = @intCast(self.code.len);
-                    self.hole = @intCast(self.code.len - 1);
                 },
 
                 .lparen => {
@@ -167,7 +166,7 @@ const Compiler = struct {
 
                     self.start = @intCast(self.code.len);
                     self.atom = end;
-                    self.hole = -1;
+                    self.hole = 0;
                 },
 
                 .rparen => {
@@ -625,7 +624,7 @@ test "Regex.compile()" {
         \\  0: dotstar
         \\  1: split :2 :4
         \\  2: char a
-        \\  3: jmp :7
+        \\  3: jmp :6
         \\  4: split :5 :7
         \\  5: char b
         \\  6: jmp :8
@@ -679,7 +678,7 @@ test "Regex.compile()" {
         \\  0: dotstar
         \\  1: split :2 :4
         \\  2: char a
-        \\  3: jmp :7
+        \\  3: jmp :6
         \\  4: split :5 :7
         \\  5: char b
         \\  6: jmp :8
