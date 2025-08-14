@@ -36,7 +36,8 @@ pub const Grep = struct {
 // https://swtch.com/~rsc/regexp/regexp2.html
 // https://swtch.com/~rsc/regexp/regexp3.html
 pub const Regex = struct {
-    code: []const i32,
+    // [ops_main][...ops_clz]
+    code: []const Op,
 
     pub fn compile(allocator: std.mem.Allocator, regex: []const u8) !Regex {
         var compiler = try Compiler.init(allocator, regex);
@@ -62,24 +63,33 @@ pub const Regex = struct {
 const Compiler = struct {
     allocator: std.mem.Allocator,
     tokenizer: Tokenizer,
-    code: Buf(i32),
-    stack: Buf([3]i32),
+    ops_main: Buf(Op),
+    ops_clz: Buf(Op),
+    stack: Buf([3]i8),
     anchored: bool,
-    start: i32 = 0,
-    atom: i32 = 0,
-    hole: i32 = -1,
+    start: i8 = 0,
+    atom: i8 = 0,
+    hole: i8 = 0,
+    clz_start: u8 = 0,
+
+    const Info = struct {
+        anchored: bool,
+        depth: usize,
+        n_main: usize,
+        n_clz: usize,
+    };
 
     fn init(allocator: std.mem.Allocator, regex: []const u8) !Compiler {
         var tokenizer: Tokenizer = .{ .input = regex };
-        const len, const depth, const anchored = try countAndValidate(&tokenizer);
+        const info = try analyze(&tokenizer);
 
-        var code: Buf(i32) = try .initAlloc(allocator, len);
-        errdefer code.deinit(allocator);
+        const code = try allocator.alloc(Op, info.n_main + info.n_clz);
+        errdefer allocator.free(code);
 
-        var stack: Buf([3]i32) = try .initAlloc(allocator, depth);
+        var stack: Buf([3]i8) = try .initAlloc(allocator, info.depth);
         errdefer stack.deinit(allocator);
 
-        if (len > 64) {
+        if (info.n_main > 64) {
             // TODO: we should first attempt to optimize the regex before failing.
             return error.RegexTooComplex;
         }
@@ -87,14 +97,15 @@ const Compiler = struct {
         return .{
             .allocator = allocator,
             .tokenizer = tokenizer,
-            .code = code,
+            .ops_main = .init(code[0..info.n_main]),
+            .ops_clz = .init(code[info.n_main..]),
             .stack = stack,
-            .anchored = anchored,
+            .anchored = info.anchored,
         };
     }
 
     fn deinit(self: *Compiler) void {
-        self.code.deinit(self.allocator);
+        self.allocator.free(self.ops_main.buf.ptr[0 .. self.ops_main.buf.len + self.ops_clz.buf.len]);
         self.stack.deinit(self.allocator);
     }
 
@@ -106,18 +117,21 @@ const Compiler = struct {
         }
 
         while (self.tokenizer.next()) |tok| {
-            const end: i32 = @intCast(self.code.len);
+            const end: i8 = @intCast(self.ops_main.len);
 
             switch (tok) {
                 inline else => |arg, t| {
-                    self.atom = end;
+                    if (!self.tokenizer.in_bracket) {
+                        self.atom = end;
+                    }
+
                     self.push(@unionInit(Op, @tagName(t), arg));
                 },
 
                 .que => {
                     self.insert(self.atom, .{
                         .isplit = .{
-                            2, // run the check
+                            1, // run the check
                             end - self.atom + 1, // jump out otherwise
                         },
                     });
@@ -125,60 +139,68 @@ const Compiler = struct {
 
                 .plus => {
                     self.push(.{
-                        .iplus = self.atom - end - 1,
+                        .iplus = self.atom - end,
                     });
                 },
 
                 .star => {
                     self.insert(self.atom, .{
                         .isplit = .{
-                            2, // run the check
-                            end - self.atom + 3, // jump out otherwise
+                            1, // run the check
+                            end - self.atom + 2, // jump out otherwise
                         },
                     });
 
                     // Keep repeating
-                    self.push(.{ .ijmp = self.atom - end - 4 });
+                    self.push(.{ .ijmp = self.atom - end - 1 });
                 },
 
                 .pipe => {
                     self.insert(self.start, .{
                         .isplit = .{
-                            2, // LHS branch (which ends with holey-jmp)
-                            end - self.start + 3, // RHS
+                            1, // LHS branch (which ends with holey-jmp)
+                            end - self.start + 2, // RHS
                         },
                     });
 
                     // Point any previous hole to our newly created holey-jmp (double-jump)
                     // NOTE: we could probably inline/flatten these in a second-pass (optimization?)
                     if (self.hole > 0) {
-                        self.code.buf[@intCast(self.hole)] = @as(i32, @intCast(self.code.len)) - self.hole; // relative to the jmp itself
+                        self.ops_main.buf[@intCast(self.hole)].ijmp = @as(i8, @intCast(self.ops_main.len)) - self.hole;
                     }
 
                     // Create a jump with a hole
-                    self.push(.{ .ijmp = if (comptime builtin.is_test) 0x7FFFFFFF else 1 }); // so it blows if we don't fill it
-
-                    self.start = @intCast(self.code.len);
-                    self.hole = @intCast(self.code.len - 1);
+                    self.hole = @intCast(self.ops_main.len);
+                    self.push(.{ .ijmp = if (comptime builtin.is_test) 0x7F else 1 }); // so it blows if we don't fill it
+                    self.start = @intCast(self.ops_main.len);
                 },
 
                 .lparen => {
                     self.stack.push(.{ self.start, end, self.hole });
 
-                    self.start = @intCast(self.code.len);
+                    self.start = @intCast(self.ops_main.len);
                     self.atom = end;
-                    self.hole = -1;
+                    self.hole = 0;
                 },
 
                 .rparen => {
                     if (self.hole > 0) {
-                        self.code.buf[@intCast(self.hole)] = end - self.hole; // relative to the jmp itself
+                        self.ops_main.buf[@intCast(self.hole)].ijmp = end - self.hole;
                     }
 
                     const x = self.stack.pop().?;
                     self.start = x[0];
                     self.atom = x[1];
                     self.hole = x[2];
+                },
+
+                .lbracket => {
+                    self.clz_start = @intCast(self.ops_main.buf.len + self.ops_clz.len);
+                },
+
+                .rbracket => {
+                    self.atom = end;
+                    self.push(.{ .char_class = .{ self.clz_start, @intCast(self.ops_main.buf.len + self.ops_clz.len) } });
                 },
 
                 .caret => self.push(.begin),
@@ -188,8 +210,8 @@ const Compiler = struct {
 
         // Pending pipe?
         if (self.hole > 0) {
-            const end: i32 = @intCast(self.code.len);
-            self.code.buf[@intCast(self.hole)] = end - self.hole; // relative to the jmp itself
+            const end: i8 = @intCast(self.ops_main.len);
+            self.ops_main.buf[@intCast(self.hole)].ijmp = end - self.hole;
         }
 
         // Add final match
@@ -197,55 +219,48 @@ const Compiler = struct {
     }
 
     fn optimize(self: *Compiler) void {
-        const code = self.code.buf[0..self.code.len];
-        var pc: usize = 0;
+        for (self.ops_main.buf[0..self.ops_main.len], 0..) |*op, pc| {
+            const base: i8 = @intCast(pc);
 
-        while (pc < code.len) {
-            const op_code: OpCode = @enumFromInt(code[pc]);
-            const base: i32 = @intCast(pc);
+            switch (op.*) {
+                .ijmp => |off| op.* = .{ .jmp = @intCast(base + off) },
 
-            switch (op_code) {
-                .ijmp => {
-                    code[pc] = @intFromEnum(OpCode.jmp);
-                    code[pc + 1] += base + 1;
+                .isplit => |offs| op.* = .{
+                    .split = .{
+                        @intCast(base + offs[0]),
+                        @intCast(base + offs[1]),
+                    },
                 },
 
-                .isplit => {
-                    code[pc] = @intFromEnum(OpCode.split);
-                    code[pc + 1] += base + 1;
-                    code[pc + 2] += base + 2;
-                },
-
-                .iplus => {
-                    code[pc] = @intFromEnum(OpCode.plus);
-                    code[pc + 1] += base + 1;
-                },
+                .iplus => |off| op.* = .{ .plus = @intCast(base + off) },
 
                 else => {},
             }
-
-            pc += Op.opLen(op_code);
         }
     }
 
     fn push(self: *Compiler, op: Op) void {
-        op.encode(self.code.buf[self.code.len..].ptr);
-        self.code.len += op.len();
+        if (self.tokenizer.in_bracket) {
+            self.ops_clz.push(op);
+        } else {
+            self.ops_main.push(op);
+        }
     }
 
-    fn insert(self: *Compiler, pos: i32, op: Op) void {
-        // TODO: find a better way...
-        var buf: [3]i32 = undefined;
-        op.encode(@as([]i32, buf[0..]).ptr);
-        self.code.insertSlice(@intCast(pos), buf[0..op.len()]);
+    fn insert(self: *Compiler, pos: i8, op: Op) void {
+        std.debug.assert(!self.tokenizer.in_bracket);
+        self.ops_main.insert(@intCast(pos), op);
     }
 
-    fn finish(self: *Compiler) ![]const i32 {
-        return self.code.finish();
+    fn finish(self: *Compiler) ![]const Op {
+        // Save the ptr first bc. finish() would invalidate it
+        const ptr = self.ops_main.buf.ptr;
+        return ptr[0 .. self.ops_main.finish().len + self.ops_clz.finish().len];
     }
 
-    fn countAndValidate(tokenizer: *Tokenizer) !struct { usize, usize, bool } {
-        var len: usize = 1; // we always append match
+    fn analyze(tokenizer: *Tokenizer) !Info {
+        var n_main: usize = 1; // we always append match
+        var n_clz: usize = 0; // total count of ops inside brackets
         var depth: usize = 0; // current grouping level
         var max_depth: usize = 0; // stack size we need for compilation
         var can_repeat: bool = false; // repeating & empty groups
@@ -266,18 +281,26 @@ const Compiler = struct {
                     max_depth = @max(depth, max_depth);
                 },
                 .rparen => {
-                    if (depth == 0) return error.NothingToClose;
+                    if (depth == 0) return error.NoGroupToClose;
                     if (!can_repeat) return error.EmptyGroup;
                     depth -= 1;
                 },
-                .dot, .dotstar, .word, .non_word, .digit, .non_digit, .space, .non_space, .dollar, .caret => len += 1,
-                .char, .plus => len += 2,
-                .que => len += 3,
-                .star, .pipe => len += 5,
+                .lbracket => {
+                    n_main += 1;
+                },
+                .rbracket => {},
+                .pipe, .star => n_main += 2,
+                else => {
+                    if (tokenizer.in_bracket) {
+                        n_clz += 1;
+                    } else {
+                        n_main += 1;
+                    }
+                },
             }
 
             can_repeat = switch (tok) {
-                .char, .dot, .dotstar, .rparen, .que, .plus, .star, .word, .non_word, .digit, .non_digit, .space, .non_space => true,
+                .char, .dot, .dotstar, .rparen, .rbracket, .que, .plus, .star, .word, .non_word, .digit, .non_digit, .space, .non_space => true,
                 else => false,
             };
         }
@@ -286,18 +309,29 @@ const Compiler = struct {
             return error.UnclosedGroup;
         }
 
+        if (tokenizer.in_bracket) {
+            return error.UnclosedBracket;
+        }
+
         if (!anchored) {
-            len += 1; // Implicit .dotstar at the beginning
+            n_main += 1; // Implicit .dotstar at the beginning
         }
 
         // Reset and return
         tokenizer.pos = 0;
-        return .{ len, max_depth, anchored };
+
+        return .{
+            .n_main = n_main,
+            .n_clz = n_clz,
+            .depth = max_depth,
+            .anchored = anchored,
+        };
     }
 };
 
 const Token = union(enum) {
     char: u8,
+    byte_range: [2]u8,
     dot,
     dotstar,
     word,
@@ -312,73 +346,80 @@ const Token = union(enum) {
     pipe,
     lparen,
     rparen,
+    lbracket,
+    rbracket,
     dollar,
     caret,
 };
 
 const Tokenizer = struct {
     input: []const u8,
+    in_bracket: bool = false,
     pos: usize = 0,
 
     fn next(self: *Tokenizer) ?Token {
-        while (self.pos < self.input.len) {
-            const ch = self.input[self.pos];
+        if (self.pos >= self.input.len) return null;
+        const ch = self.input[self.pos];
+        self.pos += 1;
+
+        if (self.in_bracket and self.pos < self.input.len - 1 and self.input[self.pos] == '-' and self.input[self.pos + 1] != ']') {
+            const tok: Token = .{ .byte_range = .{ ch, self.input[self.pos + 1] } };
+            self.pos += 2;
+            return tok;
+        }
+
+        if (ch == '\\' and self.pos < self.input.len) {
+            const next_ch = self.input[self.pos];
             self.pos += 1;
 
-            if (ch == '\\' and self.pos < self.input.len) {
-                const next_ch = self.input[self.pos];
-                self.pos += 1;
+            return switch (next_ch) {
+                'w' => .word,
+                'W' => .non_word,
+                'd' => .digit,
+                'D' => .non_digit,
+                's' => .space,
+                'S' => .non_space,
+                else => .{ .char = next_ch },
+            };
+        }
 
-                return switch (next_ch) {
-                    'w' => .word,
-                    'W' => .non_word,
-                    'd' => .digit,
-                    'D' => .non_digit,
-                    's' => .space,
-                    'S' => .non_space,
-                    else => .{ .char = next_ch },
-                };
-            }
-
+        // TODO: ^, escapes?
+        if (self.in_bracket) {
             return switch (ch) {
-                '.' => {
-                    if (self.pos < self.input.len and self.input[self.pos] == '*') {
-                        self.pos += 1;
-                        return .dotstar;
-                    }
-
-                    return .dot;
+                ']' => {
+                    self.in_bracket = false;
+                    return .rbracket;
                 },
-                '?' => .que,
-                '+' => .plus,
-                '*' => .star,
-                '|' => .pipe,
-                '(' => .lparen,
-                ')' => .rparen,
-                '^' => .caret,
-                '$' => .dollar,
                 else => .{ .char = ch },
             };
         }
 
-        return null;
+        return switch (ch) {
+            '.' => {
+                if (self.pos < self.input.len and self.input[self.pos] == '*') {
+                    self.pos += 1;
+                    return .dotstar;
+                }
+
+                return .dot;
+            },
+            '?' => .que,
+            '+' => .plus,
+            '*' => .star,
+            '|' => .pipe,
+            '(' => .lparen,
+            ')' => .rparen,
+            '[' => {
+                self.in_bracket = true;
+                return .lbracket;
+            },
+            ']' => .rbracket,
+            '^' => .caret,
+            '$' => .dollar,
+            else => .{ .char = ch },
+        };
     }
 };
-
-// TODO: We should probably use packed union because then we can remove i32
-//       entirely, and we will still be able to easily re-interpret memory.
-//       I think we will need to let go Op as union(enum) but I was not 100%
-//       happy about it anyway. So something like `op.code.len()` -  but it will
-//       be non-trivial change, so let's keep it for later. We could also "inline"
-//       some args directly (and save "op space"), and maybe, we could also
-//       put large args into a separate array, and only save an index into it.
-//
-//       Alternate idea: We could remove encoding/decoding entirely, because
-//       our code will never be longer than N, which fits into u8, so [2]u8
-//       should still be plenty of space for i32. The original intention for i32
-//       was because of utf-8 but given how non-common it is, we could simply
-//       push all non-ascii codepoints into a separate list, and use indices
-const OpCode = std.meta.Tag(Op);
 
 const Op = union(enum) {
     begin,
@@ -396,84 +437,22 @@ const Op = union(enum) {
     non_space,
 
     // Char classes [\w_]
-    // char_class: u8, // index into regex.char_classes
+    char_class: [2]u8, // [start, end]
+    byte_range: [2]u8, // [from, to]
 
     // Branching
-    jmp: u32,
-    split: [2]u32,
-    plus: u32,
+    jmp: u8,
+    split: [2]u8,
+    plus: u8,
 
     // Final op
     match,
 
-    // Intermediate - replaced during optimize()
-    ijmp: i32,
-    isplit: [2]i32,
-    iplus: i32,
+    // Replaced during optimize()
+    ijmp: i8,
+    isplit: [2]i8,
+    iplus: i8,
     _,
-
-    fn name(self: Op) []const u8 {
-        return switch (self) {
-            .begin, .end, .char, .dot, .dotstar, .word, .non_word, .digit, .non_digit, .space, .non_space, .match, .jmp, .split, .plus => @tagName(self),
-            else => "???",
-        };
-    }
-
-    fn len(self: Op) usize {
-        return opLen(self);
-    }
-
-    fn opLen(code: OpCode) usize {
-        return switch (code) {
-            .split, .isplit => 3,
-            .char, .jmp, .plus, .ijmp, .iplus => 2,
-            else => 1,
-        };
-    }
-
-    fn matchChar(self: Op, ch: u8) bool {
-        return switch (self) {
-            .char => self.char == ch,
-            .dot => true,
-            .word => isWord(ch),
-            .non_word => !isWord(ch),
-            .digit => std.ascii.isDigit(ch),
-            .non_digit => !std.ascii.isDigit(ch),
-            .space => std.ascii.isWhitespace(ch),
-            .non_space => !std.ascii.isWhitespace(ch),
-            else => unreachable,
-        };
-    }
-
-    fn encode(self: Op, pc: [*]i32) void {
-        pc[0] = @intFromEnum(self);
-
-        switch (self) {
-            else => {},
-            .char => |ch| pc[1] = @intCast(ch),
-            .ijmp => |off| pc[1] = off,
-            .isplit => |offs| pc[1..3].* = offs,
-            .iplus => |off| pc[1] = off,
-            .jmp => |addr| pc[1] = @bitCast(addr),
-            .split => |addrs| pc[1..3].* = @bitCast(addrs),
-            .plus => |addr| pc[1] = @bitCast(addr),
-        }
-    }
-
-    fn decode(pc: [*]const i32) Op {
-        const kind: OpCode = @enumFromInt(pc[0]);
-
-        return switch (kind) {
-            inline else => |t| @field(Op, @tagName(t)),
-            .char => .{ .char = @intCast(pc[1]) },
-            .jmp => .{ .jmp = @bitCast(pc[1]) },
-            .split => .{ .split = @bitCast(pc[1..3].*) },
-            .plus => .{ .plus = @bitCast(pc[1]) },
-            .ijmp => .{ .ijmp = pc[1] },
-            .isplit => .{ .isplit = pc[1..3].* },
-            .iplus => .{ .iplus = pc[1] },
-        };
-    }
 };
 
 fn maskPc(pc: usize) u64 {
@@ -483,7 +462,7 @@ fn maskPc(pc: usize) u64 {
 // https://dl.acm.org/doi/10.1145/363347.363387
 // https://swtch.com/~rsc/regexp/regexp2.html#pike
 // TODO: captures
-fn pikevm(code: []const i32, text: []const u8) bool {
+fn pikevm(code: []const Op, text: []const u8) bool {
     // We only support N ops so we can actually encode both [N]Thread lists as
     // bitsets where each position represents the thread's PC. Even better, we
     // get de-duping and "same-char" ticks for free.
@@ -505,7 +484,7 @@ fn pikevm(code: []const i32, text: []const u8) bool {
             if ((guard & mask) != 0) continue;
             guard |= mask;
 
-            const op = Op.decode(code[pc..].ptr);
+            const op = code[pc];
 
             switch (op) {
                 .begin => {
@@ -518,12 +497,11 @@ fn pikevm(code: []const i32, text: []const u8) bool {
                     clist |= maskPc(pc + 1);
                     if (sp < text.len) nlist |= maskPc(pc);
                 },
-                .char => |ch| {
-                    if (sp < text.len and text[sp] == ch)
-                        nlist |= maskPc(pc + 2);
+                .char, .dot, .word, .non_word, .digit, .non_digit, .space, .non_space => {
+                    if (sp < text.len and matchChar(op, text[sp])) nlist |= maskPc(pc + 1);
                 },
-                .dot, .word, .non_word, .digit, .non_digit, .space, .non_space => {
-                    if (sp < text.len and op.matchChar(text[sp])) nlist |= maskPc(pc + 1);
+                .char_class => |clz| {
+                    if (sp < text.len and matchCharClass(code[clz[0]..clz[1]], text[sp])) nlist |= maskPc(pc + 1);
                 },
                 .jmp => |addr| {
                     clist |= maskPc(addr);
@@ -534,7 +512,7 @@ fn pikevm(code: []const i32, text: []const u8) bool {
                 },
                 .plus => |addr| {
                     clist |= maskPc(addr);
-                    clist |= maskPc(pc + 2);
+                    clist |= maskPc(pc + 1);
                 },
                 .match => return true,
                 .ijmp, .isplit, .iplus => unreachable,
@@ -548,6 +526,33 @@ fn pikevm(code: []const i32, text: []const u8) bool {
     }
 
     return false;
+}
+
+fn matchChar(op: Op, ch: u8) bool {
+    return switch (op) {
+        .char => op.char == ch,
+        .dot => true,
+        .word => isWord(ch),
+        .non_word => !isWord(ch),
+        .digit => std.ascii.isDigit(ch),
+        .non_digit => !std.ascii.isDigit(ch),
+        .space => std.ascii.isWhitespace(ch),
+        .non_space => !std.ascii.isWhitespace(ch),
+        else => unreachable,
+    };
+}
+
+fn matchCharClass(char_ops: []const Op, ch: u8) bool {
+    for (char_ops) |op| {
+        switch (op) {
+            .byte_range => |range| {
+                if (ch >= range[0] and ch <= range[1]) return true;
+            },
+            else => {
+                if (matchChar(op, ch)) return true;
+            },
+        }
+    } else return false;
 }
 
 fn isWord(ch: u8) bool {
@@ -574,6 +579,11 @@ test Tokenizer {
     try expectTokens("\\.+\\+\\\\", &.{ .char, .plus, .char, .char });
     try expectTokens(".*\\w\\W\\d\\D+", &.{ .dotstar, .word, .non_word, .digit, .non_digit, .plus });
     try expectTokens("\\s\\S+", &.{ .space, .non_space, .plus });
+    try expectTokens("[abc]", &.{ .lbracket, .char, .char, .char, .rbracket });
+    try expectTokens("[ab.]", &.{ .lbracket, .char, .char, .char, .rbracket });
+    try expectTokens("[\\w.]", &.{ .lbracket, .word, .char, .rbracket });
+    try expectTokens("[a-z]", &.{ .lbracket, .byte_range, .rbracket });
+    try expectTokens("[ab-z]a-z", &.{ .lbracket, .char, .byte_range, .rbracket, .char, .char, .char });
 }
 
 fn expectCompile(regex: []const u8, expected: []const u8) !void {
@@ -584,16 +594,12 @@ fn expectCompile(regex: []const u8, expected: []const u8) !void {
     var re = try Regex.compile(std.testing.allocator, regex);
     defer re.deinit(std.testing.allocator);
 
-    var pc: usize = 0;
-
-    while (pc < re.code.len) {
-        const op = Op.decode(re.code[pc..].ptr);
-
+    for (re.code, 0..) |op, pc| {
         if (pc > 0) {
             try w.writeByte('\n');
         }
 
-        try w.print("{d:>3}: {s}", .{ pc, op.name() });
+        try w.print("{d:>3}: {s}", .{ pc, @tagName(op) });
 
         switch (op) {
             .char => |ch| try w.print(" {c}", .{ch}),
@@ -602,8 +608,6 @@ fn expectCompile(regex: []const u8, expected: []const u8) !void {
             .plus => |addr| try w.print(" :{d}", .{addr}),
             else => {},
         }
-
-        pc += op.len();
     }
 
     try std.testing.expectEqualStrings(expected, buf.items);
@@ -614,7 +618,7 @@ test "Regex.compile()" {
     try testing.expectError(Regex.compile(undefined, "+"), error.NothingToRepeat);
     try testing.expectError(Regex.compile(undefined, "*"), error.NothingToRepeat);
     try testing.expectError(Regex.compile(undefined, "()"), error.EmptyGroup);
-    try testing.expectError(Regex.compile(undefined, ")"), error.NothingToClose);
+    try testing.expectError(Regex.compile(undefined, ")"), error.NoGroupToClose);
     try testing.expectError(Regex.compile(undefined, "("), error.UnclosedGroup);
 
     try expectCompile("",
@@ -637,51 +641,51 @@ test "Regex.compile()" {
     try expectCompile("abc",
         \\  0: dotstar
         \\  1: char a
-        \\  3: char b
-        \\  5: char c
-        \\  7: match
+        \\  2: char b
+        \\  3: char c
+        \\  4: match
     );
 
     try expectCompile("a.c",
         \\  0: dotstar
         \\  1: char a
-        \\  3: dot
-        \\  4: char c
-        \\  6: match
+        \\  2: dot
+        \\  3: char c
+        \\  4: match
     );
 
     try expectCompile("a?c",
         \\  0: dotstar
-        \\  1: split :4 :6
-        \\  4: char a
-        \\  6: char c
-        \\  8: match
+        \\  1: split :2 :3
+        \\  2: char a
+        \\  3: char c
+        \\  4: match
     );
 
     try expectCompile("ab?c",
         \\  0: dotstar
         \\  1: char a
-        \\  3: split :6 :8
-        \\  6: char b
-        \\  8: char c
-        \\ 10: match
+        \\  2: split :3 :4
+        \\  3: char b
+        \\  4: char c
+        \\  5: match
     );
 
     try expectCompile("a+b",
         \\  0: dotstar
         \\  1: char a
-        \\  3: plus :1
-        \\  5: char b
-        \\  7: match
+        \\  2: plus :1
+        \\  3: char b
+        \\  4: match
     );
 
     try expectCompile("a*b",
         \\  0: dotstar
-        \\  1: split :4 :8
-        \\  4: char a
-        \\  6: jmp :1
-        \\  8: char b
-        \\ 10: match
+        \\  1: split :2 :4
+        \\  2: char a
+        \\  3: jmp :1
+        \\  4: char b
+        \\  5: match
     );
 
     // TODO: update anchor detection for leading .dotstar
@@ -695,121 +699,121 @@ test "Regex.compile()" {
 
     try expectCompile("a|b",
         \\  0: dotstar
-        \\  1: split :4 :8
-        \\  4: char a
-        \\  6: jmp :10
-        \\  8: char b
-        \\ 10: match
+        \\  1: split :2 :4
+        \\  2: char a
+        \\  3: jmp :5
+        \\  4: char b
+        \\  5: match
     );
 
     try expectCompile("ab|c",
         \\  0: dotstar
-        \\  1: split :4 :10
-        \\  4: char a
-        \\  6: char b
-        \\  8: jmp :12
-        \\ 10: char c
-        \\ 12: match
+        \\  1: split :2 :5
+        \\  2: char a
+        \\  3: char b
+        \\  4: jmp :6
+        \\  5: char c
+        \\  6: match
     );
 
     try expectCompile("a|b|c",
         \\  0: dotstar
-        \\  1: split :4 :8
-        \\  4: char a
-        \\  6: jmp :13
-        \\  8: split :11 :15
-        \\ 11: char b
-        \\ 13: jmp :17
-        \\ 15: char c
-        \\ 17: match
+        \\  1: split :2 :4
+        \\  2: char a
+        \\  3: jmp :6
+        \\  4: split :5 :7
+        \\  5: char b
+        \\  6: jmp :8
+        \\  7: char c
+        \\  8: match
     );
 
     try expectCompile("(ab)?de",
         \\  0: dotstar
-        \\  1: split :4 :8
-        \\  4: char a
-        \\  6: char b
-        \\  8: char d
-        \\ 10: char e
-        \\ 12: match
+        \\  1: split :2 :4
+        \\  2: char a
+        \\  3: char b
+        \\  4: char d
+        \\  5: char e
+        \\  6: match
     );
 
     try expectCompile("(ab)+de",
         \\  0: dotstar
         \\  1: char a
-        \\  3: char b
-        \\  5: plus :1
-        \\  7: char d
-        \\  9: char e
-        \\ 11: match
+        \\  2: char b
+        \\  3: plus :1
+        \\  4: char d
+        \\  5: char e
+        \\  6: match
     );
 
     try expectCompile("(a|b)?",
         \\  0: dotstar
-        \\  1: split :4 :13
-        \\  4: split :7 :11
-        \\  7: char a
-        \\  9: jmp :13
-        \\ 11: char b
-        \\ 13: match
+        \\  1: split :2 :6
+        \\  2: split :3 :5
+        \\  3: char a
+        \\  4: jmp :6
+        \\  5: char b
+        \\  6: match
     );
 
     try expectCompile("(a|b)*c",
         \\  0: dotstar
-        \\  1: split :4 :15
-        \\  4: split :7 :11
-        \\  7: char a
-        \\  9: jmp :13
-        \\ 11: char b
-        \\ 13: jmp :1
-        \\ 15: char c
-        \\ 17: match
+        \\  1: split :2 :7
+        \\  2: split :3 :5
+        \\  3: char a
+        \\  4: jmp :6
+        \\  5: char b
+        \\  6: jmp :1
+        \\  7: char c
+        \\  8: match
     );
 
     try expectCompile("(a|b|c)+d",
         \\  0: dotstar
-        \\  1: split :4 :8
-        \\  4: char a
-        \\  6: jmp :13
-        \\  8: split :11 :15
-        \\ 11: char b
-        \\ 13: jmp :17
-        \\ 15: char c
-        \\ 17: plus :1
-        \\ 19: char d
-        \\ 21: match
+        \\  1: split :2 :4
+        \\  2: char a
+        \\  3: jmp :6
+        \\  4: split :5 :7
+        \\  5: char b
+        \\  6: jmp :8
+        \\  7: char c
+        \\  8: plus :1
+        \\  9: char d
+        \\ 10: match
     );
 
     try expectCompile("a(b|c)+",
         \\  0: dotstar
         \\  1: char a
-        \\  3: split :6 :10
-        \\  6: char b
-        \\  8: jmp :12
-        \\ 10: char c
-        \\ 12: plus :3
-        \\ 14: match
+        \\  2: split :3 :5
+        \\  3: char b
+        \\  4: jmp :6
+        \\  5: char c
+        \\  6: plus :2
+        \\  7: match
     );
 
     // TODO: No idea if this is correct but at least the jumps are valid.
     try expectCompile("^(\\w+\\.(js|ts)|^foo)",
         \\  0: begin
-        \\  1: split :4 :24
-        \\  4: word
-        \\  5: plus :4
-        \\  7: char .
-        \\  9: split :12 :18
-        \\ 12: char j
-        \\ 14: char s
-        \\ 16: jmp :22
-        \\ 18: char t
-        \\ 20: char s
-        \\ 22: jmp :31
-        \\ 24: begin
-        \\ 25: char f
-        \\ 27: char o
-        \\ 29: char o
-        \\ 31: match
+        \\  1: split :2 :12
+        \\  2: word
+        \\  3: plus :2
+        \\  4: char .
+        \\  5: split :6 :9
+        \\  6: char j
+        \\  7: char s
+        \\  8: jmp :11
+        \\  9: char t
+        \\ 10: char s
+        \\ 11: jmp :16
+        \\ 12: begin
+        \\ 13: char f
+        \\ 14: char o
+        \\ 15: char o
+        \\ 16: match
     );
 }
 
@@ -950,17 +954,47 @@ test "Regex.match()" {
         .{ "file.pdf", false },
         .{ "filetxt", false },
     });
+
+    try expectMatches("^[\\w_]+$", &.{
+        .{ "foo", true },
+        .{ "foo_bar", true },
+        .{ "@foo", false },
+        .{ "", false },
+    });
+
+    try expectMatches("^[a-z_-]+$", &.{
+        .{ "foo", true },
+        .{ "foo_bar", true },
+        .{ "foo-bar", true },
+        .{ "@foo", false },
+        .{ "", false },
+    });
 }
 
-test "Something useful" {
+test "Real-world patterns" {
+    try expectMatches("\\d+-\\d+-\\d+", &.{
+        .{ "2024-12-24", true },
+        .{ "invalid", false },
+    });
+
+    try expectMatches("\\d+/\\d+/\\d+", &.{
+        .{ "12/24/2024", true },
+        .{ "invalid", false },
+    });
+
+    try expectMatches("\\d+:\\d+", &.{
+        .{ "12:30", true },
+    });
+
     try expectMatches(".*@.*", &.{
         .{ "foo@bar.com", true },
         .{ "invalid", false },
     });
 
-    try expectMatches(".*\\.js", &.{
+    try expectMatches(".*\\.(js|ts)x?", &.{
         .{ "index.js", true },
         .{ "app.min.js", true },
+        .{ "App.tsx", true },
         .{ "invalid", false },
     });
 
@@ -975,5 +1009,22 @@ test "Something useful" {
         .{ "## Heading 2", true },
         .{ "#Invalid", false },
         .{ "Invalid", false },
+    });
+
+    try expectMatches("\\[.*\\]\\(.*\\)", &.{
+        .{ "[link](http://acme.org)", true },
+    });
+
+    try expectMatches("^\\d+\\.\\d+\\.\\d+\\.\\d+", &.{
+        .{ "192.168.1.1", true },
+        .{ "invalid", false },
+    });
+
+    try expectMatches("^#[0-9a-fA-F]+$", &.{
+        .{ "#123456", true },
+        .{ "#fff", true },
+        .{ "#ABC", true },
+        .{ "#xxx", false },
+        .{ "#gggggg", false },
     });
 }
