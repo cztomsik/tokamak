@@ -331,6 +331,7 @@ const Compiler = struct {
 
 const Token = union(enum) {
     char: u8,
+    byte_range: [2]u8,
     dot,
     dotstar,
     word,
@@ -357,63 +358,66 @@ const Tokenizer = struct {
     pos: usize = 0,
 
     fn next(self: *Tokenizer) ?Token {
-        while (self.pos < self.input.len) {
-            const ch = self.input[self.pos];
+        if (self.pos >= self.input.len) return null;
+        const ch = self.input[self.pos];
+        self.pos += 1;
+
+        if (self.in_bracket and self.pos < self.input.len - 1 and self.input[self.pos] == '-' and self.input[self.pos + 1] != ']') {
+            const tok: Token = .{ .byte_range = .{ ch, self.input[self.pos + 1] } };
+            self.pos += 2;
+            return tok;
+        }
+
+        if (ch == '\\' and self.pos < self.input.len) {
+            const next_ch = self.input[self.pos];
             self.pos += 1;
 
-            if (ch == '\\' and self.pos < self.input.len) {
-                const next_ch = self.input[self.pos];
-                self.pos += 1;
+            return switch (next_ch) {
+                'w' => .word,
+                'W' => .non_word,
+                'd' => .digit,
+                'D' => .non_digit,
+                's' => .space,
+                'S' => .non_space,
+                else => .{ .char = next_ch },
+            };
+        }
 
-                return switch (next_ch) {
-                    'w' => .word,
-                    'W' => .non_word,
-                    'd' => .digit,
-                    'D' => .non_digit,
-                    's' => .space,
-                    'S' => .non_space,
-                    else => .{ .char = next_ch },
-                };
-            }
-
-            // TODO: ranges, ^, escapes?
-            if (self.in_bracket) {
-                return switch (ch) {
-                    ']' => {
-                        self.in_bracket = false;
-                        return .rbracket;
-                    },
-                    else => .{ .char = ch },
-                };
-            }
-
+        // TODO: ^, escapes?
+        if (self.in_bracket) {
             return switch (ch) {
-                '.' => {
-                    if (self.pos < self.input.len and self.input[self.pos] == '*') {
-                        self.pos += 1;
-                        return .dotstar;
-                    }
-
-                    return .dot;
+                ']' => {
+                    self.in_bracket = false;
+                    return .rbracket;
                 },
-                '?' => .que,
-                '+' => .plus,
-                '*' => .star,
-                '|' => .pipe,
-                '(' => .lparen,
-                ')' => .rparen,
-                '[' => {
-                    self.in_bracket = true;
-                    return .lbracket;
-                },
-                ']' => .rbracket,
-                '^' => .caret,
-                '$' => .dollar,
                 else => .{ .char = ch },
             };
         }
 
-        return null;
+        return switch (ch) {
+            '.' => {
+                if (self.pos < self.input.len and self.input[self.pos] == '*') {
+                    self.pos += 1;
+                    return .dotstar;
+                }
+
+                return .dot;
+            },
+            '?' => .que,
+            '+' => .plus,
+            '*' => .star,
+            '|' => .pipe,
+            '(' => .lparen,
+            ')' => .rparen,
+            '[' => {
+                self.in_bracket = true;
+                return .lbracket;
+            },
+            ']' => .rbracket,
+            '^' => .caret,
+            '$' => .dollar,
+            else => .{ .char = ch },
+        };
     }
 };
 
@@ -434,6 +438,7 @@ const Op = union(enum) {
 
     // Char classes [\w_]
     char_class: [2]u8, // [start, end]
+    byte_range: [2]u8, // [from, to]
 
     // Branching
     jmp: u8,
@@ -443,7 +448,7 @@ const Op = union(enum) {
     // Final op
     match,
 
-    // Intermediate - replaced during optimize()
+    // Replaced during optimize()
     ijmp: i8,
     isplit: [2]i8,
     iplus: i8,
@@ -539,7 +544,14 @@ fn matchChar(op: Op, ch: u8) bool {
 
 fn matchCharClass(char_ops: []const Op, ch: u8) bool {
     for (char_ops) |op| {
-        if (matchChar(op, ch)) return true;
+        switch (op) {
+            .byte_range => |range| {
+                if (ch >= range[0] and ch <= range[1]) return true;
+            },
+            else => {
+                if (matchChar(op, ch)) return true;
+            },
+        }
     } else return false;
 }
 
@@ -570,8 +582,8 @@ test Tokenizer {
     try expectTokens("[abc]", &.{ .lbracket, .char, .char, .char, .rbracket });
     try expectTokens("[ab.]", &.{ .lbracket, .char, .char, .char, .rbracket });
     try expectTokens("[\\w.]", &.{ .lbracket, .word, .char, .rbracket });
-    // TODO: Fix this when we have ranges
-    try expectTokens("[a-z]", &.{ .lbracket, .char, .char, .char, .rbracket });
+    try expectTokens("[a-z]", &.{ .lbracket, .byte_range, .rbracket });
+    try expectTokens("[ab-z]a-z", &.{ .lbracket, .char, .byte_range, .rbracket, .char, .char, .char });
 }
 
 fn expectCompile(regex: []const u8, expected: []const u8) !void {
@@ -943,23 +955,46 @@ test "Regex.match()" {
         .{ "filetxt", false },
     });
 
-    try expectMatches("^[\\w_]+", &.{
+    try expectMatches("^[\\w_]+$", &.{
         .{ "foo", true },
         .{ "foo_bar", true },
         .{ "@foo", false },
         .{ "", false },
     });
+
+    try expectMatches("^[a-z_-]+$", &.{
+        .{ "foo", true },
+        .{ "foo_bar", true },
+        .{ "foo-bar", true },
+        .{ "@foo", false },
+        .{ "", false },
+    });
 }
 
-test "Something useful" {
+test "Real-world patterns" {
+    try expectMatches("\\d+-\\d+-\\d+", &.{
+        .{ "2024-12-24", true },
+        .{ "invalid", false },
+    });
+
+    try expectMatches("\\d+/\\d+/\\d+", &.{
+        .{ "12/24/2024", true },
+        .{ "invalid", false },
+    });
+
+    try expectMatches("\\d+:\\d+", &.{
+        .{ "12:30", true },
+    });
+
     try expectMatches(".*@.*", &.{
         .{ "foo@bar.com", true },
         .{ "invalid", false },
     });
 
-    try expectMatches(".*\\.js", &.{
+    try expectMatches(".*\\.(js|ts)x?", &.{
         .{ "index.js", true },
         .{ "app.min.js", true },
+        .{ "App.tsx", true },
         .{ "invalid", false },
     });
 
@@ -974,5 +1009,22 @@ test "Something useful" {
         .{ "## Heading 2", true },
         .{ "#Invalid", false },
         .{ "Invalid", false },
+    });
+
+    try expectMatches("\\[.*\\]\\(.*\\)", &.{
+        .{ "[link](http://acme.org)", true },
+    });
+
+    try expectMatches("^\\d+\\.\\d+\\.\\d+\\.\\d+", &.{
+        .{ "192.168.1.1", true },
+        .{ "invalid", false },
+    });
+
+    try expectMatches("^#[0-9a-fA-F]+$", &.{
+        .{ "#123456", true },
+        .{ "#fff", true },
+        .{ "#ABC", true },
+        .{ "#xxx", false },
+        .{ "#gggggg", false },
     });
 }
