@@ -11,6 +11,8 @@ const log = std.log.scoped(.tokamak);
 
 pub const Handler = fn (*Context) anyerror!void;
 
+pub const ErrorHandler = fn (*Context, err: anyerror) anyerror!void;
+
 pub const Context = struct {
     server: *Server,
     allocator: std.mem.Allocator,
@@ -20,6 +22,7 @@ pub const Context = struct {
     params: Params,
     injector: *Injector,
     responded: bool = false,
+    error_handler: ?*const ErrorHandler = null,
 
     /// Parse a string value into the requested type.
     pub fn parse(self: *Context, comptime T: type, s: []const u8) !T {
@@ -111,8 +114,12 @@ pub const Context = struct {
 
                 switch (@typeInfo(T)) {
                     .error_set => {
-                        self.res.status = getErrorStatus(res);
-                        try self.send(.{ .@"error" = res });
+                        if (self.error_handler) |handler| {
+                            try handler(self, res);
+                        } else {
+                            self.res.status = getErrorStatus(res);
+                            try self.send(.{ .@"error" = res });
+                        }
                     },
                     .error_union => {
                         if (res) |r| {
