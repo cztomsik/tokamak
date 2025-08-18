@@ -1,7 +1,6 @@
-// This is broken and crashes Zig v.0.14.1 so let's wait until the next version
-// is released. The idea here is that it should be useful enough for
-// implementing arbitrary content-type renderers without having to go through
-// all the type sniffing which is usually needed.
+// This is both subtly broken and unfinished. The idea here is that it should be
+// useful enough for implementing arbitrary content-type renderers without
+// having to go through all of that type sniffing which is usually needed.
 //
 // BUT - I have no idea if that will (or can) actually work out. It's just a
 // tiny fun experiment at the moment and if it turns out to be useful, it's
@@ -74,7 +73,7 @@ pub fn visit(val: anytype, cx: anytype, handler: *const fn (@TypeOf(cx), Edge) a
         .@"enum", .enum_literal => try handler(cx, .{ .string = @tagName(val) }),
         .error_set => try handler(cx, .{ .string = @errorName(val) }),
         .optional => if (val) |v| try visit(v, cx, handler) else try handler(cx, .null),
-        .array => try visit(val[0..], cx, handler),
+        .array => |a| try visit(@as([]const a.child, &val), cx, handler),
         .pointer => try visit(val.*, cx, handler),
         else => @compileError("Unsupported type: " ++ @typeName(T)),
     }
@@ -105,10 +104,7 @@ test {
     try expectEdges(1.23, &.{.float});
     try expectEdges("hello", &.{.string});
     try expectEdges(.{ .msg = "Hello" }, &.{ .begin_struct, .field, .string, .end_struct });
-
-    // TODO: This will crash Zig v.0.14.1
-    // try expectEdges(&[_]u32{ 1, 2, 3 }, &.{ .begin_array, .int, .int, .int, .end_array });
-
+    try expectEdges(&[_]u32{ 1, 2, 3 }, &.{ .begin_array, .int, .int, .int, .end_array });
     try expectEdges(people[0], &.{ .begin_struct, .field, .string, .field, .int, .end_struct });
     try expectEdges(people, &.{ .begin_array, .begin_struct, .field, .string, .field, .int, .end_struct, .end_array });
 }
