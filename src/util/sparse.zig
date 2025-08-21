@@ -3,6 +3,10 @@
 // tracking so I could remove the bitset (and the ops.len <= 64 limit)
 // but I don't like to waste 2 * ops.len just to save a few ticks... I think
 // even 2-layer hibitset could be fast enough (and much smaller).
+// Hm, I got it wrong - both arrays can be of different type and their max_len
+// is also independent. So we could shave some bytes if we also know max number
+// of items in the set and which index can be highest. But I think none of that
+// is any helpful in our case.
 
 const std = @import("std");
 
