@@ -498,6 +498,29 @@ fn pikevm(code: []const Op, text: []const u8) bool {
     // We only support N ops so we can actually encode both [N]Thread lists as
     // bitsets where each position represents the thread's PC. Even better, we
     // get de-duping and "same-char" ticks for free.
+    //
+    // NOTE: One obvious way around N>64 would be to have clist/nlist because
+    //       they have known upper-bound (n_splits) IF we can guarantee that
+    //       there can be only one thread at each PC (which we do with bitset).
+    //
+    //       That can be done easily with simple high-bit tagging + clearing
+    //       at the end of the tick, and then it would probably make sense to
+    //       execute those clist ops immediately in one while (true) which would
+    //       be INSIDE of the addthread(). We'd also need to do something about
+    //       those root-level anchors but I think it should work fine.
+    //
+    //       BUT I'd like to avoid &mut code becaseu of thread-safety and I also
+    //       doubt it's good idea to change memory which could be read again in
+    //       the next (CPU) tick (pipelining?, cache-invalidation?).
+    //
+    //       Another idea might be to have [op.len]u32 with gen counters, and
+    //       use that for tracking visited ops. That could work but I'd like to
+    //       avoid extra allocations. So even that would require some limit and
+    //       IDK. Maybe having two match() methods, one with stack-allocated
+    //       but limited scratch-area and the other one taking allocator for
+    //       all other cases? Or maybe having two structs? One general-purpose
+    //       and one just for small regexes? But then we could also keep this
+    //       bitset impl...
     var clist: u64 = 0;
     var nlist: u64 = 0;
 
@@ -1100,3 +1123,15 @@ test "Real-world patterns" {
         .{ "#gggggg", false },
     });
 }
+
+// TODO: Let's try again with Zig v0.15
+// test "fuzz" {
+//     const H = struct {
+//         fn fuzz(_: @This(), input: []const u8) !void {
+//             var re = try Regex.compile(std.testing.allocator, input);
+//             defer re.deinit(std.testing.allocator);
+//         }
+//     };
+
+//     try std.testing.fuzz(H{}, H.fuzz, .{});
+// }
