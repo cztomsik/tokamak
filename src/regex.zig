@@ -1,6 +1,7 @@
 const builtin = @import("builtin");
 const std = @import("std");
 const Buf = @import("util.zig").Buf;
+const Sparse = @import("util.zig").Sparse(u16, u8);
 
 pub const Grep = struct {
     buf: []u8,
@@ -59,7 +60,14 @@ pub const Regex = struct {
     }
 
     pub fn match(self: *Regex, text: []const u8) bool {
-        return pikevm(self.code, text);
+        // TODO: We should at least set an upper-bound for n_splits.
+        var buf1: [512]u8 = undefined;
+        var buf2: [128]u16 = undefined;
+
+        var clist = Sparse.init(buf1[0..256], buf2[0..64]);
+        var nlist = Sparse.init(buf1[256..], buf2[64..]);
+
+        return pikevm(self.code, &clist, &nlist, text);
     }
 };
 
@@ -92,8 +100,7 @@ const Compiler = struct {
         var stack: Buf([3]i8) = try .initAlloc(allocator, info.depth);
         errdefer stack.deinit(allocator);
 
-        if (info.n_main > 64) {
-            // TODO: we should first attempt to optimize the regex before failing.
+        if (info.n_main > std.math.maxInt(u16)) {
             return error.RegexTooComplex;
         }
 
@@ -473,101 +480,45 @@ const Op = union(enum) {
     byte_range: [2]u8, // [from, to]
 
     // Branching
-    jmp: u8,
-    split: [2]u8,
-    plus: u8,
+    jmp: u16,
+    split: [2]u16,
+    plus: u16,
 
     // Final op
     match,
 
     // Replaced during optimize()
-    ijmp: i8,
-    isplit: [2]i8,
-    iplus: i8,
+    ijmp: i16,
+    isplit: [2]i16,
+    iplus: i16,
     _,
 };
-
-fn maskPc(pc: usize) u64 {
-    return @as(u64, 1) << @intCast(pc);
-}
 
 // https://dl.acm.org/doi/10.1145/363347.363387
 // https://swtch.com/~rsc/regexp/regexp2.html#pike
 // TODO: captures
-fn pikevm(code: []const Op, text: []const u8) bool {
-    // We only support N ops so we can actually encode both [N]Thread lists as
-    // bitsets where each position represents the thread's PC. Even better, we
-    // get de-duping and "same-char" ticks for free.
-    //
-    // NOTE: One obvious way around N>64 would be to have clist/nlist because
-    //       they have known upper-bound (n_splits) IF we can guarantee that
-    //       there can be only one thread at each PC (which we do with bitset).
-    //
-    //       That can be done easily with simple high-bit tagging + clearing
-    //       at the end of the tick, and then it would probably make sense to
-    //       execute those clist ops immediately in one while (true) which would
-    //       be INSIDE of the addthread(). We'd also need to do something about
-    //       those root-level anchors but I think it should work fine.
-    //
-    //       BUT I'd like to avoid &mut code becaseu of thread-safety and I also
-    //       doubt it's good idea to change memory which could be read again in
-    //       the next (CPU) tick (pipelining?, cache-invalidation?).
-    //
-    //       Another idea might be to have [op.len]u32 with gen counters, and
-    //       use that for tracking visited ops. That could work but I'd like to
-    //       avoid extra allocations. So even that would require some limit and
-    //       IDK. Maybe having two match() methods, one with stack-allocated
-    //       but limited scratch-area and the other one taking allocator for
-    //       all other cases? Or maybe having two structs? One general-purpose
-    //       and one just for small regexes? But then we could also keep this
-    //       bitset impl...
-    var clist: u64 = 0;
-    var nlist: u64 = 0;
-
-    clist |= maskPc(0);
-
+// NOTE: bitset impl https://github.com/cztomsik/tokamak/blob/7d313d0b4f54192480cfc0684d4fe1731327ff03/src/regex.zig#L497
+fn pikevm(code: []const Op, clist: *Sparse, nlist: *Sparse, text: []const u8) bool {
     var sp: usize = 0;
+    addThread(code, clist, text, sp, 0);
+
     while (true) : (sp += 1) {
-        var guard: u64 = 0; // Which PCs we have already executed in this step
-
-        while (clist != 0) {
-            const pc = @ctz(clist); // Find the lowest bit
-            clist &= clist - 1; // Clear that bit (we go backwards so we can do -1)
-
-            // Guard against infinite recursion
-            const mask = maskPc(pc);
-            if ((guard & mask) != 0) continue;
-            guard |= mask;
-
+        var i: u32 = 0;
+        while (i < clist.len) : (i += 1) {
+            const pc = clist.dense[i];
             const op = code[pc];
 
+            std.debug.print("pc={} sp={} op={s}\n", .{ pc, sp, @tagName(op) });
+
             switch (op) {
-                .begin => {
-                    if (sp == 0) clist |= maskPc(pc + 1);
-                },
-                .end => {
-                    if (sp == text.len) clist |= maskPc(pc + 1);
-                },
                 .dotstar => {
-                    clist |= maskPc(pc + 1);
-                    if (sp < text.len) nlist |= maskPc(pc);
+                    if (sp < text.len) addThread(code, nlist, text, sp, pc);
                 },
                 .char, .dot, .word, .non_word, .digit, .non_digit, .space, .non_space => {
-                    if (sp < text.len and matchChar(op, text[sp])) nlist |= maskPc(pc + 1);
+                    if (sp < text.len and matchChar(op, text[sp])) addThread(code, nlist, text, sp, pc + 1);
                 },
                 .char_class => |clz| {
-                    if (sp < text.len and matchCharClass(code[clz[0]..clz[1]], text[sp])) nlist |= maskPc(pc + 1);
-                },
-                .jmp => |addr| {
-                    clist |= maskPc(addr);
-                },
-                .split => |addrs| {
-                    clist |= maskPc(addrs[0]);
-                    clist |= maskPc(addrs[1]);
-                },
-                .plus => |addr| {
-                    clist |= maskPc(addr);
-                    clist |= maskPc(pc + 1);
+                    if (sp < text.len and matchCharClass(code[clz[0]..clz[1]], text[sp])) addThread(code, nlist, text, sp, pc + 1);
                 },
                 .match => return true,
                 .ijmp, .isplit, .iplus => unreachable,
@@ -576,11 +527,49 @@ fn pikevm(code: []const Op, text: []const u8) bool {
         }
 
         if (sp == text.len) break;
-        clist = nlist;
-        nlist = 0;
+        // TODO: swap pointers?
+        std.mem.swap(Sparse, clist, nlist);
+        nlist.clear();
     }
 
     return false;
+}
+
+fn addThread(code: []const Op, list: *Sparse, text: []const u8, sp: usize, pc1: u16) void {
+    var pc = pc1;
+    _ = &pc;
+
+    // TODO: get rid of that recursion below (I think double-while or something could work)
+    // while (true) {
+    switch (code[pc]) {
+        .begin => {
+            if (sp == 0) addThread(code, list, text, sp, pc + 1);
+        },
+        .end => {
+            if (sp + 1 == text.len) addThread(code, list, text, sp, pc + 1);
+        },
+        .dotstar => {
+            addThread(code, list, text, sp, pc + 1);
+            list.add(pc);
+        },
+        .jmp => |addr| {
+            addThread(code, list, text, sp, addr);
+        },
+        .split => |addrs| {
+            addThread(code, list, text, sp, addrs[0]);
+            addThread(code, list, text, sp, addrs[1]);
+        },
+        .plus => |addr| {
+            addThread(code, list, text, sp, addr);
+            addThread(code, list, text, sp, pc + 1);
+        },
+        .ijmp, .isplit, .iplus => unreachable,
+        else => {
+            list.add(pc);
+            return;
+        },
+        // }
+    }
 }
 
 fn matchChar(op: Op, ch: u8) bool {
