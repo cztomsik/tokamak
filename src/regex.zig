@@ -119,6 +119,87 @@ const Compiler = struct {
         self.stack.deinit(self.allocator);
     }
 
+    fn analyze(tokenizer: *Tokenizer) !Info {
+        var n_main: usize = 1; // we always append match
+        var n_clz: usize = 0; // total count of ops inside brackets
+        var depth: usize = 0; // current grouping level
+        var max_depth: usize = 0; // stack size we need for compilation
+        var prev: enum { atom, group, other } = .other; // repeating & empty groups
+        var anchored: bool = false;
+
+        while (tokenizer.next()) |tok| {
+            switch (tok) {
+                .rep, .que, .plus, .star => if (prev == .other) return error.NothingToRepeat,
+                else => {},
+            }
+
+            if (tok == .caret and depth == 0) anchored = true;
+            if (tok == .pipe and depth == 0) anchored = false;
+
+            switch (tok) {
+                .lparen => {
+                    depth += 1;
+                    max_depth = @max(depth, max_depth);
+                },
+                .rparen => {
+                    if (depth == 0) return error.NoGroupToClose;
+                    depth -= 1;
+                },
+                .lbracket => {
+                    n_main += 1;
+                },
+                .rbracket => {},
+                .pipe, .star => n_main += 2,
+                .rep => |n| {
+                    if (n == 0) return error.InvalidRep;
+                    if (n == 1) continue;
+
+                    if (prev == .atom) {
+                        n_main += (n - 1);
+                    } else {
+                        // TODO: We can do this together with capturing because we will need some state there anyway
+                        return error.TODO;
+                    }
+                },
+                else => {
+                    if (tokenizer.in_bracket) {
+                        n_clz += 1;
+                    } else {
+                        n_main += 1;
+                    }
+                },
+            }
+
+            prev = switch (tok) {
+                .char, .dot, .word, .non_word, .digit, .non_digit, .space, .non_space, .rbracket => .atom,
+                .rparen => .group,
+                else => .other,
+            };
+        }
+
+        if (depth > 0) {
+            return error.UnclosedGroup;
+        }
+
+        if (tokenizer.in_bracket) {
+            return error.UnclosedBracket;
+        }
+
+        if (!anchored) {
+            n_main += 1; // Implicit .dotstar at the beginning
+        }
+
+        // Reset and return
+        tokenizer.pos = 0;
+
+        return .{
+            .n_main = n_main,
+            .n_clz = n_clz,
+            .depth = max_depth,
+            .anchored = anchored,
+        };
+    }
+
     fn compile(self: *Compiler) !void {
         // Implicit .dotstar for unanchored patterns
         if (!self.anchored) {
@@ -274,87 +355,6 @@ const Compiler = struct {
         // Save the ptr first bc. finish() would invalidate it
         const ptr = self.ops_main.buf.ptr;
         return ptr[0 .. self.ops_main.finish().len + self.ops_clz.finish().len];
-    }
-
-    fn analyze(tokenizer: *Tokenizer) !Info {
-        var n_main: usize = 1; // we always append match
-        var n_clz: usize = 0; // total count of ops inside brackets
-        var depth: usize = 0; // current grouping level
-        var max_depth: usize = 0; // stack size we need for compilation
-        var prev: enum { atom, group, other } = .other; // repeating & empty groups
-        var anchored: bool = false;
-
-        while (tokenizer.next()) |tok| {
-            switch (tok) {
-                .rep, .que, .plus, .star => if (prev == .other) return error.NothingToRepeat,
-                else => {},
-            }
-
-            if (tok == .caret and depth == 0) anchored = true;
-            if (tok == .pipe and depth == 0) anchored = false;
-
-            switch (tok) {
-                .lparen => {
-                    depth += 1;
-                    max_depth = @max(depth, max_depth);
-                },
-                .rparen => {
-                    if (depth == 0) return error.NoGroupToClose;
-                    depth -= 1;
-                },
-                .lbracket => {
-                    n_main += 1;
-                },
-                .rbracket => {},
-                .pipe, .star => n_main += 2,
-                .rep => |n| {
-                    if (n == 0) return error.InvalidRep;
-                    if (n == 1) continue;
-
-                    if (prev == .atom) {
-                        n_main += (n - 1);
-                    } else {
-                        // TODO: We can do this together with capturing because we will need some state there anyway
-                        return error.TODO;
-                    }
-                },
-                else => {
-                    if (tokenizer.in_bracket) {
-                        n_clz += 1;
-                    } else {
-                        n_main += 1;
-                    }
-                },
-            }
-
-            prev = switch (tok) {
-                .char, .dot, .word, .non_word, .digit, .non_digit, .space, .non_space, .rbracket => .atom,
-                .rparen => .group,
-                else => .other,
-            };
-        }
-
-        if (depth > 0) {
-            return error.UnclosedGroup;
-        }
-
-        if (tokenizer.in_bracket) {
-            return error.UnclosedBracket;
-        }
-
-        if (!anchored) {
-            n_main += 1; // Implicit .dotstar at the beginning
-        }
-
-        // Reset and return
-        tokenizer.pos = 0;
-
-        return .{
-            .n_main = n_main,
-            .n_clz = n_clz,
-            .depth = max_depth,
-            .anchored = anchored,
-        };
     }
 };
 
