@@ -508,8 +508,6 @@ fn pikevm(code: []const Op, clist: *Sparse, nlist: *Sparse, text: []const u8) bo
             const pc = clist.dense[i];
             const op = code[pc];
 
-            std.debug.print("pc={} sp={} op={s}\n", .{ pc, sp, @tagName(op) });
-
             switch (op) {
                 .dotstar => {
                     if (sp < text.len) addThread(code, nlist, text, sp, pc);
@@ -537,38 +535,39 @@ fn pikevm(code: []const Op, clist: *Sparse, nlist: *Sparse, text: []const u8) bo
 
 fn addThread(code: []const Op, list: *Sparse, text: []const u8, sp: usize, pc1: u16) void {
     var pc = pc1;
-    _ = &pc;
 
-    // TODO: get rid of that recursion below (I think double-while or something could work)
-    // while (true) {
-    switch (code[pc]) {
-        .begin => {
-            if (sp == 0) addThread(code, list, text, sp, pc + 1);
-        },
-        .end => {
-            if (sp + 1 == text.len) addThread(code, list, text, sp, pc + 1);
-        },
-        .dotstar => {
-            addThread(code, list, text, sp, pc + 1);
-            list.add(pc);
-        },
-        .jmp => |addr| {
-            addThread(code, list, text, sp, addr);
-        },
-        .split => |addrs| {
-            addThread(code, list, text, sp, addrs[0]);
-            addThread(code, list, text, sp, addrs[1]);
-        },
-        .plus => |addr| {
-            addThread(code, list, text, sp, addr);
-            addThread(code, list, text, sp, pc + 1);
-        },
-        .ijmp, .isplit, .iplus => unreachable,
-        else => {
-            list.add(pc);
-            return;
-        },
-        // }
+    while (true) {
+        switch (code[pc]) {
+            .begin => {
+                if (sp == 0) pc += 1 else return;
+            },
+            .end => {
+                if (sp + 1 == text.len) pc += 1 else return;
+            },
+            .dotstar => {
+                list.add(pc);
+                pc += 1;
+            },
+            .jmp => |addr| {
+                pc = addr;
+            },
+            .split => |addrs| {
+                // TODO: Can we get rid of this too?
+                addThread(code, list, text, sp, addrs[0]);
+                pc = addrs[1];
+            },
+            .plus => |addr| {
+                // TODO: Is this always atom? Can we make it so?
+                // list.add(addr);
+                addThread(code, list, text, sp, addr);
+                pc += 1;
+            },
+            .ijmp, .isplit, .iplus => unreachable,
+            else => {
+                list.add(pc);
+                return;
+            },
+        }
     }
 }
 
