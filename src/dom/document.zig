@@ -3,6 +3,7 @@ const sax = @import("../sax.zig");
 const util = @import("../util.zig");
 const Node = @import("node.zig").Node;
 const Element = @import("element.zig").Element;
+const AttrMap = @import("attr_map.zig").AttrMap;
 const Text = @import("text.zig").Text;
 const HtmlParser = @import("parser.zig").HtmlParser;
 const Selector = @import("../selector.zig").Selector;
@@ -13,6 +14,7 @@ const QuerySelectorIterator = @import("../selector.zig").QuerySelectorIterator;
 pub const Document = struct {
     node: Node,
     arena: std.mem.Allocator,
+    attrs: AttrMap,
 
     pub fn init(allocator: std.mem.Allocator) !*Document {
         const arena = try allocator.create(std.heap.ArenaAllocator);
@@ -25,6 +27,7 @@ pub const Document = struct {
         self.* = .{
             .node = .{ .document = self, .kind = .document },
             .arena = arena.allocator(),
+            .attrs = try .init(arena.allocator()),
         };
         return self;
     }
@@ -117,8 +120,8 @@ test {
     try std.testing.expectEqual(btn, (try doc.querySelector("span + .btn")).?);
 }
 
-// test "real-world html" {
-//     // curl https://www.w3.org/TR/css-grid-1/ > bench.html
-//     var doc = try Document.parseFromSlice(std.testing.allocator, @embedFile("bench.html"));
-//     defer doc.deinit();
-// }
+test "real-world html" {
+    // curl https://www.w3.org/TR/css-grid-1/ > bench.html
+    var doc = try Document.parseFromSlice(std.testing.allocator, @embedFile("bench.html"));
+    defer doc.deinit();
+}

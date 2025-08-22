@@ -10,3 +10,7 @@ pub const Element = @import("dom/element.zig").Element;
 pub const Node = @import("dom/node.zig").Node;
 pub const LocalName = @import("dom/local_name.zig").LocalName;
 pub const Text = @import("dom/text.zig").Text;
+
+comptime {
+    _ = @import("dom/attr_map.zig");
+}
