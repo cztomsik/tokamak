@@ -35,6 +35,9 @@ pub const Grep = struct {
 // https://swtch.com/~rsc/regexp/regexp1.html
 // https://swtch.com/~rsc/regexp/regexp2.html
 // https://swtch.com/~rsc/regexp/regexp3.html
+// https://burntsushi.net/regex-internals/
+// https://github.com/rust-lang/regex/discussions/1121
+// https://github.com/BurntSushi/rebar
 pub const Regex = struct {
     // [ops_main][...ops_clz]
     code: []const Op,
@@ -155,6 +158,14 @@ const Compiler = struct {
                     self.push(.{ .ijmp = self.atom - end - 1 });
                 },
 
+                // .rep => |n| {
+                //     const ops = self.ops_main.buf[@as(usize, @intCast(self.atom))..@as(usize, @intCast(end))];
+
+                //     for (1..n) |_| {
+                //         for (ops) |op| self.push(op);
+                //     }
+                // },
+
                 .pipe => {
                     self.insert(self.start, .{
                         .isplit = .{
@@ -268,6 +279,7 @@ const Compiler = struct {
 
         while (tokenizer.next()) |tok| {
             if (!can_repeat) switch (tok) {
+                // .rep,
                 .que, .plus, .star => return error.NothingToRepeat,
                 else => {},
             };
@@ -290,6 +302,13 @@ const Compiler = struct {
                 },
                 .rbracket => {},
                 .pipe, .star => n_main += 2,
+                // .rep => |n| {
+                //     if (n == 0) return error.InvalidRep;
+                //     if (n == 1) continue;
+
+                //     // TODO: This is wrong and will NOT work for groups!
+                //     n_main += (n - 1);
+                // },
                 else => {
                     if (tokenizer.in_bracket) {
                         n_clz += 1;
@@ -343,6 +362,7 @@ const Token = union(enum) {
     que,
     plus,
     star,
+    // rep: u8,
     pipe,
     lparen,
     rparen,
@@ -406,6 +426,15 @@ const Tokenizer = struct {
             '?' => .que,
             '+' => .plus,
             '*' => .star,
+            // '{' => {
+            //     if (self.pos + 1 < self.input.len and std.ascii.isDigit(self.input[self.pos]) and self.input[self.pos + 1] == '}') {
+            //         const n = self.input[self.pos] - '0';
+            //         self.pos += 2;
+            //         return .{ .rep = n };
+            //     }
+
+            //     return .{ .char = ch };
+            // },
             '|' => .pipe,
             '(' => .lparen,
             ')' => .rparen,
@@ -584,6 +613,7 @@ test Tokenizer {
     try expectTokens("[\\w.]", &.{ .lbracket, .word, .char, .rbracket });
     try expectTokens("[a-z]", &.{ .lbracket, .byte_range, .rbracket });
     try expectTokens("[ab-z]a-z", &.{ .lbracket, .char, .byte_range, .rbracket, .char, .char, .char });
+    // try expectTokens("{}a{3}", &.{ .char, .char, .char, .rep });
 }
 
 fn expectCompile(regex: []const u8, expected: []const u8) !void {
@@ -695,6 +725,29 @@ test "Regex.compile()" {
     //     \\  3: char o
     //     \\  5: char o
     //     \\  7: match
+    // );
+
+    // try expectCompile(".{2}a{2}b",
+    //     \\  0: dotstar
+    //     \\  1: dot
+    //     \\  2: dot
+    //     \\  3: char a
+    //     \\  4: char a
+    //     \\  5: char b
+    //     \\  6: match
+    // );
+
+    // try expectCompile("(a|b){2}",
+    //     \\  0: dotstar
+    //     \\  1: split :2 :4
+    //     \\  2: char a
+    //     \\  3: jmp :5
+    //     \\  4: char b
+    //     \\  5: split :6 :8
+    //     \\  6: char a
+    //     \\  7: jmp :9
+    //     \\  8: char b
+    //     \\  9: match
     // );
 
     try expectCompile("a|b",
@@ -886,6 +939,12 @@ test "Regex.match()" {
         .{ "d", false },
     });
 
+    // Rep
+    // try expectMatches("a{3}", &.{
+    //     .{ "aaa", true },
+    //     .{ "aa", false },
+    // });
+
     // Group
     try expectMatches("^(abc)?def", &.{
         .{ "abcdef", true },
@@ -985,6 +1044,12 @@ test "Real-world patterns" {
     try expectMatches("\\d+:\\d+", &.{
         .{ "12:30", true },
     });
+
+    // try expectMatches("\\d{3}-\\d{4}", &.{
+    //     .{ "123-4567", true },
+    //     .{ "12-3456", false },
+    //     .{ "1234-5678", true },
+    // });
 
     try expectMatches(".*@.*", &.{
         .{ "foo@bar.com", true },
