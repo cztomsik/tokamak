@@ -158,13 +158,13 @@ const Compiler = struct {
                     self.push(.{ .ijmp = self.atom - end - 1 });
                 },
 
-                // .rep => |n| {
-                //     const ops = self.ops_main.buf[@as(usize, @intCast(self.atom))..@as(usize, @intCast(end))];
+                .rep => |n| {
+                    const ops = self.ops_main.buf[@as(usize, @intCast(self.atom))..@as(usize, @intCast(end))];
 
-                //     for (1..n) |_| {
-                //         for (ops) |op| self.push(op);
-                //     }
-                // },
+                    for (1..n) |_| {
+                        for (ops) |op| self.push(op);
+                    }
+                },
 
                 .pipe => {
                     self.insert(self.start, .{
@@ -274,15 +274,14 @@ const Compiler = struct {
         var n_clz: usize = 0; // total count of ops inside brackets
         var depth: usize = 0; // current grouping level
         var max_depth: usize = 0; // stack size we need for compilation
-        var can_repeat: bool = false; // repeating & empty groups
+        var prev: enum { atom, group, other } = .other; // repeating & empty groups
         var anchored: bool = false;
 
         while (tokenizer.next()) |tok| {
-            if (!can_repeat) switch (tok) {
-                // .rep,
-                .que, .plus, .star => return error.NothingToRepeat,
+            switch (tok) {
+                .rep, .que, .plus, .star => if (prev == .other) return error.NothingToRepeat,
                 else => {},
-            };
+            }
 
             if (tok == .caret and depth == 0) anchored = true;
             if (tok == .pipe and depth == 0) anchored = false;
@@ -294,7 +293,6 @@ const Compiler = struct {
                 },
                 .rparen => {
                     if (depth == 0) return error.NoGroupToClose;
-                    if (!can_repeat) return error.EmptyGroup;
                     depth -= 1;
                 },
                 .lbracket => {
@@ -302,13 +300,17 @@ const Compiler = struct {
                 },
                 .rbracket => {},
                 .pipe, .star => n_main += 2,
-                // .rep => |n| {
-                //     if (n == 0) return error.InvalidRep;
-                //     if (n == 1) continue;
+                .rep => |n| {
+                    if (n == 0) return error.InvalidRep;
+                    if (n == 1) continue;
 
-                //     // TODO: This is wrong and will NOT work for groups!
-                //     n_main += (n - 1);
-                // },
+                    if (prev == .atom) {
+                        n_main += (n - 1);
+                    } else {
+                        // TODO: We can do this together with capturing because we will need some state there anyway
+                        return error.TODO;
+                    }
+                },
                 else => {
                     if (tokenizer.in_bracket) {
                         n_clz += 1;
@@ -318,9 +320,10 @@ const Compiler = struct {
                 },
             }
 
-            can_repeat = switch (tok) {
-                .char, .dot, .dotstar, .rparen, .rbracket, .que, .plus, .star, .word, .non_word, .digit, .non_digit, .space, .non_space => true,
-                else => false,
+            prev = switch (tok) {
+                .char, .dot, .word, .non_word, .digit, .non_digit, .space, .non_space, .rbracket => .atom,
+                .rparen => .group,
+                else => .other,
             };
         }
 
@@ -362,7 +365,7 @@ const Token = union(enum) {
     que,
     plus,
     star,
-    // rep: u8,
+    rep: u8,
     pipe,
     lparen,
     rparen,
@@ -426,15 +429,15 @@ const Tokenizer = struct {
             '?' => .que,
             '+' => .plus,
             '*' => .star,
-            // '{' => {
-            //     if (self.pos + 1 < self.input.len and std.ascii.isDigit(self.input[self.pos]) and self.input[self.pos + 1] == '}') {
-            //         const n = self.input[self.pos] - '0';
-            //         self.pos += 2;
-            //         return .{ .rep = n };
-            //     }
+            '{' => {
+                if (self.pos + 1 < self.input.len and std.ascii.isDigit(self.input[self.pos]) and self.input[self.pos + 1] == '}') {
+                    const n = self.input[self.pos] - '0';
+                    self.pos += 2;
+                    return .{ .rep = n };
+                }
 
-            //     return .{ .char = ch };
-            // },
+                return .{ .char = ch };
+            },
             '|' => .pipe,
             '(' => .lparen,
             ')' => .rparen,
@@ -613,7 +616,7 @@ test Tokenizer {
     try expectTokens("[\\w.]", &.{ .lbracket, .word, .char, .rbracket });
     try expectTokens("[a-z]", &.{ .lbracket, .byte_range, .rbracket });
     try expectTokens("[ab-z]a-z", &.{ .lbracket, .char, .byte_range, .rbracket, .char, .char, .char });
-    // try expectTokens("{}a{3}", &.{ .char, .char, .char, .rep });
+    try expectTokens("{}a{3}", &.{ .char, .char, .char, .rep });
 }
 
 fn expectCompile(regex: []const u8, expected: []const u8) !void {
@@ -647,7 +650,6 @@ test "Regex.compile()" {
     try testing.expectError(Regex.compile(undefined, "?"), error.NothingToRepeat);
     try testing.expectError(Regex.compile(undefined, "+"), error.NothingToRepeat);
     try testing.expectError(Regex.compile(undefined, "*"), error.NothingToRepeat);
-    try testing.expectError(Regex.compile(undefined, "()"), error.EmptyGroup);
     try testing.expectError(Regex.compile(undefined, ")"), error.NoGroupToClose);
     try testing.expectError(Regex.compile(undefined, "("), error.UnclosedGroup);
 
@@ -727,15 +729,15 @@ test "Regex.compile()" {
     //     \\  7: match
     // );
 
-    // try expectCompile(".{2}a{2}b",
-    //     \\  0: dotstar
-    //     \\  1: dot
-    //     \\  2: dot
-    //     \\  3: char a
-    //     \\  4: char a
-    //     \\  5: char b
-    //     \\  6: match
-    // );
+    try expectCompile(".{2}a{2}b",
+        \\  0: dotstar
+        \\  1: dot
+        \\  2: dot
+        \\  3: char a
+        \\  4: char a
+        \\  5: char b
+        \\  6: match
+    );
 
     // try expectCompile("(a|b){2}",
     //     \\  0: dotstar
@@ -779,6 +781,11 @@ test "Regex.compile()" {
         \\  6: jmp :8
         \\  7: char c
         \\  8: match
+    );
+
+    try expectCompile("()",
+        \\  0: dotstar
+        \\  1: match
     );
 
     try expectCompile("(ab)?de",
@@ -940,10 +947,10 @@ test "Regex.match()" {
     });
 
     // Rep
-    // try expectMatches("a{3}", &.{
-    //     .{ "aaa", true },
-    //     .{ "aa", false },
-    // });
+    try expectMatches("a{3}", &.{
+        .{ "aaa", true },
+        .{ "aa", false },
+    });
 
     // Group
     try expectMatches("^(abc)?def", &.{
