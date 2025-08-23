@@ -1,5 +1,6 @@
 // KISS, JS-like, stack-based VM. Let's don't worry about tokenization/parsing
 // for now, we can do that later.
+// TODO: Token, Tokenizer, Parser, Expr
 
 const std = @import("std");
 const meta = @import("meta.zig");
@@ -8,6 +9,8 @@ const util = @import("util.zig");
 pub const Error = error{
     TypeError,
     UndefinedFunction,
+    UndefinedVar,
+    StackUnderflow,
     OutOfMemory,
     UnexpectedError,
 };
@@ -36,8 +39,20 @@ const Value = union(enum) {
     fn from(val: anytype) Value {
         const T = @TypeOf(val);
 
+        if (T == Value) {
+            return val;
+        }
+
+        if (T == []const Op) {
+            return .{ .fun = .{ .code = val } };
+        }
+
         if (meta.isString(T)) {
             return .{ .string = val };
+        }
+
+        if (meta.isSlice(T)) {
+            @compileError("TODO");
         }
 
         return switch (@typeInfo(T)) {
@@ -47,6 +62,7 @@ const Value = union(enum) {
             .error_union => if (val) |v| from(v) else |e| from(e),
             .error_set => .{ .err = error.UnexpectedError },
             .@"fn" => .{ .fun = .native(val) },
+            .pointer => from(val.*),
             else => @compileError("TODO: Value.from " ++ @typeName(T)),
         };
     }
@@ -70,8 +86,9 @@ const Value = union(enum) {
     }
 };
 
-const Fun = struct {
-    ptr: *const fn (*VM) Error!Value,
+const Fun = union(enum) {
+    native_fn: *const fn (*VM) Error!Value,
+    code: []const Op,
 
     fn native(fun: anytype) Fun {
         const H = struct {
@@ -89,8 +106,17 @@ const Fun = struct {
             }
         };
 
-        return .{ .ptr = H.wrap };
+        return .{ .native_fn = H.wrap };
     }
+};
+
+const Op = union(enum) {
+    push: Value,
+    call: Ident,
+    load: Ident,
+    store: Ident,
+    pop,
+    dup,
 };
 
 const VM = struct {
@@ -129,9 +155,42 @@ const VM = struct {
         return self.stack.pop();
     }
 
+    pub fn eval(self: *VM, code: []const Op) Error!Value {
+        for (code) |op| {
+            switch (op) {
+                .push => |val| try self.push(val),
+                .call => |ident| {
+                    const res = try self.call(ident.name());
+                    try self.push(res);
+                },
+                .load => |ident| {
+                    const val = self.env.get(ident) orelse return Error.UndefinedVar;
+                    try self.push(val);
+                },
+                .store => |ident| {
+                    const val = self.pop() orelse return Error.StackUnderflow;
+                    try self.env.put(ident, val);
+                },
+                .pop => {
+                    _ = self.pop() orelse return Error.StackUnderflow;
+                },
+                .dup => {
+                    const val = self.pop() orelse return Error.StackUnderflow;
+                    try self.push(val);
+                    try self.push(val);
+                },
+            }
+        }
+
+        return self.pop() orelse .undefined;
+    }
+
     pub fn call(self: *VM, fn_name: []const u8) Error!Value {
         if (self.env.get(Ident.parse(fn_name))) |f| {
-            return f.fun.ptr(self);
+            return switch (f.fun) {
+                .native_fn => |fun| fun(self),
+                .code => |ops| self.eval(ops),
+            };
         }
 
         return Error.UndefinedFunction;
@@ -166,14 +225,20 @@ const Builtins = struct {
         }
     }
 
+    pub fn eval(vm: *VM, code: []const Op) Error!Value {
+        return vm.eval(code);
+    }
+
     fn defineAll(vm: *VM) Error!void {
         inline for (comptime std.meta.declarations(@This())) |d| {
+            // TODO: Fix error union and then we can export this too?
+            if (comptime std.mem.eql(u8, d.name, "eval")) continue;
             try vm.define(d.name, @field(@This(), d.name));
         }
     }
 };
 
-test {
+test VM {
     var js = try VM.init(std.testing.allocator);
     defer js.deinit();
 
@@ -182,4 +247,20 @@ test {
 
     const res = try js.call("+");
     try std.testing.expectEqual(3.5, res.number);
+}
+
+test "VM.eval()" {
+    var js = try VM.init(std.testing.allocator);
+    defer js.deinit();
+
+    const ops: []const Op = &.{
+        .{ .push = Value.from(5.0) },
+        .{ .push = Value.from(3.0) },
+        .{ .call = Ident.parse("+") },
+        .{ .push = Value.from(2.0) },
+        .{ .call = Ident.parse("*") },
+    };
+
+    const result = try js.eval(ops);
+    try std.testing.expectEqual(16.0, result.number);
 }
