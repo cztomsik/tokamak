@@ -31,6 +31,11 @@ pub const Grep = struct {
     }
 };
 
+const N_SPARSE = 128;
+const N_DENSE = 32;
+const MAX_OPS = N_SPARSE - 1;
+const MAX_SPLITS = N_DENSE - 1;
+
 // https://www.cs.princeton.edu/courses/archive/spr09/cos333/beautiful.html
 // https://dl.acm.org/doi/pdf/10.1145/363347.363387
 // https://swtch.com/~rsc/regexp/regexp1.html
@@ -60,12 +65,11 @@ pub const Regex = struct {
     }
 
     pub fn match(self: *Regex, text: []const u8) bool {
-        // TODO: We should at least set an upper-bound for n_splits.
-        var buf1: [512]u8 = undefined;
-        var buf2: [128]u16 = undefined;
+        var buf1: [2 * N_SPARSE]u8 = undefined;
+        var buf2: [2 * N_DENSE]u16 = undefined;
 
-        var clist = Sparse.init(buf1[0..256], buf2[0..64]);
-        var nlist = Sparse.init(buf1[256..], buf2[64..]);
+        var clist = Sparse.init(buf1[0..N_SPARSE], buf2[0..N_DENSE]);
+        var nlist = Sparse.init(buf1[N_SPARSE..], buf2[N_DENSE..]);
 
         return pikevm(self.code, &clist, &nlist, text);
     }
@@ -88,21 +92,22 @@ const Compiler = struct {
         depth: usize,
         n_main: usize,
         n_clz: usize,
+        n_splits: usize,
     };
 
     fn init(allocator: std.mem.Allocator, regex: []const u8) !Compiler {
         var tokenizer: Tokenizer = .{ .input = regex };
         const info = try analyze(&tokenizer);
 
+        if (info.n_main > MAX_OPS or info.n_splits > MAX_SPLITS) {
+            return error.RegexTooComplex;
+        }
+
         const code = try allocator.alloc(Op, info.n_main + info.n_clz);
         errdefer allocator.free(code);
 
         var stack: Buf([3]i8) = try .initAlloc(allocator, info.depth);
         errdefer stack.deinit(allocator);
-
-        if (info.n_main > std.math.maxInt(u16)) {
-            return error.RegexTooComplex;
-        }
 
         return .{
             .allocator = allocator,
@@ -121,6 +126,7 @@ const Compiler = struct {
 
     fn analyze(tokenizer: *Tokenizer) !Info {
         var n_main: usize = 1; // we always append match
+        var n_splits: usize = 0;
         var n_clz: usize = 0; // total count of ops inside brackets
         var depth: usize = 0; // current grouping level
         var max_depth: usize = 0; // stack size we need for compilation
@@ -149,7 +155,18 @@ const Compiler = struct {
                     n_main += 1;
                 },
                 .rbracket => {},
-                .pipe, .star => n_main += 2,
+                .que => {
+                    n_main += 1;
+                    n_splits += 1;
+                },
+                .plus => {
+                    n_main += 1;
+                    n_splits += 1;
+                },
+                .pipe, .star => {
+                    n_main += 2;
+                    n_splits += 1;
+                },
                 .rep => |n| {
                     if (n == 0) return error.InvalidRep;
                     if (n == 1) continue;
@@ -197,6 +214,7 @@ const Compiler = struct {
             .n_clz = n_clz,
             .depth = max_depth,
             .anchored = anchored,
+            .n_splits = n_splits,
         };
     }
 
@@ -675,6 +693,8 @@ test "Regex.compile()" {
     try testing.expectError(Regex.compile(undefined, "*"), error.NothingToRepeat);
     try testing.expectError(Regex.compile(undefined, ")"), error.NoGroupToClose);
     try testing.expectError(Regex.compile(undefined, "("), error.UnclosedGroup);
+    try testing.expectError(Regex.compile(undefined, "a" ** 256), error.RegexTooComplex);
+    try testing.expectError(Regex.compile(undefined, "|b" ** 32), error.RegexTooComplex);
 
     try expectCompile("",
         \\  0: dotstar
@@ -889,6 +909,18 @@ test "Regex.compile()" {
         \\  7: jmp :1
         \\  8: char d
         \\  9: match
+    );
+
+    try expectCompile("((a*)*)*",
+        \\  0: dotstar
+        \\  1: split :2 :8
+        \\  2: split :3 :7
+        \\  3: split :4 :6
+        \\  4: char a
+        \\  5: jmp :3
+        \\  6: jmp :2
+        \\  7: jmp :1
+        \\  8: match
     );
 
     try expectCompile("[a-z]+@[a-z]+\\.[a-z]+",
@@ -1119,7 +1151,12 @@ test "Regex.match()" {
     // Edge-cases
     try expectMatch("|a", "", true);
     try expectMatch("a||b", "", true);
+
+    // TODO: These are currently broken (recursion / infinite loop)
     // try expectMatch("([a-z]*)*", "abc", true);
+    // try expectMatch("(a*)*", "abc", true);
+    // try expectMatch("((a*)*)*", "abc", true);
+    // try expectMatch("(" ** 30 ++ "a*" ++ ")*" ** 30, "abc", true);
 }
 
 test "Real-world patterns" {
