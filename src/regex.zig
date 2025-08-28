@@ -255,12 +255,23 @@ const Compiler = struct {
                 },
 
                 .pipe => {
-                    self.insert(self.start, .{
-                        .isplit = .{
-                            1, // LHS branch (which ends with holey-jmp)
-                            end - self.start + 2, // RHS
-                        },
-                    });
+                    // Empty pipe (edge-case)
+                    // TODO: Somebody (my future me) should double-check this...
+                    if (self.start == end) {
+                        self.push(.{
+                            .isplit = .{
+                                2,
+                                1,
+                            },
+                        });
+                    } else {
+                        self.insert(self.start, .{
+                            .isplit = .{
+                                1, // LHS branch (which ends with holey-jmp)
+                                end - self.start + 2, // RHS
+                            },
+                        });
+                    }
 
                     // Point any previous hole to our newly created holey-jmp (double-jump)
                     // NOTE: we could probably inline/flatten these in a second-pass (optimization?)
@@ -650,6 +661,7 @@ fn expectCompile(regex: []const u8, expected: []const u8) !void {
             .jmp => |addr| try w.print(" :{d}", .{addr}),
             .split => |addrs| try w.print(" :{d} :{d}", .{ addrs[0], addrs[1] }),
             .plus => |addr| try w.print(" :{d}", .{addr}),
+            .char_class => |clz| try w.print(" [{d}..{d}]", .{ clz[0], clz[1] }),
             else => {},
         }
     }
@@ -866,6 +878,35 @@ test "Regex.compile()" {
         \\  7: match
     );
 
+    try expectCompile("(a(b|c))*d",
+        \\  0: dotstar
+        \\  1: split :2 :8
+        \\  2: char a
+        \\  3: split :4 :6
+        \\  4: char b
+        \\  5: jmp :7
+        \\  6: char c
+        \\  7: jmp :1
+        \\  8: char d
+        \\  9: match
+    );
+
+    try expectCompile("[a-z]+@[a-z]+\\.[a-z]+",
+        \\  0: dotstar
+        \\  1: char_class [10..11]
+        \\  2: plus :1
+        \\  3: char @
+        \\  4: char_class [11..12]
+        \\  5: plus :4
+        \\  6: char .
+        \\  7: char_class [12..13]
+        \\  8: plus :7
+        \\  9: match
+        \\ 10: byte_range
+        \\ 11: byte_range
+        \\ 12: byte_range
+    );
+
     // TODO: No idea if this is correct but at least the jumps are valid.
     try expectCompile("^(\\w+\\.(js|ts)|^foo)",
         \\  0: begin
@@ -885,6 +926,34 @@ test "Regex.compile()" {
         \\ 14: char o
         \\ 15: char o
         \\ 16: match
+    );
+
+    // Apparently, this is valid (but useless)
+    try expectCompile("|a||b|",
+        \\  0: dotstar
+        \\  1: split :3 :2
+        \\  2: jmp :5
+        \\  3: split :4 :6
+        \\  4: char a
+        \\  5: jmp :7
+        \\  6: split :8 :7
+        \\  7: jmp :10
+        \\  8: split :9 :11
+        \\  9: char b
+        \\ 10: jmp :11
+        \\ 11: match
+    );
+
+    // TODO: Can we optimize this?
+    try expectCompile("(a*)*b",
+        \\  0: dotstar
+        \\  1: split :2 :6
+        \\  2: split :3 :5
+        \\  3: char a
+        \\  4: jmp :2
+        \\  5: jmp :1
+        \\  6: char b
+        \\  7: match
     );
 }
 
@@ -1046,6 +1115,11 @@ test "Regex.match()" {
         .{ "@foo", false },
         .{ "", false },
     });
+
+    // Edge-cases
+    try expectMatch("|a", "", true);
+    try expectMatch("a||b", "", true);
+    // try expectMatch("([a-z]*)*", "abc", true);
 }
 
 test "Real-world patterns" {
