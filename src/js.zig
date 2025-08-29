@@ -224,7 +224,7 @@ const Expr = union(enum) {
         };
     }
 
-    pub fn format(self: Expr, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+    pub fn format(self: Expr, writer: anytype) !void {
         switch (self) {
             .atom => |tok| {
                 switch (tok) {

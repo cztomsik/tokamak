@@ -108,9 +108,9 @@ pub const HtmlParser = struct {
             }
         }
 
-        std.debug.print("time: {}ms mem used: {} unclosed: {} #el: {} #attr: {} #text: {}\n", .{
+        std.debug.print("time: {}ms mem used: {B} unclosed: {} #el: {} #attr: {} #text: {}\n", .{
             std.time.milliTimestamp() - time, // total, including I/O
-            std.fmt.fmtIntSizeDec(doc.arenaSize()),
+            doc.arenaSize(),
             top.depth(),
             n_elem,
             n_attr,

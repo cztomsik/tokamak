@@ -106,7 +106,7 @@ pub const Cron = struct {
                 var buf: [20]u8 = undefined;
 
                 try self.queue.push(job.name, job.data, .{
-                    .key = std.fmt.bufPrintIntToSlice(&buf, job.next, 10, .lower, .{}),
+                    .key = try std.fmt.bufPrint(&buf, "{d}", .{job.next}),
                     .schedule_at = job.next,
                 });
 

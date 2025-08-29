@@ -9,7 +9,7 @@ pub const Event = union(enum) {
 
     pub const Attr = @FieldType(Event, "attr");
 
-    pub fn format(self: Event, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+    pub fn format(self: Event, writer: anytype) !void {
         try switch (self) {
             .open => writer.print("<{s}", .{self.open}),
             .attr => writer.print(" {s}=\"{s}\"", .{ self.attr.name, self.attr.value }),

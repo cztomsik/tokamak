@@ -70,7 +70,7 @@ pub const Context = struct {
                 continue :fmt .yaml;
             },
             .json => {
-                try self.out.print("{}\n", .{
+                try self.out.print("{f}\n", .{
                     std.json.fmt(res, .{ .whitespace = .indent_2 }),
                 });
             },

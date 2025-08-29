@@ -58,7 +58,7 @@ pub const Writer = struct {
             (value[0] == ' ' or value[value.len - 1] == ' ');
 
         if (needs_escape) {
-            try self.writer.print("{}", .{std.json.fmt(value, .{})});
+            try self.writer.print("{f}", .{std.json.fmt(value, .{})});
         } else {
             try self.writer.writeAll(value);
         }

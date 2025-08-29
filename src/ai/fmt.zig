@@ -19,7 +19,7 @@ pub fn Formatter(comptime T: type) type {
     return struct {
         value: T,
 
-        pub fn format(self: @This(), comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+        pub fn format(self: @This(), writer: anytype) !void {
             try writeValue(self.value, writer);
         }
     };
@@ -46,7 +46,7 @@ fn writeValue(value: anytype, writer: anytype) !void {
         .void => writer.print("success", .{}), // TODO: is this enough encouraging?
         .error_set => writer.print("error: {s}", .{@errorName(value)}),
         .error_union => if (value) |r| writeValue(r, writer) else |e| writeValue(e, writer),
-        else => std.json.fmt(value, .{ .whitespace = .indent_2 }).format("", .{}, writer),
+        else => std.json.fmt(value, .{ .whitespace = .indent_2 }).format(writer),
     };
 }
 
@@ -98,7 +98,7 @@ fn writeTable(comptime T: type, items: []const T, writer: anytype) !void {
 }
 
 fn getValueLength(value: anytype) usize {
-    return std.fmt.count("{}", .{fmt(value)});
+    return std.fmt.count("{f}", .{fmt(value)});
 }
 
 const Person = struct { name: []const u8, age: u32 };
@@ -118,31 +118,31 @@ const people: []const Person = &.{
 };
 
 test {
-    try std.testing.expectFmt("success", "{}", .{fmt({})});
-    try std.testing.expectFmt("error: NotFound", "{}", .{fmt(error.NotFound)});
-    try std.testing.expectFmt("123", "{}", .{fmt(123)});
-    try std.testing.expectFmt("Hello", "{}", .{fmt("Hello")});
+    try testing.expectFmt(fmt({}), "success");
+    try testing.expectFmt(fmt(error.NotFound), "error: NotFound");
+    try testing.expectFmt(fmt(123), "123");
+    try testing.expectFmt(fmt("Hello"), "Hello");
 
-    try std.testing.expectFmt(
+    try testing.expectFmt(fmt(.{ .name = "John Doe", .age = 30 }),
         \\{
         \\  "name": "John Doe",
         \\  "age": 30
         \\}
-    , "{}", .{fmt(.{ .name = "John Doe", .age = 30 })});
+    );
 
-    try std.testing.expectFmt(
+    try testing.expectFmt(fmt(people),
         \\| name        | age |
         \\|-------------|-----|
         \\| John Doe    | 30  |
         \\| Jessica Doe | 29  |
         \\| X           | 0   |
         \\
-    , "{}", .{fmt(people)});
+    );
 
-    try std.testing.expectFmt(
+    try testing.expectFmt(fmt(@as([]const Person, people[2..])),
         \\| name | age |
         \\|------|-----|
         \\| X    | 0   |
         \\
-    , "{}", .{fmt(@as([]const Person, people[2..]))});
+    );
 }
