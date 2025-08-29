@@ -112,24 +112,24 @@ pub const Sendmail = struct {
 };
 
 test "fmt" {
-    var buf = std.ArrayList(u8).init(std.testing.allocator);
-    defer buf.deinit();
+    var wb = std.io.Writer.Allocating.init(std.testing.allocator);
+    defer wb.deinit();
 
     var msg: Message = .{ .to = "foo@bar.com", .subject = "Hello", .text = "Hello!" };
 
-    try Sendmail.writeMessage(msg, buf.writer().any());
+    try Sendmail.writeMessage(msg, &wb.writer);
     try std.testing.expectEqualStrings(
         \\To: foo@bar.com
         \\Subject: Hello
         \\
         \\Hello!
         \\
-    , buf.items);
+    , wb.written());
 
     msg.from = "test@acme.org";
-    buf.items.len = 0;
+    wb.writer.end = 0;
 
-    try Sendmail.writeMessage(msg, buf.writer().any());
+    try Sendmail.writeMessage(msg, &wb.writer);
     try std.testing.expectEqualStrings(
         \\To: foo@bar.com
         \\From: test@acme.org
@@ -137,5 +137,5 @@ test "fmt" {
         \\
         \\Hello!
         \\
-    , buf.items);
+    , wb.written());
 }

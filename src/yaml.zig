@@ -158,13 +158,13 @@ const stories: []const Story = &.{
 };
 
 fn expectYaml(val: anytype, expected: []const u8) !void {
-    var buf = std.ArrayList(u8).init(std.testing.allocator);
-    defer buf.deinit();
+    var bw = std.io.Writer.Allocating.init(std.testing.allocator);
+    defer bw.deinit();
 
-    var w = Writer.init(buf.writer().any());
+    var w = Writer.init(&bw.writer);
     try w.writeValue(val);
 
-    return testing.expectEqual(buf.items, expected);
+    return testing.expectEqual(bw.written(), expected);
 }
 
 test {

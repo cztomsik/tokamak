@@ -45,11 +45,11 @@ pub fn expectEqual(res: anytype, expected: meta.Const(@TypeOf(res))) !void {
 
 /// Attempts to print `arg` into a buf and then compare those strings.
 pub fn expectFmt(arg: anytype, expected: []const u8) !void {
-    var buf = try std.ArrayList(u8).initCapacity(std.testing.allocator, 64);
-    defer buf.deinit();
+    var wb = std.io.Writer.Allocating.init(allocator);
+    defer wb.deinit();
 
-    try buf.writer().print("{}", .{arg});
-    try std.testing.expectEqualStrings(expected, buf.items);
+    try wb.writer.print("{f}", .{arg});
+    try std.testing.expectEqualStrings(expected, wb.written());
 }
 
 // TODO: This is similar to the writeTable() fn in ai/fmt.zig but let's take
@@ -72,11 +72,11 @@ pub fn expectTable(items: anytype, comptime expected: []const u8) !void {
         break :blk cols;
     };
 
-    var res = std.ArrayList(u8).init(std.testing.allocator);
-    defer res.deinit();
+    var wb = std.io.Writer.Allocating.init(allocator);
+    defer wb.deinit();
 
     var buf: [header.len]u8 = undefined;
-    var w = TableWriter.init(&buf, res.writer().any());
+    var w = TableWriter.init(&buf, &wb.writer);
 
     try w.writeHeader(&cols);
     try w.writeSeparator(&cols);
@@ -85,7 +85,7 @@ pub fn expectTable(items: anytype, comptime expected: []const u8) !void {
         try w.writeRow(it, &cols);
     }
 
-    try std.testing.expectEqualStrings(expected, res.items);
+    try std.testing.expectEqualStrings(expected, wb.written());
 }
 
 const Col = struct {

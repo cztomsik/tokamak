@@ -6,9 +6,9 @@ pub fn stringify(value: anytype, writer: anytype) !void {
 }
 
 pub fn stringifyAlloc(arena: std.mem.Allocator, value: anytype) ![]const u8 {
-    var buf = std.ArrayList(u8).init(arena);
-    try writeValue(value, buf.writer().any());
-    return buf.toOwnedSlice();
+    var bw = std.io.Writer.Allocating.init(arena);
+    try writeValue(value, &bw.writer);
+    return bw.toOwnedSlice();
 }
 
 pub fn fmt(value: anytype) Formatter(@TypeOf(value)) {
