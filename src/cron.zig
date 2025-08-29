@@ -23,7 +23,7 @@ pub const Job = struct {
 pub const Cron = struct {
     config: Config,
     queue: *Queue,
-    jobs: std.ArrayList(Job),
+    jobs: std.array_list.Managed(Job),
     time: *const fn () time.Time = time.Time.now,
     mutex: std.Thread.Mutex = .{},
     wait: std.Thread.Condition = .{},

@@ -80,11 +80,11 @@ pub fn visit(val: anytype, cx: anytype, handler: *const fn (@TypeOf(cx), Edge) a
 }
 
 fn expectEdges(value: anytype, edges: []const EdgeKind) !void {
-    var buf = std.ArrayList(EdgeKind).init(std.testing.allocator);
+    var buf = std.array_list.Managed(EdgeKind).init(std.testing.allocator);
     defer buf.deinit();
 
     const H = struct {
-        fn append(list: *std.ArrayList(EdgeKind), edge: Edge) !void {
+        fn append(list: *std.array_list.Managed(EdgeKind), edge: Edge) !void {
             try list.append(edge);
         }
     };

@@ -41,7 +41,7 @@ pub const Context = struct {
     fn compile(self: *Context, arena: std.mem.Allocator, expr: Expr) ![]const Op {
         // TODO: we should first compute the size and then do something like compileInto(&buf)
         //       and maybe even introduce Compiler? IDK but at least this works for now...
-        var ops = std.ArrayList(Op).init(arena);
+        var ops = std.array_list.Managed(Op).init(arena);
 
         switch (expr) {
             .atom => |tok| {

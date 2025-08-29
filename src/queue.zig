@@ -229,7 +229,7 @@ pub const MemQueue = struct {
         self.mutex.lock();
         defer self.mutex.unlock();
 
-        var res = try std.ArrayList(JobInfo).initCapacity(arena, filter.limit);
+        var res = try std.array_list.Managed(JobInfo).initCapacity(arena, filter.limit);
         defer res.deinit();
 
         var it = self.jobs.iter();

@@ -25,7 +25,7 @@ pub const Sendmail = struct {
         if (msg.from) |from| try checkAddress(from);
         try checkAddress(msg.to);
 
-        var args = std.ArrayList([]const u8).init(allocator);
+        var args = std.array_list.Managed([]const u8).init(allocator);
         defer args.deinit();
 
         try args.append(self.config.path);

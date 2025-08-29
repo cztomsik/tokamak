@@ -63,7 +63,7 @@ pub fn Decoder(comptime entities: anytype) type {
 }
 
 pub fn decode(allocator: std.mem.Allocator, input: []const u8, comptime entities: anytype) ![]const u8 {
-    var buf = std.ArrayList(u8).init(allocator);
+    var buf = std.array_list.Managed(u8).init(allocator);
     errdefer buf.deinit();
 
     var it = Decoder(entities).init(input);

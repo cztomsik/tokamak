@@ -13,14 +13,14 @@ const BackwardFn = *const fn (cx: *Context, refs: []Ref) void;
 
 pub const Context = struct {
     allocator: std.mem.Allocator,
-    values: std.ArrayList(Value),
-    refs: std.ArrayList([]Ref),
+    values: std.array_list.Managed(Value),
+    refs: std.array_list.Managed([]Ref),
 
     pub fn init(allocator: std.mem.Allocator) !Context {
         return .{
             .allocator = allocator,
-            .values = std.ArrayList(Value).init(allocator),
-            .refs = std.ArrayList([]Ref).init(allocator),
+            .values = std.array_list.Managed(Value).init(allocator),
+            .refs = std.array_list.Managed([]Ref).init(allocator),
         };
     }
 

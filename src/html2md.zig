@@ -17,14 +17,14 @@ pub fn html2md(allocator: std.mem.Allocator, node: *dom.Node, options: Options) 
 pub const Html2Md = struct {
     options: Options,
     // TODO: out: std.io.AnyWriter and then we don't need Allocator? + initAlloc() + deinit(allocator)?
-    res: std.ArrayList(u8),
+    res: std.array_list.Managed(u8),
     in_line: u32 = 0, // <h1>, <tr>
     pending: union(enum) { nop, sp, br: u2 } = .nop,
 
     pub fn init(allocator: std.mem.Allocator, options: Options) !Html2Md {
         return .{
             .options = options,
-            .res = std.ArrayList(u8).init(allocator),
+            .res = std.array_list.Managed(u8).init(allocator),
         };
     }
 
