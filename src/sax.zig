@@ -118,7 +118,7 @@ const Scanner = struct {
         @"a=x": struct { len: usize, q: u8 }, // wait for closing quote
     } = .init,
 
-    const State = std.meta.FieldType(@This(), .state);
+    const State = @FieldType(@This(), "state");
 
     fn next(self: *Scanner) ?Event {
         while (self.pos < self.input.len) {
