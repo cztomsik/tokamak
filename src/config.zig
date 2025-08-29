@@ -29,7 +29,7 @@ pub fn read(comptime T: type, allocator: std.mem.Allocator, options: ReadOptions
 const WriteOptions = struct {
     path: []const u8 = DEFAULT_PATH,
     cwd: ?std.fs.Dir = null,
-    stringify: std.json.StringifyOptions = .{ .whitespace = .indent_2 },
+    stringify: std.json.Stringify.Options = .{ .whitespace = .indent_2 },
 };
 
 pub fn write(comptime T: type, config: T, options: WriteOptions) !void {
