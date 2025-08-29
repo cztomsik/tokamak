@@ -390,13 +390,13 @@ test Parser {
 }
 
 fn expectEval(js: *Context, expr: []const u8, expected: []const u8) !void {
-    var buf = std.ArrayList(u8).init(std.testing.allocator);
-    defer buf.deinit();
+    var wb = std.io.Writer.Allocating.init(std.testing.allocator);
+    defer wb.deinit();
 
     const res = try js.eval(expr);
-    try js.print(buf.writer().any(), res);
+    try js.print(&wb.writer, res);
 
-    return std.testing.expectEqualStrings(expected, buf.items);
+    return std.testing.expectEqualStrings(expected, wb.written());
 }
 
 test Context {

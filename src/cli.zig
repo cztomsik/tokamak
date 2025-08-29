@@ -27,9 +27,9 @@ pub const Context = struct {
     bin: []const u8,
     command: *const Command,
     args: []const []const u8,
-    in: std.io.AnyReader,
-    out: std.io.AnyWriter,
-    err: std.io.AnyWriter,
+    in: *std.io.Reader,
+    out: *std.io.Writer,
+    err: *std.io.Writer,
     injector: *Injector,
     format: OutputFormat = .auto,
 
@@ -179,6 +179,10 @@ pub fn run(inj: *Injector, allocator: std.mem.Allocator, cmds: []const Command) 
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
 
+    var in = std.fs.File.stdin().reader(&.{});
+    var out = std.fs.File.stdout().writer(&.{});
+    var err = std.fs.File.stderr().writer(&.{});
+
     // NOTE: We are using arena so we don't need to call argsFree()
     const args = try std.process.argsAlloc(arena.allocator());
     for (args) |arg| if (!std.unicode.utf8ValidateSlice(arg)) return error.InvalidArg;
@@ -213,9 +217,9 @@ pub fn run(inj: *Injector, allocator: std.mem.Allocator, cmds: []const Command) 
         .bin = std.fs.path.basename(args[0]),
         .command = &cmd,
         .args = cmd_args[@min(cmd_args.len, 1)..],
-        .in = std.io.getStdIn().reader().any(),
-        .out = std.io.getStdOut().writer().any(),
-        .err = std.io.getStdErr().writer().any(),
+        .in = &in.interface,
+        .out = &out.interface,
+        .err = &err.interface,
         .injector = &child_inj,
         .format = format,
     };

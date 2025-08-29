@@ -658,9 +658,9 @@ test Tokenizer {
 }
 
 fn expectCompile(regex: []const u8, expected: []const u8) !void {
-    var buf = std.ArrayList(u8).init(std.testing.allocator);
-    var w = buf.writer();
-    defer buf.deinit();
+    var wb = std.io.Writer.Allocating.init(std.testing.allocator);
+    const w = &wb.writer;
+    defer wb.deinit();
 
     var re = try Regex.compile(std.testing.allocator, regex);
     defer re.deinit(std.testing.allocator);
@@ -682,7 +682,7 @@ fn expectCompile(regex: []const u8, expected: []const u8) !void {
         }
     }
 
-    try std.testing.expectEqualStrings(expected, buf.items);
+    try std.testing.expectEqualStrings(expected, wb.written());
 }
 
 test "Regex.compile()" {
