@@ -122,7 +122,7 @@ pub const Writer = struct {
     }
 
     fn writeIndent(self: *Writer) !void {
-        try self.writer.writeBytesNTimes("  ", self.indent);
+        try self.writer.splatByteAll(' ', 2 * self.indent);
     }
 
     fn shouldInline(value: anytype) bool {

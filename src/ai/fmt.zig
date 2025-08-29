@@ -69,7 +69,7 @@ fn writeTable(comptime T: type, items: []const T, writer: anytype) !void {
     inline for (fields, 0..) |field, i| {
         try writer.writeByte(' ');
         try writer.writeAll(field.name);
-        try writer.writeByteNTimes(' ', widths[i] - field.name.len);
+        try writer.splatByteAll(' ', widths[i] - field.name.len);
         try writer.writeAll(" |");
     }
     try writer.writeAll("\n");
@@ -78,7 +78,7 @@ fn writeTable(comptime T: type, items: []const T, writer: anytype) !void {
     try writer.writeAll("|");
     inline for (widths) |width| {
         try writer.writeAll("-");
-        try writer.writeByteNTimes('-', width);
+        try writer.splatByteAll('-', width);
         try writer.writeAll("-|");
     }
     try writer.writeAll("\n");
@@ -90,7 +90,7 @@ fn writeTable(comptime T: type, items: []const T, writer: anytype) !void {
             try writer.writeAll(" ");
             const v = @field(item, field.name);
             try writeValue(v, writer);
-            try writer.writeByteNTimes(' ', widths[i] - getValueLength(v));
+            try writer.splatByteAll(' ', widths[i] - getValueLength(v));
             try writer.writeAll(" |");
         }
         try writer.writeAll("\n");

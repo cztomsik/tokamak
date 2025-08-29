@@ -160,7 +160,7 @@ const TableWriter = struct {
             try self.inner.writeAll(chunk[0..@min(chunk.len, width)]);
 
             if (chunk.len < width) {
-                try self.inner.writeByteNTimes(' ', width - chunk.len);
+                try self.inner.splatByteAll(' ', width - chunk.len);
             }
         }
     }
