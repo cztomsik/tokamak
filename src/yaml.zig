@@ -6,11 +6,11 @@ const meta = @import("meta.zig");
 
 // TODO: this is still WIP, do not use it for anything important
 pub const Writer = struct {
-    writer: std.io.AnyWriter,
+    writer: *std.io.Writer,
     indent: usize = 0,
     after_dash: bool = false,
 
-    pub fn init(writer: std.io.AnyWriter) Writer {
+    pub fn init(writer: *std.io.Writer) Writer {
         return .{ .writer = writer };
     }
 

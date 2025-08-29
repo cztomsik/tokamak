@@ -81,7 +81,7 @@ pub const Template = struct {
         allocator.free(self.tokens);
     }
 
-    pub fn render(self: *const Template, data: anytype, writer: std.io.AnyWriter) !void {
+    pub fn render(self: *const Template, data: anytype, writer: *std.io.Writer) !void {
         try renderPart(self.tokens, .fromPtr(&data), writer);
     }
 
@@ -93,7 +93,7 @@ pub const Template = struct {
         return wb.toOwnedSlice();
     }
 
-    fn renderPart(tokens: []const Token, data: Value, writer: std.io.AnyWriter) !void {
+    fn renderPart(tokens: []const Token, data: Value, writer: *std.io.Writer) !void {
         var i: usize = 0;
 
         while (i < tokens.len) {

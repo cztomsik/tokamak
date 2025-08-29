@@ -18,15 +18,15 @@ pub const RequestOptions = struct {
 pub const RequestBody = struct {
     ctx: *const anyopaque,
     content_type: []const u8,
-    render: *const fn (ctx: *const anyopaque, writer: std.io.AnyWriter) anyerror!void,
+    render: *const fn (ctx: *const anyopaque, writer: *std.io.Writer) anyerror!void,
 
-    pub fn write(self: RequestBody, writer: std.io.AnyWriter) !void {
+    pub fn write(self: RequestBody, writer: *std.io.Writer) !void {
         try self.render(self.ctx, writer);
     }
 
     pub fn json(ptr: anytype) RequestBody {
         const H = struct {
-            fn stringify(ctx: @TypeOf(ptr), writer: std.io.AnyWriter) anyerror!void {
+            fn stringify(ctx: @TypeOf(ptr), writer: *std.io.Writer) anyerror!void {
                 try std.json.stringify(ctx, .{}, writer);
             }
         };

@@ -95,11 +95,11 @@ const Col = struct {
 
 const TableWriter = struct {
     buf: []u8,
-    inner: std.io.AnyWriter,
+    inner: *std.io.Writer,
     row: usize = 0,
     col: usize = 0,
 
-    pub fn init(buf: []u8, writer: std.io.AnyWriter) TableWriter {
+    pub fn init(buf: []u8, writer: *std.io.Writer) TableWriter {
         return .{
             .buf = buf,
             .inner = writer,

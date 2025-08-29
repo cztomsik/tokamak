@@ -31,12 +31,12 @@ const WriterOptions = struct {
 };
 
 pub const Writer = struct {
-    inner: std.io.AnyWriter,
+    inner: *std.io.Writer,
     options: WriterOptions,
     row: usize = 0,
     col: usize = 0,
 
-    pub fn init(inner: std.io.AnyWriter, options: WriterOptions) Writer {
+    pub fn init(inner: *std.io.Writer, options: WriterOptions) Writer {
         return .{
             .inner = inner,
             .options = options,

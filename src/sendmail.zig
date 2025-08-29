@@ -96,7 +96,7 @@ pub const Sendmail = struct {
         }
     }
 
-    fn writeMessage(msg: Message, writer: std.io.AnyWriter) !void {
+    fn writeMessage(msg: Message, writer: *std.io.Writer) !void {
         const template = tpl.Template.parseComptime(
             \\To: {{to}}
             \\{{#from}}From: {{from}}
