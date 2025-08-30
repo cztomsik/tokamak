@@ -119,7 +119,7 @@ pub const StdClient = struct {
         if (options.body) |body| {
             req.transfer_encoding = .chunked;
             var bw = try req.sendBody(buf);
-            try body.write(req.connection.?.writer());
+            try body.write(&bw.writer);
             try bw.end();
         } else {
             try req.sendBodiless();
