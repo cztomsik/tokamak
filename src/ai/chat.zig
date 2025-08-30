@@ -60,7 +60,7 @@ pub const Message = struct {
     pub fn jsonStringify(self: Message, jws: anytype) !void {
         // TODO: this is ugly hack but zig only allows omitting null fields, which is not what we want
         //       (what we want is to omit them only if they also have null as default value)
-        try jws.print("{}", .{std.json.fmt(.{
+        try jws.print("{f}", .{std.json.fmt(.{
             .role = self.role,
             .content = self.content,
             .tool_calls = self.tool_calls,

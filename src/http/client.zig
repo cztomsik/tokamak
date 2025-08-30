@@ -27,7 +27,7 @@ pub const RequestBody = struct {
     pub fn json(ptr: anytype) RequestBody {
         const H = struct {
             fn stringify(ctx: @TypeOf(ptr), writer: *std.io.Writer) anyerror!void {
-                try std.json.stringify(ctx, .{}, writer);
+                try std.json.fmt(ctx, .{}).format(writer);
             }
         };
 

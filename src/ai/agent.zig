@@ -235,7 +235,7 @@ pub const AgentToolbox = struct {
         self.mutex.lock();
         defer self.mutex.unlock();
 
-        var buf = std.ArrayList(chat.Tool).init(arena);
+        var buf = std.array_list.Managed(chat.Tool).init(arena);
 
         for (names) |name| {
             const tool = self.tools.get(name) orelse continue;

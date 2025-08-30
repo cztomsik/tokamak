@@ -61,7 +61,9 @@ pub const Sendmail = struct {
 
         // Write
         if (child.stdin) |stdin| {
-            writeMessage(msg, stdin.writer().any()) catch |err| {
+            var buf: [64]u8 = undefined;
+            var w = stdin.writer(&buf);
+            writeMessage(msg, &w.interface) catch |err| {
                 _ = child.kill() catch {};
                 _ = child.wait() catch {};
                 return err;

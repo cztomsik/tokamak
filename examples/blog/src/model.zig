@@ -19,7 +19,7 @@ pub const BlogService = struct {
     }
 
     pub fn getPosts(self: *BlogService, allocator: std.mem.Allocator) ![]const Post {
-        var res = std.ArrayList(Post).init(allocator);
+        var res = std.array_list.Managed(Post).init(allocator);
         errdefer res.deinit();
 
         for (self.posts.values()) |post| {
