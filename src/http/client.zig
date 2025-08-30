@@ -95,50 +95,65 @@ pub const StdClient = struct {
         self.std_client.deinit();
     }
 
+    // TODO: This is minimal PoC for Zig 0.15.1 - it works, but... IDK
     fn make_request(client: *Client, arena: std.mem.Allocator, options: RequestOptions) !Response {
         const self: *@This() = @fieldParentPtr("interface", client);
+
+        // NOTE: This is shared for both sending & receiving
         var buf: []u8 = try arena.alloc(u8, 8 * 1024);
 
-        const url = try std.Uri.resolve_inplace(
-            if (options.base_url) |base| try std.Uri.parse(base) else .{ .scheme = "http" },
-            options.url,
+        const url = try resolveUrl(
             &buf,
+            options.url,
+            options.base_url,
         );
 
-        var req = try self.std_client.open(options.method, url, .{
+        var req = try self.std_client.request(options.method, url, .{
             .headers = .{
                 .content_type = if (options.body) |b| .{ .override = b.content_type } else .default,
             },
             .extra_headers = options.headers,
-            .server_header_buffer = buf,
         });
         defer req.deinit();
 
-        if (options.body != null) {
-            req.transfer_encoding = .chunked;
-        }
-
-        try req.send();
-
         if (options.body) |body| {
-            try body.write(req.writer().any());
-            try req.finish();
+            req.transfer_encoding = .chunked;
+            var bw = try req.sendBody(buf);
+            try body.write(req.connection.?.writer());
+            try bw.end();
+        } else {
+            try req.sendBodiless();
         }
 
-        try req.wait();
+        var res = try req.receiveHead(buf);
 
         var headers: std.StringHashMapUnmanaged([]const u8) = .{};
-        var it = req.response.iterateHeaders();
+        var it = res.head.iterateHeaders();
         while (it.next()) |h| {
             try headers.put(arena, h.name, h.value);
         }
 
+        var decompress: std.http.Decompress = undefined;
+        const buf2 = try arena.alloc(u8, res.head.content_encoding.minBufferCapacity());
+        var reader = res.readerDecompressing(buf, &decompress, buf2);
+        const body = try reader.allocRemaining(arena, .limited(options.max_len));
+
         return .{
             .arena = arena,
-            .status = req.response.status,
+            .status = res.head.status,
             .headers = headers,
-            .body = try req.reader().readAllAlloc(arena, options.max_len),
+            .body = body,
         };
+    }
+
+    fn resolveUrl(buf: *[]u8, url: []const u8, base: ?[]const u8) !std.Uri {
+        @memcpy(buf.*[0..url.len], url);
+
+        return std.Uri.resolveInPlace(
+            if (base) |b| try std.Uri.parse(b) else .{ .scheme = "http" },
+            url.len,
+            buf,
+        );
     }
 };
 

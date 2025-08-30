@@ -3,10 +3,8 @@ const meta = @import("meta.zig");
 const mem = @import("mem.zig");
 const http = @import("http.zig");
 
-// re-export (without name clashing)
-pub usingnamespace struct {
-    pub const allocator = std.testing.allocator;
-};
+// re-export
+pub const allocator = std.testing.allocator;
 
 pub const time = struct {
     pub var value: i64 = 0;
@@ -238,26 +236,26 @@ test httpClient {
 
 pub const MockClient = struct {
     interface: http.Client,
-    fixtures: std.ArrayList(struct { std.http.Method, []const u8, std.http.Status, []const u8 }),
+    fixtures: std.array_list.Managed(struct { std.http.Method, []const u8, std.http.Status, []const u8 }),
 
-    pub fn init(allocator: std.mem.Allocator) !*MockClient {
-        const self = try allocator.create(MockClient);
+    pub fn init(gpa: std.mem.Allocator) !*MockClient {
+        const self = try gpa.create(MockClient);
 
         self.* = .{
             .interface = .{
                 .make_request = &make_request,
                 .config = &.{},
             },
-            .fixtures = std.ArrayList(struct { std.http.Method, []const u8, std.http.Status, []const u8 }).init(allocator),
+            .fixtures = std.array_list.Managed(struct { std.http.Method, []const u8, std.http.Status, []const u8 }).init(allocator),
         };
 
         return self;
     }
 
     pub fn deinit(self: *MockClient) void {
-        const allocator = self.fixtures.allocator;
+        const gpa = self.fixtures.allocator;
         self.fixtures.deinit();
-        allocator.destroy(self);
+        gpa.destroy(self);
     }
 
     fn make_request(client: *http.Client, arena: std.mem.Allocator, options: http.RequestOptions) !http.ClientResponse {
