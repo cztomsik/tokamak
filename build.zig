@@ -14,10 +14,11 @@ pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
     const embed = b.option([]const []const u8, "embed", "Files to embed in the binary") orelse &.{};
-    const no_bin = b.option(bool, "no-bin", "Check only") orelse false;
 
     const root = b.addModule("tokamak", .{
         .root_source_file = b.path("src/main.zig"),
+        .target = target,
+        .optimize = optimize,
     });
 
     const httpz = b.dependency("httpz", .{ .target = target, .optimize = optimize });
@@ -31,7 +32,6 @@ pub fn build(b: *std.Build) !void {
     const tests = b.addTest(.{ .root_module = test_mod, .filters = test_filter });
     tests.root_module.addImport("httpz", httpz.module("httpz"));
     tests.root_module.link_libc = true;
-    if (!no_bin) b.installArtifact(tests);
     const run_tests = b.addRunArtifact(tests);
     test_step.dependOn(&run_tests.step);
 }
