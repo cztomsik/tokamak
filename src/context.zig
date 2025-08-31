@@ -216,9 +216,12 @@ pub fn EventStream(comptime T: type) type {
         }
 
         fn sendEvent(stream: std.net.Stream, event: anytype) !void {
-            try stream.writeAll("data: ");
-            try std.json.stringify(event, .{}, stream.writer());
-            try stream.writeAll("\n\n");
+            var sw = stream.writer(&.{});
+            const writer = &sw.interface;
+
+            try writer.writeAll("data: ");
+            try std.json.fmt(event, .{}).format(writer);
+            try writer.writeAll("\n\n");
         }
     };
 }
