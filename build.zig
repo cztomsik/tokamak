@@ -17,6 +17,8 @@ pub fn build(b: *std.Build) !void {
 
     const root = b.addModule("tokamak", .{
         .root_source_file = b.path("src/main.zig"),
+        .target = target,
+        .optimize = optimize,
     });
 
     const httpz = b.dependency("httpz", .{ .target = target, .optimize = optimize });
@@ -26,7 +28,8 @@ pub fn build(b: *std.Build) !void {
 
     const test_step = b.step("test", "Run tests");
     const test_filter = b.option([]const []const u8, "test-filter", "Skip tests that do not match any filter") orelse &[0][]const u8{};
-    const tests = b.addTest(.{ .root_source_file = b.path("src/main.zig"), .filters = test_filter });
+    const test_mod = b.createModule(.{ .root_source_file = b.path("src/main.zig"), .target = target, .optimize = optimize });
+    const tests = b.addTest(.{ .root_module = test_mod, .filters = test_filter });
     tests.root_module.addImport("httpz", httpz.module("httpz"));
     tests.root_module.link_libc = true;
     const run_tests = b.addRunArtifact(tests);

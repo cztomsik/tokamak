@@ -14,7 +14,9 @@ const EOD = 86_400 - 1;
 // TODO: Decide if we want to use std.debug.assert(), @panic() or just throw an error
 fn checkRange(num: anytype, min: @TypeOf(num), max: @TypeOf(num)) void {
     if (sort.lt(num, min) or sort.gt(num, max)) {
-        std.log.warn("Value {} is not in range [{}, {}]", .{ num, min, max });
+        // TODO: fix later (we can't use {f} and {any} is also wrong)
+        // std.log.warn("Value {} is not in range [{}, {}]", .{ num, min, max });
+        std.log.warn("Value not in range", .{});
     }
 }
 
@@ -132,7 +134,7 @@ pub const Date = struct {
         return @intCast(@mod(rata_day + 3, 7));
     }
 
-    pub fn format(self: Date, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+    pub fn format(self: Date, writer: anytype) !void {
         try writer.print("{d}-{d:0>2}-{d:0>2}", .{
             @as(u32, @intCast(self.year)),
             self.month,
@@ -269,8 +271,8 @@ pub const Time = struct {
         };
     }
 
-    pub fn format(self: Time, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
-        try writer.print("{} {d:0>2}:{d:0>2}:{d:0>2} UTC", .{
+    pub fn format(self: Time, writer: anytype) !void {
+        try writer.print("{f} {d:0>2}:{d:0>2}:{d:0>2} UTC", .{
             self.date(),
             self.hour(),
             self.minute(),

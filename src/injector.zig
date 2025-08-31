@@ -12,7 +12,7 @@ pub const Ref = struct {
     pub fn ref(ptr: anytype) Ref {
         return .{
             .tid = meta.tid(@TypeOf(ptr.*)),
-            .ptr = @ptrCast(@constCast(@alignCast(ptr))),
+            .ptr = @ptrCast(@alignCast(@constCast(ptr))),
             .is_const = @typeInfo(@TypeOf(ptr)).pointer.is_const,
         };
     }
@@ -61,7 +61,7 @@ pub const Injector = struct {
 
         for (self.refs) |r| {
             if (r.match(T)) {
-                return @ptrCast(@constCast(@alignCast(r.ptr)));
+                return @ptrCast(@alignCast(@constCast(r.ptr)));
             }
         }
 

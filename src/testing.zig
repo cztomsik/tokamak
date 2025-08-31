@@ -3,10 +3,8 @@ const meta = @import("meta.zig");
 const mem = @import("mem.zig");
 const http = @import("http.zig");
 
-// re-export (without name clashing)
-pub usingnamespace struct {
-    pub const allocator = std.testing.allocator;
-};
+// re-export
+pub const allocator = std.testing.allocator;
 
 pub const time = struct {
     pub var value: i64 = 0;
@@ -45,11 +43,11 @@ pub fn expectEqual(res: anytype, expected: meta.Const(@TypeOf(res))) !void {
 
 /// Attempts to print `arg` into a buf and then compare those strings.
 pub fn expectFmt(arg: anytype, expected: []const u8) !void {
-    var buf = try std.ArrayList(u8).initCapacity(std.testing.allocator, 64);
-    defer buf.deinit();
+    var wb = std.io.Writer.Allocating.init(allocator);
+    defer wb.deinit();
 
-    try buf.writer().print("{}", .{arg});
-    try std.testing.expectEqualStrings(expected, buf.items);
+    try wb.writer.print("{f}", .{arg});
+    try std.testing.expectEqualStrings(expected, wb.written());
 }
 
 // TODO: This is similar to the writeTable() fn in ai/fmt.zig but let's take
@@ -72,11 +70,11 @@ pub fn expectTable(items: anytype, comptime expected: []const u8) !void {
         break :blk cols;
     };
 
-    var res = std.ArrayList(u8).init(std.testing.allocator);
-    defer res.deinit();
+    var wb = std.io.Writer.Allocating.init(allocator);
+    defer wb.deinit();
 
     var buf: [header.len]u8 = undefined;
-    var w = TableWriter.init(&buf, res.writer().any());
+    var w = TableWriter.init(&buf, &wb.writer);
 
     try w.writeHeader(&cols);
     try w.writeSeparator(&cols);
@@ -85,7 +83,7 @@ pub fn expectTable(items: anytype, comptime expected: []const u8) !void {
         try w.writeRow(it, &cols);
     }
 
-    try std.testing.expectEqualStrings(expected, res.items);
+    try std.testing.expectEqualStrings(expected, wb.written());
 }
 
 const Col = struct {
@@ -95,11 +93,11 @@ const Col = struct {
 
 const TableWriter = struct {
     buf: []u8,
-    inner: std.io.AnyWriter,
+    inner: *std.io.Writer,
     row: usize = 0,
     col: usize = 0,
 
-    pub fn init(buf: []u8, writer: std.io.AnyWriter) TableWriter {
+    pub fn init(buf: []u8, writer: *std.io.Writer) TableWriter {
         return .{
             .buf = buf,
             .inner = writer,
@@ -160,7 +158,7 @@ const TableWriter = struct {
             try self.inner.writeAll(chunk[0..@min(chunk.len, width)]);
 
             if (chunk.len < width) {
-                try self.inner.writeByteNTimes(' ', width - chunk.len);
+                try self.inner.splatByteAll(' ', width - chunk.len);
             }
         }
     }
@@ -238,26 +236,26 @@ test httpClient {
 
 pub const MockClient = struct {
     interface: http.Client,
-    fixtures: std.ArrayList(struct { std.http.Method, []const u8, std.http.Status, []const u8 }),
+    fixtures: std.array_list.Managed(struct { std.http.Method, []const u8, std.http.Status, []const u8 }),
 
-    pub fn init(allocator: std.mem.Allocator) !*MockClient {
-        const self = try allocator.create(MockClient);
+    pub fn init(gpa: std.mem.Allocator) !*MockClient {
+        const self = try gpa.create(MockClient);
 
         self.* = .{
             .interface = .{
                 .make_request = &make_request,
                 .config = &.{},
             },
-            .fixtures = std.ArrayList(struct { std.http.Method, []const u8, std.http.Status, []const u8 }).init(allocator),
+            .fixtures = std.array_list.Managed(struct { std.http.Method, []const u8, std.http.Status, []const u8 }).init(allocator),
         };
 
         return self;
     }
 
     pub fn deinit(self: *MockClient) void {
-        const allocator = self.fixtures.allocator;
+        const gpa = self.fixtures.allocator;
         self.fixtures.deinit();
-        allocator.destroy(self);
+        gpa.destroy(self);
     }
 
     fn make_request(client: *http.Client, arena: std.mem.Allocator, options: http.RequestOptions) !http.ClientResponse {

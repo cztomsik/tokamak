@@ -6,11 +6,11 @@ const meta = @import("meta.zig");
 
 // TODO: this is still WIP, do not use it for anything important
 pub const Writer = struct {
-    writer: std.io.AnyWriter,
+    writer: *std.io.Writer,
     indent: usize = 0,
     after_dash: bool = false,
 
-    pub fn init(writer: std.io.AnyWriter) Writer {
+    pub fn init(writer: *std.io.Writer) Writer {
         return .{ .writer = writer };
     }
 
@@ -58,7 +58,7 @@ pub const Writer = struct {
             (value[0] == ' ' or value[value.len - 1] == ' ');
 
         if (needs_escape) {
-            try self.writer.print("{}", .{std.json.fmt(value, .{})});
+            try self.writer.print("{f}", .{std.json.fmt(value, .{})});
         } else {
             try self.writer.writeAll(value);
         }
@@ -122,7 +122,7 @@ pub const Writer = struct {
     }
 
     fn writeIndent(self: *Writer) !void {
-        try self.writer.writeBytesNTimes("  ", self.indent);
+        try self.writer.splatByteAll(' ', 2 * self.indent);
     }
 
     fn shouldInline(value: anytype) bool {
@@ -158,13 +158,13 @@ const stories: []const Story = &.{
 };
 
 fn expectYaml(val: anytype, expected: []const u8) !void {
-    var buf = std.ArrayList(u8).init(std.testing.allocator);
-    defer buf.deinit();
+    var bw = std.io.Writer.Allocating.init(std.testing.allocator);
+    defer bw.deinit();
 
-    var w = Writer.init(buf.writer().any());
+    var w = Writer.init(&bw.writer);
     try w.writeValue(val);
 
-    return testing.expectEqual(buf.items, expected);
+    return testing.expectEqual(bw.written(), expected);
 }
 
 test {

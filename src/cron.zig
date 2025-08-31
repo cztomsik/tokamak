@@ -23,7 +23,7 @@ pub const Job = struct {
 pub const Cron = struct {
     config: Config,
     queue: *Queue,
-    jobs: std.ArrayList(Job),
+    jobs: std.array_list.Managed(Job),
     time: *const fn () time.Time = time.Time.now,
     mutex: std.Thread.Mutex = .{},
     wait: std.Thread.Condition = .{},
@@ -106,7 +106,7 @@ pub const Cron = struct {
                 var buf: [20]u8 = undefined;
 
                 try self.queue.push(job.name, job.data, .{
-                    .key = std.fmt.bufPrintIntToSlice(&buf, job.next, 10, .lower, .{}),
+                    .key = try std.fmt.bufPrint(&buf, "{d}", .{job.next}),
                     .schedule_at = job.next,
                 });
 

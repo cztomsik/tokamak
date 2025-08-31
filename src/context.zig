@@ -75,7 +75,7 @@ pub const Context = struct {
     /// Sets a cookie.
     pub fn setCookie(self: *Context, name: []const u8, value: []const u8, options: CookieOptions) !void {
         // TODO: start with current header?
-        var buf = std.ArrayList(u8).init(self.req.arena);
+        var buf = std.array_list.Managed(u8).init(self.req.arena);
         const writer = buf.writer();
 
         try writer.print("{s}={s}", .{ name, value });
@@ -216,9 +216,12 @@ pub fn EventStream(comptime T: type) type {
         }
 
         fn sendEvent(stream: std.net.Stream, event: anytype) !void {
-            try stream.writeAll("data: ");
-            try std.json.stringify(event, .{}, stream.writer());
-            try stream.writeAll("\n\n");
+            var sw = stream.writer(&.{});
+            const writer = &sw.interface;
+
+            try writer.writeAll("data: ");
+            try std.json.fmt(event, .{}).format(writer);
+            try writer.writeAll("\n\n");
         }
     };
 }

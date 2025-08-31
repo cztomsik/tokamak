@@ -44,7 +44,7 @@ pub const Container = struct {
         self.deinit_fn = struct {
             fn deinit(ct: *Container) void {
                 const allocator2 = ct.allocator;
-                const b2: @TypeOf(b) = @alignCast(@ptrCast(ct.bundle));
+                const b2: @TypeOf(b) = @ptrCast(@alignCast(ct.bundle));
                 b2.deinit(ct);
                 allocator2.destroy(b2);
                 allocator2.destroy(ct);
@@ -123,7 +123,7 @@ const Dep = struct {
     }
 
     fn ptr(self: Dep, data: []u8) *self.type {
-        return if (@sizeOf(self.type) > 0) @alignCast(@ptrCast(&data[self.state.instance.offset])) else @ptrFromInt(0xaaaaaaaaaaaaaaaa);
+        return if (@sizeOf(self.type) > 0) @ptrCast(@alignCast(&data[self.state.instance.offset])) else @ptrFromInt(0xaaaaaaaaaaaaaaaa);
     }
 
     fn initInstance(self: Dep, data: []u8, inj: *Injector) !void {
@@ -655,7 +655,7 @@ test "partial deinit" {
     };
 
     const Fail = struct {
-        pub fn init(_: *std.ArrayList(u8), _: *std.ArrayList(i8)) !@This() {
+        pub fn init(_: *std.array_list.Managed(u8), _: *std.array_list.Managed(i8)) !@This() {
             return error.SomethingWentWrong;
         }
 

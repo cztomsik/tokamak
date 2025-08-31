@@ -4,14 +4,12 @@ const Buf = @import("util.zig").Buf;
 const Sparse = @import("util.zig").Sparse(u16, u8);
 
 pub const Grep = struct {
-    buf: []u8,
-    reader: std.io.AnyReader,
+    reader: *std.io.Reader,
     regex: *Regex,
     line: usize = 0,
 
-    pub fn init(buf: []u8, reader: std.io.AnyReader, regex: *Regex) Grep {
+    pub fn init(reader: *std.io.Reader, regex: *Regex) Grep {
         return .{
-            .buf = buf,
             .reader = reader,
             .regex = regex,
         };
@@ -24,7 +22,7 @@ pub const Grep = struct {
     }
 
     fn nextLine(self: *Grep) ?[]const u8 {
-        const line = (self.reader.readUntilDelimiterOrEof(self.buf, '\n') catch return null) orelse return null;
+        const line = self.reader.takeDelimiterExclusive('\n') catch return null;
         const trimmed = std.mem.trimRight(u8, line, "\r");
         self.line += 1;
         return trimmed;
@@ -660,9 +658,9 @@ test Tokenizer {
 }
 
 fn expectCompile(regex: []const u8, expected: []const u8) !void {
-    var buf = std.ArrayList(u8).init(std.testing.allocator);
-    var w = buf.writer();
-    defer buf.deinit();
+    var wb = std.io.Writer.Allocating.init(std.testing.allocator);
+    const w = &wb.writer;
+    defer wb.deinit();
 
     var re = try Regex.compile(std.testing.allocator, regex);
     defer re.deinit(std.testing.allocator);
@@ -684,7 +682,7 @@ fn expectCompile(regex: []const u8, expected: []const u8) !void {
         }
     }
 
-    try std.testing.expectEqualStrings(expected, buf.items);
+    try std.testing.expectEqualStrings(expected, wb.written());
 }
 
 test "Regex.compile()" {

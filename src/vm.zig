@@ -121,7 +121,7 @@ pub const Op = union(enum) {
 
 pub const VM = struct {
     gpa: std.mem.Allocator,
-    stack: std.ArrayList(Value),
+    stack: std.array_list.Managed(Value),
     env: std.AutoHashMap(Ident, Value),
 
     pub fn init(gpa: std.mem.Allocator) VM {

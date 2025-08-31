@@ -80,7 +80,7 @@ pub const Selector = struct {
     }
 
     pub fn parse(allocator: std.mem.Allocator, selector: []const u8) !Selector {
-        var parts = std.ArrayList(Part).init(allocator);
+        var parts = std.array_list.Managed(Part).init(allocator);
         defer parts.deinit();
 
         var tokenizer = Tokenizer{ .input = selector };
@@ -129,7 +129,7 @@ pub const Selector = struct {
         };
     }
 
-    pub fn format(self: Selector, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+    pub fn format(self: Selector, writer: anytype) !void {
         for (0..self.parts.len) |i| {
             try switch (self.parts[self.parts.len - 1 - i]) {
                 .unsupported => writer.print(":unsupported", .{}),
@@ -328,7 +328,7 @@ test "parsing & fmt" {
         var sel = try Selector.parse(std.testing.allocator, ex);
         defer sel.deinit(std.testing.allocator);
 
-        try std.testing.expectFmt(ex, "{}", .{sel});
+        try std.testing.expectFmt(ex, "{f}", .{sel});
     }
 
     const invalid = .{

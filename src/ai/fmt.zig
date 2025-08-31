@@ -1,14 +1,15 @@
 const std = @import("std");
 const meta = @import("../meta.zig");
+const testing = @import("../testing.zig");
 
 pub fn stringify(value: anytype, writer: anytype) !void {
     try writeValue(value, writer);
 }
 
 pub fn stringifyAlloc(arena: std.mem.Allocator, value: anytype) ![]const u8 {
-    var buf = std.ArrayList(u8).init(arena);
-    try writeValue(value, buf.writer().any());
-    return buf.toOwnedSlice();
+    var bw = std.io.Writer.Allocating.init(arena);
+    try writeValue(value, &bw.writer);
+    return bw.toOwnedSlice();
 }
 
 pub fn fmt(value: anytype) Formatter(@TypeOf(value)) {
@@ -19,7 +20,7 @@ pub fn Formatter(comptime T: type) type {
     return struct {
         value: T,
 
-        pub fn format(self: @This(), comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+        pub fn format(self: @This(), writer: anytype) !void {
             try writeValue(self.value, writer);
         }
     };
@@ -46,7 +47,7 @@ fn writeValue(value: anytype, writer: anytype) !void {
         .void => writer.print("success", .{}), // TODO: is this enough encouraging?
         .error_set => writer.print("error: {s}", .{@errorName(value)}),
         .error_union => if (value) |r| writeValue(r, writer) else |e| writeValue(e, writer),
-        else => std.json.fmt(value, .{ .whitespace = .indent_2 }).format("", .{}, writer),
+        else => std.json.fmt(value, .{ .whitespace = .indent_2 }).format(writer),
     };
 }
 
@@ -69,7 +70,7 @@ fn writeTable(comptime T: type, items: []const T, writer: anytype) !void {
     inline for (fields, 0..) |field, i| {
         try writer.writeByte(' ');
         try writer.writeAll(field.name);
-        try writer.writeByteNTimes(' ', widths[i] - field.name.len);
+        try writer.splatByteAll(' ', widths[i] - field.name.len);
         try writer.writeAll(" |");
     }
     try writer.writeAll("\n");
@@ -78,7 +79,7 @@ fn writeTable(comptime T: type, items: []const T, writer: anytype) !void {
     try writer.writeAll("|");
     inline for (widths) |width| {
         try writer.writeAll("-");
-        try writer.writeByteNTimes('-', width);
+        try writer.splatByteAll('-', width);
         try writer.writeAll("-|");
     }
     try writer.writeAll("\n");
@@ -90,7 +91,7 @@ fn writeTable(comptime T: type, items: []const T, writer: anytype) !void {
             try writer.writeAll(" ");
             const v = @field(item, field.name);
             try writeValue(v, writer);
-            try writer.writeByteNTimes(' ', widths[i] - getValueLength(v));
+            try writer.splatByteAll(' ', widths[i] - getValueLength(v));
             try writer.writeAll(" |");
         }
         try writer.writeAll("\n");
@@ -98,7 +99,7 @@ fn writeTable(comptime T: type, items: []const T, writer: anytype) !void {
 }
 
 fn getValueLength(value: anytype) usize {
-    return std.fmt.count("{}", .{fmt(value)});
+    return std.fmt.count("{f}", .{fmt(value)});
 }
 
 const Person = struct { name: []const u8, age: u32 };
@@ -118,31 +119,31 @@ const people: []const Person = &.{
 };
 
 test {
-    try std.testing.expectFmt("success", "{}", .{fmt({})});
-    try std.testing.expectFmt("error: NotFound", "{}", .{fmt(error.NotFound)});
-    try std.testing.expectFmt("123", "{}", .{fmt(123)});
-    try std.testing.expectFmt("Hello", "{}", .{fmt("Hello")});
+    try testing.expectFmt(fmt({}), "success");
+    try testing.expectFmt(fmt(error.NotFound), "error: NotFound");
+    try testing.expectFmt(fmt(123), "123");
+    try testing.expectFmt(fmt("Hello"), "Hello");
 
-    try std.testing.expectFmt(
+    try testing.expectFmt(fmt(.{ .name = "John Doe", .age = 30 }),
         \\{
         \\  "name": "John Doe",
         \\  "age": 30
         \\}
-    , "{}", .{fmt(.{ .name = "John Doe", .age = 30 })});
+    );
 
-    try std.testing.expectFmt(
+    try testing.expectFmt(fmt(people),
         \\| name        | age |
         \\|-------------|-----|
         \\| John Doe    | 30  |
         \\| Jessica Doe | 29  |
         \\| X           | 0   |
         \\
-    , "{}", .{fmt(people)});
+    );
 
-    try std.testing.expectFmt(
+    try testing.expectFmt(fmt(@as([]const Person, people[2..])),
         \\| name | age |
         \\|------|-----|
         \\| X    | 0   |
         \\
-    , "{}", .{fmt(@as([]const Person, people[2..]))});
+    );
 }

@@ -81,19 +81,19 @@ pub const Template = struct {
         allocator.free(self.tokens);
     }
 
-    pub fn render(self: *const Template, data: anytype, writer: std.io.AnyWriter) !void {
+    pub fn render(self: *const Template, data: anytype, writer: *std.io.Writer) !void {
         try renderPart(self.tokens, .fromPtr(&data), writer);
     }
 
     pub fn renderAlloc(self: *const Template, allocator: std.mem.Allocator, data: anytype) ![]const u8 {
-        var buf = std.ArrayList(u8).init(allocator);
-        errdefer buf.deinit();
+        var wb = std.io.Writer.Allocating.init(allocator);
+        errdefer wb.deinit();
 
-        try self.render(data, buf.writer().any());
-        return buf.toOwnedSlice();
+        try self.render(data, &wb.writer);
+        return wb.toOwnedSlice();
     }
 
-    fn renderPart(tokens: []const Token, data: Value, writer: std.io.AnyWriter) !void {
+    fn renderPart(tokens: []const Token, data: Value, writer: *std.io.Writer) !void {
         var i: usize = 0;
 
         while (i < tokens.len) {

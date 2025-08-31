@@ -41,7 +41,7 @@ pub const Context = struct {
     fn compile(self: *Context, arena: std.mem.Allocator, expr: Expr) ![]const Op {
         // TODO: we should first compute the size and then do something like compileInto(&buf)
         //       and maybe even introduce Compiler? IDK but at least this works for now...
-        var ops = std.ArrayList(Op).init(arena);
+        var ops = std.array_list.Managed(Op).init(arena);
 
         switch (expr) {
             .atom => |tok| {
@@ -224,7 +224,7 @@ const Expr = union(enum) {
         };
     }
 
-    pub fn format(self: Expr, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+    pub fn format(self: Expr, writer: anytype) !void {
         switch (self) {
             .atom => |tok| {
                 switch (tok) {
@@ -390,13 +390,13 @@ test Parser {
 }
 
 fn expectEval(js: *Context, expr: []const u8, expected: []const u8) !void {
-    var buf = std.ArrayList(u8).init(std.testing.allocator);
-    defer buf.deinit();
+    var wb = std.io.Writer.Allocating.init(std.testing.allocator);
+    defer wb.deinit();
 
     const res = try js.eval(expr);
-    try js.print(buf.writer().any(), res);
+    try js.print(&wb.writer, res);
 
-    return std.testing.expectEqualStrings(expected, buf.items);
+    return std.testing.expectEqualStrings(expected, wb.written());
 }
 
 test Context {

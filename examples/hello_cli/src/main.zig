@@ -51,7 +51,7 @@ const Cli = struct {
         return str[start orelse 0 .. end orelse str.len];
     }
 
-    fn grep(allocator: std.mem.Allocator, pattern: []const u8, file_path: []const u8) !void {
+    fn grep(allocator: std.mem.Allocator, file_path: []const u8, pattern: []const u8) !void {
         var regex = try tk.regex.Regex.compile(allocator, pattern);
         defer regex.deinit(allocator);
 
@@ -59,7 +59,8 @@ const Cli = struct {
         defer file.close();
 
         var buf: [4096]u8 = undefined;
-        var grepper = tk.regex.Grep.init(&buf, file.reader().any(), &regex);
+        var in = file.reader(&buf);
+        var grepper = tk.regex.Grep.init(&in.interface, &regex);
 
         while (grepper.next()) |line| {
             std.debug.print("{d}: {s}\n", .{ grepper.line, line });

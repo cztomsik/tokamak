@@ -33,7 +33,7 @@ pub fn ui(comptime options: UiOptions) Route {
             ;
 
             ctx.res.content_type = .HTML;
-            ctx.res.body = try std.fmt.allocPrint(ctx.allocator, "{s}\nconst config = {}\n{s}", .{ header, std.json.fmt(options, .{}), footer });
+            ctx.res.body = try std.fmt.allocPrint(ctx.allocator, "{s}\nconst config = {f}\n{s}", .{ header, std.json.fmt(options, .{}), footer });
             ctx.responded = true;
         }
     };
@@ -85,7 +85,7 @@ fn walk(arena: std.mem.Allocator, prefix: []const u8, res: *PathMap, routes: []c
                 var op: Operation = .{};
 
                 if (m.params.len > 0) {
-                    var params = std.ArrayList(Parameter).init(arena);
+                    var params = std.array_list.Managed(Parameter).init(arena);
                     const names = Params.match(route.path.?, route.path.?).?;
 
                     for (m.params, 0..) |schema, i| try params.append(.{
@@ -134,7 +134,7 @@ fn walk(arena: std.mem.Allocator, prefix: []const u8, res: *PathMap, routes: []c
 }
 
 fn swaggerPath(arena: std.mem.Allocator, prefix: []const u8, path: []const u8) ![]const u8 {
-    var res = std.ArrayList(u8).init(arena);
+    var res = std.array_list.Managed(u8).init(arena);
     try res.appendSlice(prefix);
 
     var pos: usize = 0;

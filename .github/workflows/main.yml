@@ -9,9 +9,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: mlugg/setup-zig@v2.0.1
+      - uses: mlugg/setup-zig@v2.0.5
         with:
-          version: 0.14.1
+          version: 0.15.1
 
       - run: zig build test --summary all
   
@@ -20,9 +20,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: mlugg/setup-zig@v2.0.1
+      - uses: mlugg/setup-zig@v2.0.5
         with:
-          version: 0.14.1
+          version: 0.15.1
       
       - name: Check examples
         run: |
