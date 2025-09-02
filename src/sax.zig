@@ -31,16 +31,19 @@ pub const Event = union(enum) {
 /// This is because many events are typically ignored, making such operations
 /// wasteful.
 pub const Parser = struct {
-    buf: []u8,
-    reader: std.io.AnyReader,
+    reader: ?*std.io.Reader = null,
     is_eof: bool = false,
     scanner: Scanner = .{ .input = &.{} },
 
     /// Create a parser for streaming input.
-    pub fn initStreaming(buf: []u8, reader: std.io.AnyReader) Parser {
+    pub fn initStreaming(reader: *std.io.Reader) Parser {
+        std.debug.assert(reader.buffer.len > 0);
+
         return .{
-            .buf = buf,
             .reader = reader,
+            .scanner = .{
+                .input = reader.buffered(),
+            },
         };
     }
 
@@ -48,8 +51,6 @@ pub const Parser = struct {
     pub fn initCompleteInput(input: []const u8) Parser {
         return .{
             .is_eof = true,
-            .buf = undefined,
-            .reader = undefined,
             .scanner = .{
                 .input = input,
             },
@@ -72,16 +73,24 @@ pub const Parser = struct {
     }
 
     fn shrinkRead(self: *Parser) !void {
-        const keep = self.scanner.input[self.scanner.spos..];
-        if (keep.len == self.buf.len) return error.BufferFull;
+        const r = self.reader.?;
 
+        // TODO: It looks like there is no check if reader.rebase() goes over buf.len???
+        const keep = self.scanner.input[self.scanner.spos..];
+        if (keep.len == r.buffer.len) return error.BufferFull;
+
+        r.toss(self.scanner.spos);
+        self.scanner.input = &.{};
         self.scanner.pos -= self.scanner.spos;
         self.scanner.spos = 0;
-        std.mem.copyForwards(u8, self.buf[0..keep.len], keep);
 
-        const n = try self.reader.read(self.buf[keep.len..]);
-        if (n == 0) self.is_eof = true;
-        self.scanner.input = self.buf[0 .. keep.len + n];
+        self.scanner.input = r.peekGreedy(r.bufferedLen() + 1) catch |e| switch (e) {
+            error.EndOfStream => {
+                self.is_eof = true;
+                return;
+            },
+            else => return e,
+        };
     }
 };
 
@@ -305,10 +314,11 @@ const Scanner = struct {
 fn expectEvents(input: []const u8, events: []const Event) !void {
     var buf: [40]u8 = undefined;
     var fbs = std.io.fixedBufferStream(input);
+    var adapter = fbs.reader().adaptToNewApi(&buf);
 
     var parsers: [2]Parser = .{
         .initCompleteInput(input),
-        .initStreaming(&buf, fbs.reader().any()),
+        .initStreaming(&adapter.new_interface),
     };
 
     for (&parsers) |*parser| {

@@ -16,9 +16,9 @@ pub const HtmlParser = struct {
         };
     }
 
-    pub fn initStreaming(buf: []u8, reader: std.io.AnyReader) HtmlParser {
+    pub fn initStreaming(reader: *std.io.Reader) HtmlParser {
         return .{
-            .sax = .initStreaming(buf, reader),
+            .sax = .initStreaming(reader),
         };
     }
 

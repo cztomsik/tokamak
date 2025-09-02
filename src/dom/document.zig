@@ -49,11 +49,8 @@ pub const Document = struct {
         return parser.parseDocument(allocator);
     }
 
-    pub fn parseFromStream(allocator: std.mem.Allocator, reader: std.io.AnyReader) !*Document {
-        const buf = try allocator.alloc(u8, 200 * 1024);
-        defer allocator.free(buf);
-
-        var parser = HtmlParser.initStreaming(buf, reader);
+    pub fn parseFromStream(allocator: std.mem.Allocator, reader: *std.io.Reader) !*Document {
+        var parser = HtmlParser.initStreaming(reader);
         return parser.parseDocument(allocator);
     }
 
