@@ -75,6 +75,16 @@ pub const Client = struct {
     pub fn post(self: *Client, arena: std.mem.Allocator, url: []const u8, body: ?RequestBody) !Response {
         return self.request(arena, .{ .method = .POST, .url = url, .body = body });
     }
+
+    pub fn resolveUrl(buf: *[]u8, url: []const u8, base: ?[]const u8) !std.Uri {
+        @memcpy(buf.*[0..url.len], url);
+
+        return std.Uri.resolveInPlace(
+            if (base) |b| try std.Uri.parse(b) else .{ .scheme = "http" },
+            url.len,
+            buf,
+        );
+    }
 };
 
 pub const StdClient = struct {
@@ -102,7 +112,7 @@ pub const StdClient = struct {
         // NOTE: This is shared for both sending & receiving
         var buf: []u8 = try arena.alloc(u8, 8 * 1024);
 
-        const url = try resolveUrl(
+        const url = try Client.resolveUrl(
             &buf,
             options.url,
             options.base_url,
@@ -144,16 +154,6 @@ pub const StdClient = struct {
             .headers = headers,
             .body = body,
         };
-    }
-
-    fn resolveUrl(buf: *[]u8, url: []const u8, base: ?[]const u8) !std.Uri {
-        @memcpy(buf.*[0..url.len], url);
-
-        return std.Uri.resolveInPlace(
-            if (base) |b| try std.Uri.parse(b) else .{ .scheme = "http" },
-            url.len,
-            buf,
-        );
     }
 };
 
