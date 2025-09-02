@@ -151,9 +151,9 @@ pub const Route = struct {
     /// Creates a group of routes from a struct type. Each pub fn will be equivalent
     /// to calling the corresponding route function with the method and path.
     pub fn router(comptime T: type) Route {
-        const children = comptime blk: {
-            @setEvalBranchQuota(@typeInfo(T).@"struct".decls.len * 100);
+        @setEvalBranchQuota(1_000_000);
 
+        const children = comptime blk: {
             var res: []const Route = &.{};
 
             for (std.meta.declarations(T)) |d| {
