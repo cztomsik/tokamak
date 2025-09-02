@@ -6,7 +6,9 @@ const DEFAULT_PATH = "config.json";
 const ReadOptions = struct {
     path: []const u8 = DEFAULT_PATH,
     cwd: ?std.fs.Dir = null,
-    parse: std.json.ParseOptions = .{ .ignore_unknown_fields = true },
+    // TODO: alloc_always should not be overridable
+    parse: std.json.ParseOptions = .{ .ignore_unknown_fields = true, .allocate = .alloc_always },
+    max_bytes: usize = 16 * 1024,
 };
 
 pub fn read(comptime T: type, allocator: std.mem.Allocator, options: ReadOptions) !std.json.Parsed(T) {
@@ -18,12 +20,10 @@ pub fn read(comptime T: type, allocator: std.mem.Allocator, options: ReadOptions
     };
     defer file.close();
 
-    var reader = std.json.reader(allocator, file.reader());
-    defer reader.deinit();
+    const contents = try file.readToEndAlloc(allocator, options.max_bytes);
+    defer allocator.free(contents);
 
-    errdefer log.debug("Failed to parse config: {s}", .{reader.scanner.input[reader.scanner.cursor..]});
-
-    return try std.json.parseFromTokenSource(T, allocator, &reader, options.parse);
+    return try std.json.parseFromSlice(T, allocator, contents, options.parse);
 }
 
 const WriteOptions = struct {
