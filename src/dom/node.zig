@@ -106,12 +106,12 @@ pub const Node = struct {
 
     pub fn dump(self: *Node) void {
         const Cx = struct {
-            writer: std.io.AnyWriter,
+            writer: *std.io.Writer,
             indent: usize = 0,
 
             fn open(cx: *@This(), el: *Element) !void {
                 try cx.writer.writeByte('\n');
-                try cx.writer.writeByteNTimes(' ', cx.indent);
+                try cx.writer.splatByteAll(' ', cx.indent);
                 try cx.writer.print("<{s}", .{el.localName()});
 
                 var next = el.attributes;
@@ -131,7 +131,7 @@ pub const Node = struct {
                 if (!el.local_name.isVoid()) {
                     if (el.node.first_child != null) {
                         try cx.writer.writeByte('\n');
-                        try cx.writer.writeByteNTimes(' ', cx.indent);
+                        try cx.writer.splatByteAll(' ', cx.indent);
                     }
 
                     try cx.writer.print("</{s}>", .{el.localName()});
@@ -144,7 +144,7 @@ pub const Node = struct {
                 var it = std.mem.tokenizeAny(u8, std.mem.trim(u8, tn.data.str(), " \t\r\n"), "\r\n");
                 while (it.next()) |line| {
                     try cx.writer.writeByte('\n');
-                    try cx.writer.writeByteNTimes(' ', cx.indent);
+                    try cx.writer.splatByteAll(' ', cx.indent);
                     try cx.writer.writeAll(line);
                 }
             }
@@ -153,7 +153,8 @@ pub const Node = struct {
         std.debug.lockStdErr();
         defer std.debug.unlockStdErr();
 
-        var cx = Cx{ .writer = std.io.getStdErr().writer().any() };
+        var w = std.fs.File.stderr().writer(&.{});
+        var cx = Cx{ .writer = &w.interface };
         self.visit(&cx) catch {};
     }
 
