@@ -80,7 +80,7 @@ pub const Parser = struct {
         if (keep.len == r.buffer.len) return error.BufferFull;
 
         r.toss(self.scanner.spos);
-        self.scanner.input = &.{};
+        self.scanner.input = self.scanner.input[self.scanner.spos..];
         self.scanner.pos -= self.scanner.spos;
         self.scanner.spos = 0;
 
