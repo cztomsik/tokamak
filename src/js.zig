@@ -74,7 +74,7 @@ pub const Context = struct {
         return ops.toOwnedSlice();
     }
 
-    pub fn print(self: *Context, writer: std.io.AnyWriter, val: Value) !void {
+    pub fn print(self: *Context, writer: *std.io.Writer, val: Value) !void {
         _ = self; // autofix
 
         // TODO: move SOME of this to Value.fmt/debug() but js.print() should probably stay JS-specific
@@ -112,7 +112,8 @@ const Builtins = struct {
     }
 
     pub fn print(vm: *VM, val: Value) !void {
-        const w = std.io.getStdErr().writer().any();
+        var fw = std.fs.File.stderr().writer(&.{});
+        const w = &fw.interface;
         try cx(vm).print(w, val);
         try w.writeByte('\n');
     }
@@ -234,7 +235,7 @@ const Expr = union(enum) {
             },
             .cons => |cons| {
                 try writer.print("({s}", .{@tagName(cons.op)});
-                for (cons.args) |arg| try writer.print(" {}", .{arg});
+                for (cons.args) |arg| try writer.print(" {f}", .{arg});
                 try writer.writeAll(")");
             },
         }
@@ -373,7 +374,7 @@ fn expectParse(input: []const u8, expected: []const u8) !void {
     var parser = Parser.init(arena.allocator(), input);
     const expr = try parser.parseExpr(0);
 
-    return std.testing.expectFmt(expected, "{}", .{expr});
+    return std.testing.expectFmt(expected, "{f}", .{expr});
 }
 
 test Parser {
