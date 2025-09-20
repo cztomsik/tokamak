@@ -63,15 +63,15 @@ pub fn Decoder(comptime entities: anytype) type {
 }
 
 pub fn decode(allocator: std.mem.Allocator, input: []const u8, comptime entities: anytype) ![]const u8 {
-    var buf = std.array_list.Managed(u8).init(allocator);
-    errdefer buf.deinit();
+    var buf = std.ArrayList(u8){};
+    errdefer buf.deinit(allocator);
 
     var it = Decoder(entities).init(input);
     while (it.next()) |chunk| {
-        try buf.appendSlice(chunk);
+        try buf.appendSlice(allocator, chunk);
     }
 
-    return buf.toOwnedSlice();
+    return buf.toOwnedSlice(allocator);
 }
 
 pub fn decodeInplace(buf: []u8, comptime entities: anytype) []u8 {

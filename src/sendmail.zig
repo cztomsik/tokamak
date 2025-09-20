@@ -25,27 +25,27 @@ pub const Sendmail = struct {
         if (msg.from) |from| try checkAddress(from);
         try checkAddress(msg.to);
 
-        var args = std.array_list.Managed([]const u8).init(allocator);
-        defer args.deinit();
+        var args = std.ArrayList([]const u8){};
+        defer args.deinit(allocator);
 
-        try args.append(self.config.path);
+        try args.append(allocator, self.config.path);
 
         // Ignore dots alone on lines by themselves in incoming messages. Should be set for STDIN
-        try args.append("-i");
+        try args.append(allocator, "-i");
 
         // Custom args
         for (self.config.args) |arg| {
-            try args.append(arg);
+            try args.append(allocator, arg);
         }
 
         // Add sender
         if (msg.from) |from| {
-            try args.append("-f");
-            try args.append(from);
+            try args.append(allocator, "-f");
+            try args.append(allocator, from);
         }
 
         // Add recipient (TODO: multi)
-        try args.append(msg.to);
+        try args.append(allocator, msg.to);
 
         // Create child process
         var child = std.process.Child.init(args.items, allocator);

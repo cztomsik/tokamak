@@ -235,15 +235,15 @@ pub const AgentToolbox = struct {
         self.mutex.lock();
         defer self.mutex.unlock();
 
-        var buf = std.array_list.Managed(chat.Tool).init(arena);
+        var buf = std.ArrayList(chat.Tool){};
 
         for (names) |name| {
             const tool = self.tools.get(name) orelse continue;
             const copy = try meta.dupe(arena, tool.tool);
-            try buf.append(copy);
+            try buf.append(arena, copy);
         }
 
-        return buf.toOwnedSlice();
+        return buf.toOwnedSlice(arena);
     }
 
     fn execTool(self: *AgentToolbox, arena: std.mem.Allocator, name: []const u8, args: []const u8) ![]const u8 {

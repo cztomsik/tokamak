@@ -41,12 +41,12 @@ pub const Context = struct {
     fn compile(self: *Context, arena: std.mem.Allocator, expr: Expr) ![]const Op {
         // TODO: we should first compute the size and then do something like compileInto(&buf)
         //       and maybe even introduce Compiler? IDK but at least this works for now...
-        var ops = std.array_list.Managed(Op).init(arena);
+        var ops = std.ArrayList(Op){};
 
         switch (expr) {
             .atom => |tok| {
                 const val = try tok.value(arena);
-                try ops.append(.{ .push = val });
+                try ops.append(arena, .{ .push = val });
             },
             .cons => |cons| {
                 if (cons.args.len != 2) return error.NotImplemented;
@@ -54,8 +54,8 @@ pub const Context = struct {
                 const lhs_ops = try self.compile(arena, cons.args[0]);
                 const rhs_ops = try self.compile(arena, cons.args[1]);
 
-                try ops.appendSlice(lhs_ops);
-                try ops.appendSlice(rhs_ops);
+                try ops.appendSlice(arena, lhs_ops);
+                try ops.appendSlice(arena, rhs_ops);
 
                 // TODO: We need to do something about idents (pass them down?) and
                 //       it's also likely that some of these should be VM ops
@@ -67,11 +67,11 @@ pub const Context = struct {
                     else => return error.NotImplemented,
                 };
 
-                try ops.append(.{ .call = .parse(fun) });
+                try ops.append(arena, .{ .call = .parse(fun) });
             },
         }
 
-        return ops.toOwnedSlice();
+        return ops.toOwnedSlice(arena);
     }
 
     pub fn print(self: *Context, writer: *std.io.Writer, val: Value) !void {

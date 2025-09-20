@@ -19,14 +19,14 @@ pub const BlogService = struct {
     }
 
     pub fn getPosts(self: *BlogService, allocator: std.mem.Allocator) ![]const Post {
-        var res = std.array_list.Managed(Post).init(allocator);
-        errdefer res.deinit();
+        var res = std.ArrayList(Post){};
+        errdefer res.deinit(allocator);
 
         for (self.posts.values()) |post| {
-            try res.append(try dupe(allocator, post));
+            try res.append(allocator, try dupe(allocator, post));
         }
 
-        return res.toOwnedSlice();
+        return res.toOwnedSlice(allocator);
     }
 
     pub fn createPost(self: *BlogService, data: Post) !u32 {

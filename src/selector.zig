@@ -80,8 +80,8 @@ pub const Selector = struct {
     }
 
     pub fn parse(allocator: std.mem.Allocator, selector: []const u8) !Selector {
-        var parts = std.array_list.Managed(Part).init(allocator);
-        defer parts.deinit();
+        var parts = std.ArrayList(Part){};
+        defer parts.deinit(allocator);
 
         var tokenizer = Tokenizer{ .input = selector };
         var pending_combinator: ?Part = null;
@@ -97,12 +97,12 @@ pub const Selector = struct {
 
             if (component) |comp| {
                 if (pending_combinator) |comb| {
-                    try parts.append(comb);
+                    try parts.append(allocator, comb);
                 } else if (tokenizer.space_before) {
-                    try parts.append(Part.ancestor);
+                    try parts.append(allocator, Part.ancestor);
                 }
 
-                try parts.append(comp);
+                try parts.append(allocator, comp);
                 pending_combinator = null;
             } else {
                 if (pending_combinator != null) return error.ExpectedComponent;
@@ -125,7 +125,7 @@ pub const Selector = struct {
         std.mem.reverse(Part, parts.items);
 
         return .{
-            .parts = try parts.toOwnedSlice(),
+            .parts = try parts.toOwnedSlice(allocator),
         };
     }
 

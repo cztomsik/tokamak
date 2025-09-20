@@ -75,8 +75,8 @@ pub const Context = struct {
     /// Sets a cookie.
     pub fn setCookie(self: *Context, name: []const u8, value: []const u8, options: CookieOptions) !void {
         // TODO: start with current header?
-        var buf = std.array_list.Managed(u8).init(self.req.arena);
-        const writer = buf.writer();
+        var buf = std.ArrayList(u8){};
+        const writer = buf.writer(self.req.arena);
 
         try writer.print("{s}={s}", .{ name, value });
 

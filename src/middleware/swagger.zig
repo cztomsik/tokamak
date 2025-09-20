@@ -85,10 +85,10 @@ fn walk(arena: std.mem.Allocator, prefix: []const u8, res: *PathMap, routes: []c
                 var op: Operation = .{};
 
                 if (m.params.len > 0) {
-                    var params = std.array_list.Managed(Parameter).init(arena);
+                    var params = std.ArrayList(Parameter){};
                     const names = Params.match(route.path.?, route.path.?).?;
 
-                    for (m.params, 0..) |schema, i| try params.append(.{
+                    for (m.params, 0..) |schema, i| try params.append(arena, .{
                         .name = names.matches[i][1..],
                         .in = "path",
                         .required = true,
@@ -134,22 +134,22 @@ fn walk(arena: std.mem.Allocator, prefix: []const u8, res: *PathMap, routes: []c
 }
 
 fn swaggerPath(arena: std.mem.Allocator, prefix: []const u8, path: []const u8) ![]const u8 {
-    var res = std.array_list.Managed(u8).init(arena);
-    try res.appendSlice(prefix);
+    var res = std.ArrayList(u8){};
+    try res.appendSlice(arena, prefix);
 
     var pos: usize = 0;
     while (pos < path.len) {
         const colon = std.mem.indexOfScalarPos(u8, path, pos, ':') orelse {
-            try res.appendSlice(path[pos..]);
+            try res.appendSlice(arena, path[pos..]);
             break;
         };
 
         const slash = std.mem.indexOfScalarPos(u8, path, colon, '/') orelse path.len;
 
-        try res.appendSlice(path[pos..colon]);
-        try res.append('{');
-        try res.appendSlice(path[colon + 1 .. slash]);
-        try res.append('}');
+        try res.appendSlice(arena, path[pos..colon]);
+        try res.append(arena, '{');
+        try res.appendSlice(arena, path[colon + 1 .. slash]);
+        try res.append(arena, '}');
         pos = slash;
     }
 

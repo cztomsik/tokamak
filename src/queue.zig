@@ -229,8 +229,8 @@ pub const MemQueue = struct {
         self.mutex.lock();
         defer self.mutex.unlock();
 
-        var res = try std.array_list.Managed(JobInfo).initCapacity(arena, filter.limit);
-        defer res.deinit();
+        var res = try std.ArrayList(JobInfo).initCapacity(arena, filter.limit);
+        defer res.deinit(arena);
 
         var it = self.jobs.iter();
         while (it.next()) |entry| {
@@ -239,10 +239,10 @@ pub const MemQueue = struct {
             if (filter.name) |n| if (!std.mem.eql(u8, entry.value.name, n)) continue;
 
             const copy = try meta.dupe(arena, entry.value.*);
-            try res.append(copy);
+            try res.append(arena, copy);
         }
 
-        return res.toOwnedSlice();
+        return res.toOwnedSlice(arena);
     }
 
     fn startNext(self: *MemQueue, time: i64) !?JobId {
