@@ -13,26 +13,26 @@ const BackwardFn = *const fn (cx: *Context, refs: []Ref) void;
 
 pub const Context = struct {
     allocator: std.mem.Allocator,
-    values: std.array_list.Managed(Value),
-    refs: std.array_list.Managed([]Ref),
+    values: std.ArrayList(Value),
+    refs: std.ArrayList([]Ref),
 
     pub fn init(allocator: std.mem.Allocator) !Context {
         return .{
             .allocator = allocator,
-            .values = std.array_list.Managed(Value).init(allocator),
-            .refs = std.array_list.Managed([]Ref).init(allocator),
+            .values = .{},
+            .refs = .{},
         };
     }
 
     pub fn deinit(self: *Context) void {
         for (self.refs.items) |refs| self.allocator.free(refs);
-        self.refs.deinit();
-        self.values.deinit();
+        self.refs.deinit(self.allocator);
+        self.values.deinit(self.allocator);
     }
 
     pub fn value(self: *Context, val: f32) !Ref {
         const idx = self.values.items.len;
-        try self.values.append(.{ .data = val });
+        try self.values.append(self.allocator, .{ .data = val });
         return @intCast(idx);
     }
 
@@ -49,7 +49,7 @@ pub const Context = struct {
         const refs = try @call(.auto, Op.init, .{self} ++ args);
 
         // Save for later
-        try self.refs.append(refs);
+        try self.refs.append(self.allocator, refs);
         const out = refs[0];
         self.values.items[out].backward_fn = Op.backward;
 

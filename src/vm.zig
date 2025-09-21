@@ -121,19 +121,19 @@ pub const Op = union(enum) {
 
 pub const VM = struct {
     gpa: std.mem.Allocator,
-    stack: std.array_list.Managed(Value),
+    stack: std.ArrayList(Value),
     env: std.AutoHashMap(Ident, Value),
 
     pub fn init(gpa: std.mem.Allocator) VM {
         return .{
             .gpa = gpa,
-            .stack = .init(gpa),
+            .stack = .{},
             .env = .init(gpa),
         };
     }
 
     pub fn deinit(self: *VM) void {
-        self.stack.deinit();
+        self.stack.deinit(self.gpa);
         self.env.deinit();
     }
 
@@ -146,7 +146,7 @@ pub const VM = struct {
     }
 
     pub fn push(self: *VM, val: anytype) Error!void {
-        return self.stack.append(Value.from(val));
+        return self.stack.append(self.gpa, Value.from(val));
     }
 
     pub fn pop(self: *VM) ?Value {

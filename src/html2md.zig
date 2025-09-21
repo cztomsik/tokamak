@@ -7,29 +7,27 @@ pub const Options = struct {
 };
 
 pub fn html2md(allocator: std.mem.Allocator, node: *dom.Node, options: Options) ![]const u8 {
-    var md = try Html2Md.init(allocator, options);
-    defer md.deinit();
+    var aw = std.io.Writer.Allocating.init(allocator);
+    defer aw.deinit();
 
+    var md = try Html2Md.init(&aw.writer, options);
     try md.renderNode(node);
-    return md.finish();
+
+    return aw.toOwnedSlice();
 }
 
 pub const Html2Md = struct {
     options: Options,
-    // TODO: out: std.io.AnyWriter and then we don't need Allocator? + initAlloc() + deinit(allocator)?
-    res: std.array_list.Managed(u8),
+    out: *std.io.Writer,
     in_line: u32 = 0, // <h1>, <tr>
+    empty: bool = true,
     pending: union(enum) { nop, sp, br: u2 } = .nop,
 
-    pub fn init(allocator: std.mem.Allocator, options: Options) !Html2Md {
+    pub fn init(out: *std.io.Writer, options: Options) !Html2Md {
         return .{
             .options = options,
-            .res = std.array_list.Managed(u8).init(allocator),
+            .out = out,
         };
-    }
-
-    pub fn deinit(self: *Html2Md) void {
-        self.res.deinit();
     }
 
     pub fn renderNode(self: *Html2Md, node: *dom.Node) !void {
@@ -67,7 +65,7 @@ pub const Html2Md = struct {
                         while (prev) |prevEl| : (prev = prevEl.previousElementSibling()) n += 1;
 
                         try self.push("");
-                        try self.res.writer().print("{}. ", .{n});
+                        try self.out.print("{d}. ", .{n});
                         return;
                     }
                 }
@@ -128,20 +126,17 @@ pub const Html2Md = struct {
     }
 
     pub fn push(self: *Html2Md, chunk: []const u8) !void {
-        if (self.res.items.len > 0 and self.pending != .nop) {
-            try self.res.appendSlice(switch (self.pending) {
+        if (!self.empty and self.pending != .nop) {
+            try self.out.writeAll(switch (self.pending) {
                 .sp => " ",
                 .br => |n| if (n == 1) "\n" else "\n\n",
                 .nop => unreachable,
             });
         }
 
-        try self.res.appendSlice(chunk);
+        try self.out.writeAll(chunk);
+        self.empty = self.empty and chunk.len == 0;
         self.pending = .nop;
-    }
-
-    pub fn finish(self: *Html2Md) ![]const u8 {
-        return self.res.toOwnedSlice();
     }
 
     fn sp(self: *Html2Md) void {

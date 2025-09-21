@@ -23,7 +23,8 @@ pub const Job = struct {
 pub const Cron = struct {
     config: Config,
     queue: *Queue,
-    jobs: std.array_list.Managed(Job),
+    allocator: std.mem.Allocator,
+    jobs: std.ArrayList(Job),
     time: *const fn () time.Time = time.Time.now,
     mutex: std.Thread.Mutex = .{},
     wait: std.Thread.Condition = .{},
@@ -35,7 +36,8 @@ pub const Cron = struct {
         return .{
             .config = config orelse .{},
             .queue = queue,
-            .jobs = .init(allocator),
+            .allocator = allocator,
+            .jobs = .{},
         };
     }
 
@@ -43,7 +45,7 @@ pub const Cron = struct {
         self.mutex.lock();
         defer self.mutex.unlock();
 
-        self.jobs.deinit();
+        self.jobs.deinit(self.allocator);
     }
 
     pub fn schedule(self: *Cron, expr: []const u8, name: []const u8, data: []const u8) !JobId {
@@ -54,7 +56,7 @@ pub const Cron = struct {
         const exp = try Expr.parse(expr);
         const next = exp.next(self.time()).epoch;
 
-        try self.jobs.append(.{
+        try self.jobs.append(self.allocator, .{
             .id = id,
             .schedule = exp,
             .name = name,

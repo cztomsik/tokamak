@@ -236,7 +236,8 @@ test httpClient {
 
 pub const MockClient = struct {
     interface: http.Client,
-    fixtures: std.array_list.Managed(struct { std.http.Method, []const u8, std.http.Status, []const u8 }),
+    allocator: std.mem.Allocator,
+    fixtures: std.ArrayList(struct { std.http.Method, []const u8, std.http.Status, []const u8 }),
 
     pub fn init(gpa: std.mem.Allocator) !*MockClient {
         const self = try gpa.create(MockClient);
@@ -246,15 +247,16 @@ pub const MockClient = struct {
                 .make_request = &make_request,
                 .config = &.{},
             },
-            .fixtures = std.array_list.Managed(struct { std.http.Method, []const u8, std.http.Status, []const u8 }).init(allocator),
+            .allocator = gpa,
+            .fixtures = .{},
         };
 
         return self;
     }
 
     pub fn deinit(self: *MockClient) void {
-        const gpa = self.fixtures.allocator;
-        self.fixtures.deinit();
+        const gpa = self.allocator;
+        self.fixtures.deinit(gpa);
         gpa.destroy(self);
     }
 
@@ -279,6 +281,6 @@ pub const MockClient = struct {
         const method = std.meta.stringToEnum(std.http.Method, it.next().?).?;
         const url = it.next().?;
 
-        try self.fixtures.append(.{ method, url, status, res });
+        try self.fixtures.append(self.allocator, .{ method, url, status, res });
     }
 };
