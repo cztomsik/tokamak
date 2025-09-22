@@ -3,28 +3,33 @@
 const std = @import("std");
 const meta = @import("meta.zig");
 const util = @import("util.zig");
-const VM = @import("vm.zig").VM;
-const Value = @import("vm.zig").Value;
-const Op = @import("vm.zig").Op;
+const vm = @import("vm.zig");
+const Value = vm.Value;
+const Op = vm.Op;
 
 pub const Context = struct {
-    vm: VM,
+    vm: vm.Context,
 
     pub fn init(gpa: std.mem.Allocator) !Context {
-        var vm = VM.init(gpa);
-        errdefer vm.deinit();
+        var ctx = vm.Context.init(gpa);
+        errdefer ctx.deinit();
 
         inline for (comptime std.meta.declarations(Builtins)) |d| {
-            try vm.define(d.name, @field(Builtins, d.name));
+            try ctx.define(d.name, @field(Builtins, d.name));
         }
 
         return .{
-            .vm = vm,
+            .vm = ctx,
         };
     }
 
     pub fn deinit(self: *Context) void {
         self.vm.deinit();
+    }
+
+    pub fn parent(self: *Context) ?*Context {
+        if (self.vm.parent) |p| return cx(p);
+        return null;
     }
 
     pub fn eval(self: *Context, expr: []const u8) !Value {
@@ -90,8 +95,8 @@ pub const Context = struct {
     }
 };
 
-fn cx(vm: *VM) *Context {
-    return @fieldParentPtr("vm", vm);
+fn cx(vm_ctx: *vm.Context) *Context {
+    return @fieldParentPtr("vm", vm_ctx);
 }
 
 const Builtins = struct {
@@ -111,15 +116,15 @@ const Builtins = struct {
         return a / b;
     }
 
-    pub fn print(vm: *VM, val: Value) !void {
+    pub fn print(vm_ctx: *vm.Context, val: Value) !void {
         var fw = std.fs.File.stderr().writer(&.{});
         const w = &fw.interface;
-        try cx(vm).print(w, val);
+        try cx(vm_ctx).print(w, val);
         try w.writeByte('\n');
     }
 
-    pub fn eval(vm: *VM, expr: []const u8) !Value {
-        return cx(vm).eval(expr);
+    pub fn eval(vm_ctx: *vm.Context, expr: []const u8) !Value {
+        return cx(vm_ctx).eval(expr);
     }
 };
 
@@ -433,4 +438,24 @@ test Context {
 
     // TODO: call expressions
     // try expectEval(&js, "print(1 + 2)", "undefined");
+}
+
+test "js context parent" {
+    var parent_js = try Context.init(std.testing.allocator);
+    defer parent_js.deinit();
+
+    try parent_js.vm.define("x", 42);
+
+    var child_vm = parent_js.vm.child(std.testing.allocator);
+    defer child_vm.deinit();
+
+    var child_js = Context{ .vm = child_vm };
+
+    // Test parent() method
+    const parent_ref = child_js.parent();
+    try std.testing.expect(parent_ref != null);
+    try std.testing.expectEqual(&parent_js, parent_ref);
+
+    // Test that child can access parent variables through vm
+    try std.testing.expectEqual(42.0, child_js.vm.get("x").?.number);
 }

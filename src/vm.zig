@@ -79,7 +79,7 @@ pub const Value = union(enum) {
 };
 
 pub const Fun = union(enum) {
-    native: *const fn (*VM) Error!Value,
+    native: *const fn (*Context) Error!Value,
     compiled: struct {
         arity: u8,
         code: []const Op,
@@ -87,12 +87,12 @@ pub const Fun = union(enum) {
 
     fn wrap(fun: anytype) Fun {
         const H = struct {
-            fn wrap(vm: *VM) Error!Value {
+            fn wrap(vm: *Context) Error!Value {
                 const Args = std.meta.ArgsTuple(@TypeOf(fun));
                 var args: Args = undefined;
 
                 inline for (std.meta.fields(Args), 0..) |f, i| {
-                    if (f.type == *VM) {
+                    if (f.type == *Context) {
                         args[i] = vm;
                         continue;
                     }
@@ -119,41 +119,55 @@ pub const Op = union(enum) {
     dup,
 };
 
-pub const VM = struct {
+pub const Context = struct {
+    parent: ?*Context,
     gpa: std.mem.Allocator,
     stack: std.ArrayList(Value),
     env: std.AutoHashMap(Ident, Value),
 
-    pub fn init(gpa: std.mem.Allocator) VM {
+    pub fn init(gpa: std.mem.Allocator) Context {
         return .{
+            .parent = null,
             .gpa = gpa,
             .stack = .{},
             .env = .init(gpa),
         };
     }
 
-    pub fn deinit(self: *VM) void {
+    pub fn deinit(self: *Context) void {
         self.stack.deinit(self.gpa);
         self.env.deinit();
     }
 
-    pub fn define(self: *VM, name: []const u8, val: anytype) Error!void {
+    pub fn child(self: *Context, gpa: std.mem.Allocator) Context {
+        return .{
+            .parent = self,
+            .gpa = gpa,
+            .stack = .{},
+            .env = .init(gpa),
+        };
+    }
+
+    pub fn define(self: *Context, name: []const u8, val: anytype) Error!void {
         try self.env.put(Ident.parse(name), Value.from(val));
     }
 
-    pub fn get(self: *VM, name: []const u8) ?Value {
-        return self.env.get(Ident.parse(name));
+    pub fn get(self: *Context, name: []const u8) ?Value {
+        const ident = Ident.parse(name);
+        if (self.env.get(ident)) |value| return value;
+        if (self.parent) |p| return p.get(name);
+        return null;
     }
 
-    pub fn push(self: *VM, val: anytype) Error!void {
+    pub fn push(self: *Context, val: anytype) Error!void {
         return self.stack.append(self.gpa, Value.from(val));
     }
 
-    pub fn pop(self: *VM) ?Value {
+    pub fn pop(self: *Context) ?Value {
         return self.stack.pop();
     }
 
-    pub fn eval(self: *VM, code: []const Op) Error!Value {
+    pub fn eval(self: *Context, code: []const Op) Error!Value {
         for (code) |op| {
             switch (op) {
                 .push => |val| try self.push(val),
@@ -183,7 +197,7 @@ pub const VM = struct {
         return self.pop() orelse .undefined;
     }
 
-    pub fn call(self: *VM, fn_name: []const u8) Error!Value {
+    pub fn call(self: *Context, fn_name: []const u8) Error!Value {
         if (self.env.get(Ident.parse(fn_name))) |f| {
             return switch (f.fun) {
                 .native => |fun| fun(self),
@@ -196,7 +210,7 @@ pub const VM = struct {
 };
 
 test {
-    var vm = VM.init(std.testing.allocator);
+    var vm = Context.init(std.testing.allocator);
     defer vm.deinit();
 
     try vm.push(1);
@@ -222,4 +236,29 @@ test {
 
     const result = try vm.eval(ops);
     try std.testing.expectEqual(10.0, result.number);
+}
+
+test "parent child context" {
+    var parent = Context.init(std.testing.allocator);
+    defer parent.deinit();
+
+    try parent.define("x", 42);
+
+    var child = parent.child(std.testing.allocator);
+    defer child.deinit();
+
+    try child.define("y", 24);
+
+    // Child can access parent variables
+    try std.testing.expectEqual(42.0, child.get("x").?.number);
+    try std.testing.expectEqual(24.0, child.get("y").?.number);
+
+    // Parent cannot access child variables
+    try std.testing.expect(parent.get("y") == null);
+    try std.testing.expectEqual(42.0, parent.get("x").?.number);
+
+    // Child can shadow parent variables
+    try child.define("x", 100);
+    try std.testing.expectEqual(100.0, child.get("x").?.number);
+    try std.testing.expectEqual(42.0, parent.get("x").?.number);
 }
