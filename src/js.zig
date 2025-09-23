@@ -50,7 +50,7 @@ pub const Context = struct {
 
         switch (expr) {
             .atom => |tok| {
-                const val = try tok.value(arena);
+                const val = try tok.value(&self.vm);
                 try ops.append(arena, .{ .push = val });
             },
             .cons => |cons| {
@@ -82,16 +82,8 @@ pub const Context = struct {
     pub fn print(self: *Context, writer: *std.io.Writer, val: Value) !void {
         _ = self; // autofix
 
-        // TODO: move SOME of this to Value.fmt/debug() but js.print() should probably stay JS-specific
-        try switch (val) {
-            .undefined => writer.print("undefined", .{}),
-            .null => writer.print("null", .{}),
-            .bool => |b| writer.print("{}", .{b}),
-            .number => |n| writer.print("{d}", .{n}),
-            .string => |s| writer.print("{s}", .{s}),
-            .fun => writer.print("[function]", .{}),
-            .err => |e| writer.print("error: {s}", .{@errorName(e)}),
-        };
+        // TODO: It's likely that some of this will be js-specific.
+        try writer.print("{f}", .{val});
     }
 };
 
@@ -100,8 +92,22 @@ fn cx(vm_ctx: *vm.Context) *Context {
 }
 
 const Builtins = struct {
-    pub fn @"+"(a: f64, b: f64) f64 {
-        return a + b;
+    pub fn @"+"(ctx: *vm.Context, a: Value, b: Value) !Value {
+        // Happy path
+        if (a.kind() == .number and b.kind() == .number) {
+            return Value.fromNumber(a.number + b.number);
+        }
+
+        // Concat if either of args is a string
+        if (a.kind() == .string or b.kind() == .string) {
+            const res = try std.fmt.allocPrint(ctx.gpa, "{f}{f}", .{ a, b });
+            const hval = try ctx.gpa.create(vm.HeapValue);
+            hval.* = .{ .string = res };
+            try ctx.heap.append(ctx.gpa, hval);
+            return Value.fromHeap(hval);
+        }
+
+        return error.TypeError;
     }
 
     pub fn @"-"(a: f64, b: f64) f64 {
@@ -133,7 +139,7 @@ const Builtins = struct {
 const Token = union(enum) {
     ident: []const u8,
     number: []const u8,
-    // TODO: string: []const u8,
+    string: []const u8,
 
     // Operators
     dot,
@@ -150,14 +156,14 @@ const Token = union(enum) {
     que,
     colon,
 
-    fn value(self: Token, arena: std.mem.Allocator) !Value {
-        // TODO: string dup
-        _ = arena;
-
+    fn value(self: Token, ctx: *vm.Context) !Value {
         return switch (self) {
             .number => |str| {
                 const val = std.fmt.parseFloat(f64, str) catch return error.InvalidNumber;
-                return Value.from(val);
+                return ctx.value(val);
+            },
+            .string => |str| {
+                return ctx.value(str);
             },
             else => error.NotAValue,
         };
@@ -168,7 +174,7 @@ const Tokenizer = struct {
     input: []const u8,
     pos: usize = 0,
 
-    fn next(self: *Tokenizer) ?Token {
+    fn next(self: *Tokenizer) !?Token {
         while (self.pos < self.input.len) {
             const ch = self.input[self.pos];
             self.pos += 1;
@@ -188,6 +194,29 @@ const Tokenizer = struct {
                     // I think we should return Token.xxx but then why have a Keyword enum in the first place?
 
                     return .{ .ident = self.input[start..self.pos] };
+                },
+
+                // TODO: decode escapes, \x codepoints, template literals, etc. This is just a basic PoC!!!
+                // BTW: Can't we just use std.json.* for decoding? Or at least for a while?
+                '"', '\'' => {
+                    const quote = ch;
+                    const start = self.pos;
+
+                    while (self.pos < self.input.len) {
+                        const ch2 = self.input[self.pos];
+                        if (ch2 == quote) {
+                            const content = self.input[start..self.pos];
+                            self.pos += 1;
+                            return .{ .string = content };
+                        }
+                        if (ch2 == '\\' and self.pos + 1 < self.input.len) {
+                            self.pos += 2;
+                        } else {
+                            self.pos += 1;
+                        }
+                    }
+
+                    return error.UnterminatedString;
                 },
                 '+' => .plus,
                 '-' => .minus,
@@ -235,6 +264,7 @@ const Expr = union(enum) {
             .atom => |tok| {
                 switch (tok) {
                     .number, .ident => |s| try writer.writeAll(s),
+                    .string => |s| try writer.print("{f}", .{std.json.fmt(s, .{})}),
                     else => unreachable,
                 }
             },
@@ -262,14 +292,14 @@ const Parser = struct {
         };
     }
 
-    fn peek(self: *Parser) ?Token {
+    fn peek(self: *Parser) !?Token {
         if (self.pending) |tok| return tok;
-        self.pending = self.tokenizer.next();
+        self.pending = try self.tokenizer.next();
         return self.pending;
     }
 
     fn next(self: *Parser) !Token {
-        const tok = self.peek();
+        const tok = try self.peek();
         self.pending = null;
         return tok orelse error.Eof;
     }
@@ -279,7 +309,7 @@ const Parser = struct {
             const tok = try self.next();
 
             switch (tok) {
-                .number, .ident => break :blk .{ .atom = tok },
+                .number, .ident, .string => break :blk .{ .atom = tok },
                 .lparen => {
                     const res = try self.parseExpr(0);
                     const close = try self.next();
@@ -296,7 +326,7 @@ const Parser = struct {
         };
 
         while (true) {
-            const tok = self.peek() orelse break;
+            const tok = try self.peek() orelse break;
             if (!isOperator(tok)) std.debug.panic("bad token: {s}", .{@tagName(tok)});
 
             if (postfixBp(tok)) |lbp| {
@@ -393,6 +423,11 @@ test Parser {
     try expectParse("x[0][1]", "(lbracket (lbracket x 0) 1)");
     try expectParse("a ? b : c", "(que a b c)");
     try expectParse("x = 1 + 2", "(assign x (plus 1 2))");
+
+    try expectParse("\"hello\"", "\"hello\"");
+    try expectParse("'hello'", "\"hello\"");
+    try expectParse("\"hello\" + \"world\"", "(plus \"hello\" \"world\")");
+    try expectParse("name + \" is \" + age", "(plus (plus name \" is \") age)");
 }
 
 fn expectEval(js: *Context, expr: []const u8, expected: []const u8) !void {
@@ -410,15 +445,15 @@ test Context {
     defer js.deinit();
 
     // const add = js.vm.get("+");
-    // const res = try js.vm.call(add, &.{ Value.from(1), Value.from(2) });
-    try js.vm.push(Value.from(1));
-    try js.vm.push(Value.from(2));
+    // const res = try js.vm.call(add, &.{ js.vm.value(1), js.vm.value(2) });
+    try js.vm.push(1);
+    try js.vm.push(2);
     const res = try js.vm.call("+");
 
-    try std.testing.expectEqual(3.0, res.number);
+    try std.testing.expectEqual(3.0, try res.into(f64));
 
     const res2 = try js.eval("123");
-    try std.testing.expectEqual(123.0, res2.number);
+    try std.testing.expectEqual(123.0, try res2.into(f64));
 
     // TODO: empty
     // try expectEval(&js, "", "undefined");
@@ -430,8 +465,14 @@ test Context {
     try expectEval(&js, "1", "1");
     try expectEval(&js, "1.2", "1.2");
 
-    // TODO: strings
-    // try expectEval(&js, "\"foo\"", "\"foo\"");
+    // String literals
+    try expectEval(&js, "\"hello\"", "hello");
+    try expectEval(&js, "'hello'", "hello");
+
+    // String concat
+    try expectEval(&js, "\"hello\" + \" world\"", "hello world");
+    try expectEval(&js, "\"Count: \" + 42", "Count: 42");
+    try expectEval(&js, "5 + \" items\"", "5 items");
 
     try expectEval(&js, "1 + 2", "3");
     try expectEval(&js, "1 + 2 * 3", "7");
@@ -457,5 +498,5 @@ test "js context parent" {
     try std.testing.expectEqual(&parent_js, parent_ref);
 
     // Test that child can access parent variables through vm
-    try std.testing.expectEqual(42.0, child_js.vm.get("x").?.number);
+    try std.testing.expectEqual(42.0, try child_js.vm.get("x").?.into(f64));
 }

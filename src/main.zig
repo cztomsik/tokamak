@@ -18,6 +18,7 @@ pub const hackernews = @import("hackernews.zig");
 pub const html2md = @import("html2md.zig");
 pub const http = @import("http.zig");
 pub const github = @import("github.zig");
+pub const js = @import("js.zig");
 // pub const mail = @import("mail.zig");
 pub const mem = @import("mem.zig");
 pub const meta = @import("meta.zig");
@@ -33,6 +34,7 @@ pub const testing = @import("testing.zig");
 pub const time = @import("time.zig");
 pub const tpl = @import("tpl.zig");
 pub const util = @import("util.zig");
+pub const vm = @import("vm.zig");
 pub const yaml = @import("yaml.zig");
 
 // Core types (DI)
