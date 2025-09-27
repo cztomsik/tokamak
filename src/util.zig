@@ -13,3 +13,11 @@ pub const whitespace = std.ascii.whitespace;
 pub fn trim(slice: []const u8) []const u8 {
     return std.mem.trim(u8, slice, &whitespace);
 }
+
+pub fn truncateEnd(text: []const u8, width: usize) []const u8 {
+    return if (text.len <= width) text else text[text.len - width ..];
+}
+
+pub fn truncateStart(text: []const u8, width: usize) []const u8 {
+    return if (text.len <= width) text else text[0..width];
+}
