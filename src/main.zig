@@ -23,6 +23,7 @@ pub const js = @import("js.zig");
 pub const mem = @import("mem.zig");
 pub const meta = @import("meta.zig");
 pub const monitor = @import("monitor.zig").monitor;
+pub const pdf = @import("pdf.zig");
 pub const queue = @import("queue.zig");
 pub const reddit = @import("reddit.zig");
 pub const regex = @import("regex.zig");
