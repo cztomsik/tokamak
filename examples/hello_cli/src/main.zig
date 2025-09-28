@@ -23,18 +23,18 @@ const Cli = struct {
         return "Hello World!";
     }
 
-    fn hn_top(hn_client: *tk.hackernews.Client, allocator: std.mem.Allocator, limit: ?u8) ![]const tk.hackernews.Story {
-        return hn_client.getTopStories(allocator, limit orelse 10);
+    fn hn_top(hn_client: *tk.hackernews.Client, arena: std.mem.Allocator, limit: ?u8) ![]const tk.hackernews.Story {
+        return hn_client.getTopStories(arena, limit orelse 10);
     }
 
-    fn gh_repos(gh_client: *tk.github.Client, allocator: std.mem.Allocator, owner: []const u8) ![]const tk.github.Repository {
-        return gh_client.listRepos(allocator, owner);
+    fn gh_repos(gh_client: *tk.github.Client, arena: std.mem.Allocator, owner: []const u8) ![]const tk.github.Repository {
+        return gh_client.listRepos(arena, owner);
     }
 
-    fn scrape(allocator: std.mem.Allocator, http_client: *tk.http.Client, url: []const u8, qs: ?[]const u8) ![]const u8 {
-        const res = try http_client.request(allocator, .{ .url = url });
+    fn scrape(http_client: *tk.http.Client, arena: std.mem.Allocator, url: []const u8, qs: ?[]const u8) ![]const u8 {
+        const res = try http_client.request(arena, .{ .url = url });
 
-        const doc = try tk.dom.Document.parseFromSlice(allocator, res.body);
+        const doc = try tk.dom.Document.parseFromSlice(arena, res.body);
         defer doc.deinit();
 
         var node = &doc.node;
@@ -43,7 +43,7 @@ const Cli = struct {
             if (try doc.querySelector(sel)) |el| node = &el.node;
         }
 
-        return try tk.html2md.html2md(allocator, node, .{});
+        return try tk.html2md.html2md(arena, node, .{});
     }
 
     fn substr(str: []const u8, start: ?usize, end: ?usize) ![]const u8 {
@@ -51,9 +51,9 @@ const Cli = struct {
         return str[start orelse 0 .. end orelse str.len];
     }
 
-    fn grep(allocator: std.mem.Allocator, file_path: []const u8, pattern: []const u8) !void {
-        var regex = try tk.regex.Regex.compile(allocator, pattern);
-        defer regex.deinit(allocator);
+    fn grep(arena: std.mem.Allocator, file_path: []const u8, pattern: []const u8) !void {
+        var regex = try tk.regex.Regex.compile(arena, pattern);
+        defer regex.deinit(arena);
 
         const file = try std.fs.cwd().openFile(file_path, .{});
         defer file.close();
