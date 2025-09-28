@@ -33,6 +33,7 @@ pub const sendmail = @import("sendmail.zig");
 pub const testing = @import("testing.zig");
 pub const time = @import("time.zig");
 pub const tpl = @import("tpl.zig");
+pub const tui = @import("tui.zig");
 pub const util = @import("util.zig");
 pub const vm = @import("vm.zig");
 pub const yaml = @import("yaml.zig");
