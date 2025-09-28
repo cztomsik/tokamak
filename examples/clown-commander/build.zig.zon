@@ -1,0 +1,16 @@
+.{
+    .name = .clown_commander,
+    .fingerprint = 0xb58e398621b9f36f, // Changing this has security and trust implications.
+    .version = "0.0.0",
+    .minimum_zig_version = "0.15.1",
+    .dependencies = .{
+        .tokamak = .{
+            .path = "../..",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}
