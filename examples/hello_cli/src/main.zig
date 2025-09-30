@@ -58,26 +58,26 @@ const Cli = struct {
 
         var page = try doc.addPage(612, 792);
 
-        try page.addText(50, 750, title);
+        try page.addText(50, 750, title, .{ .size = 24, .bold = true });
         try page.addText(50, 730, try std.fmt.allocPrint(arena, "Generated on: {f}", .{
             tk.time.Date.today(),
-        }));
+        }), .{ .size = 10 });
         try page.addLine(50, 710, 550, 710);
 
         try page.addRect(50, 600, 100, 50);
-        try page.addText(160, 620, "Rectangle");
+        try page.addText(160, 620, "Rectangle", .{ .bold = true });
 
         try page.moveTo(50, 500);
         try page.lineTo(100, 550);
         try page.lineTo(150, 500);
         try page.closePath();
         try page.stroke();
-        try page.addText(160, 520, "Triangle");
+        try page.addText(160, 520, "Triangle", .{ .bold = true });
 
         try page.moveTo(50, 450);
         try page.curveTo(75, 400, 125, 400, 150, 450);
         try page.stroke();
-        try page.addText(160, 420, "Curve");
+        try page.addText(160, 420, "Curve", .{ .bold = true });
 
         const file = try std.fs.cwd().createFile(filename, .{});
         defer file.close();

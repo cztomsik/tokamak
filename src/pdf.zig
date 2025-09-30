@@ -13,6 +13,11 @@ pub const Error = error{
     AllocationError,
 };
 
+pub const TextStyle = struct {
+    size: f64 = 12,
+    bold: bool = false,
+};
+
 pub const Value = union(enum) {
     null,
     boolean: bool,
@@ -158,8 +163,8 @@ pub const Document = struct {
         const page_count = self.pages.items.len;
         const kids_array = try self.arena.alloc(Value, page_count);
         for (0..page_count) |i| {
-            // Start at ID 4 (after catalog, pages, font)
-            kids_array[i] = .{ .reference = .{ .id = @intCast(4 + i * 2) } };
+            // Start at ID 5 (after catalog, pages, font_regular, font_bold)
+            kids_array[i] = .{ .reference = .{ .id = @intCast(5 + i * 2) } };
         }
 
         const pages_entries = try self.arena.dupe(DictEntry, &.{
@@ -173,17 +178,29 @@ pub const Document = struct {
             .value = .{ .dictionary = pages_entries },
         });
 
-        // Font object (shared)
-        const font_entries = try self.arena.dupe(DictEntry, &.{
+        // Font objects (shared)
+        const font_regular_entries = try self.arena.dupe(DictEntry, &.{
             .kv("Type", .{ .name = "Font" }),
             .kv("Subtype", .{ .name = "Type1" }),
             .kv("BaseFont", .{ .name = "Helvetica" }),
         });
 
-        const font_id = self.nextObjectId();
+        const font_regular_id = self.nextObjectId();
         try self.objects.append(self.arena, .{
-            .ref = .{ .id = font_id },
-            .value = .{ .dictionary = font_entries },
+            .ref = .{ .id = font_regular_id },
+            .value = .{ .dictionary = font_regular_entries },
+        });
+
+        const font_bold_entries = try self.arena.dupe(DictEntry, &.{
+            .kv("Type", .{ .name = "Font" }),
+            .kv("Subtype", .{ .name = "Type1" }),
+            .kv("BaseFont", .{ .name = "Helvetica-Bold" }),
+        });
+
+        const font_bold_id = self.nextObjectId();
+        try self.objects.append(self.arena, .{
+            .ref = .{ .id = font_bold_id },
+            .value = .{ .dictionary = font_bold_entries },
         });
 
         // Page objects and content streams
@@ -196,7 +213,8 @@ pub const Document = struct {
             mediabox_array[3] = .{ .real = page.height };
 
             const font_dict_entries = try self.arena.dupe(DictEntry, &.{
-                .kv("F1", .{ .reference = .{ .id = font_id } }),
+                .kv("F1", .{ .reference = .{ .id = font_regular_id } }),
+                .kv("F2", .{ .reference = .{ .id = font_bold_id } }),
             });
 
             const resources_entries = try self.arena.dupe(DictEntry, &.{
@@ -318,9 +336,10 @@ pub const Page = struct {
         };
     }
 
-    pub fn addText(self: *Page, x: f64, y: f64, text: []const u8) !void {
+    pub fn addText(self: *Page, x: f64, y: f64, text: []const u8, style: TextStyle) !void {
         // TODO: escape special PDF characters: ( ) \ \n \r \t
-        try self.buf.writer.print("BT\n/F1 12 Tf\n{d} {d} Td\n({s}) Tj\nET\n", .{ x, y, text });
+        const font_name = if (style.bold) "F2" else "F1";
+        try self.buf.writer.print("BT\n/{s} {d} Tf\n{d} {d} Td\n({s}) Tj\nET\n", .{ font_name, style.size, x, y, text });
     }
 
     pub fn addLine(self: *Page, x1: f64, y1: f64, x2: f64, y2: f64) !void {
@@ -397,7 +416,7 @@ test "basic usage" {
     try expectPdf(empty, &.{});
 
     // Add some contents
-    try page.addText(100, 700, "Hello PDF!");
+    try page.addText(100, 700, "Hello PDF!", .{});
     try page.addLine(50, 50, 100, 100);
     try page.addRect(200, 200, 50, 75);
 
@@ -445,13 +464,13 @@ test "multi-page" {
 
     // Add multiple pages
     var page1 = try doc.addPage(612, 792);
-    try page1.addText(100, 700, "Page 1");
+    try page1.addText(100, 700, "Page 1", .{});
 
     var page2 = try doc.addPage(612, 792);
-    try page2.addText(100, 700, "Page 2");
+    try page2.addText(100, 700, "Page 2", .{});
 
     var page3 = try doc.addPage(612, 792);
-    try page3.addText(100, 700, "Page 3");
+    try page3.addText(100, 700, "Page 3", .{});
 
     const pdf = try doc.render(std.testing.allocator);
     defer std.testing.allocator.free(pdf);
