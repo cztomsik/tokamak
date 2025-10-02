@@ -203,13 +203,14 @@ pub fn BPTree(comptime K: type, comptime V: type, comptime cmp: fn (K, K) std.ma
         }
 
         pub fn dump(self: *@This()) void {
-            var w = std.io.getStdErr().writer();
-            w.writeAll("\n\n") catch {};
-            dumpNode(self.root.?, w, 0) catch {};
+            var w = std.fs.File.stderr().writer(&.{});
+            w.interface.writeAll("\n\n") catch {};
+            dumpNode(self.root.?, &w.interface, 0) catch {};
+            w.interface.flush() catch {};
         }
 
-        fn dumpNode(node: *Node, writer: anytype, depth: usize) !void {
-            try writer.writeBytesNTimes("  ", depth);
+        fn dumpNode(node: *Node, writer: *std.io.Writer, depth: usize) !void {
+            try writer.splatBytesAll("  ", depth);
 
             switch (node.kind) {
                 .branch => {
