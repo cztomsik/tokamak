@@ -86,7 +86,7 @@ string on the fly and return it to the client without any tight coupling to the
 server or the request/response types.
 
 ```zig
-fn hello(allocator: std.mem.Allocator) ![]const u8 {
+fn hello(arena: std.mem.Allocator) ![]const u8 {
     return std.fmt.allocPrint(allocator, "Hello {}", .{std.time.timestamp()});
 }
 ```
@@ -225,7 +225,7 @@ const api = struct {
         return "Hello";
     }
 
-    pub fn @"GET /:name"(allocator: std.mem.Allocator, name: []const u8) ![]const u8 {
+    pub fn @"GET /:name"(arena: std.mem.Allocator, name: []const u8) ![]const u8 {
         return std.fmt.allocPrint(allocator, "Hello {s}", .{name});
     }
 };
@@ -391,6 +391,7 @@ Tokamak supports an intrusive interface pattern for pluggable implementations.
 Types with an `interface` field are automatically registered for dependency
 injection, ie:
 
+```
 const AppModule = struct {
     http_client: StdClient,  // Define concrete implementation
 };
