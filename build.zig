@@ -7,8 +7,8 @@ pub const SetupOptions = struct {
 
 pub fn setup(step: *std.Build.Step.Compile, opts: SetupOptions) void {
     const tokamak = step.step.owner.dependencyFromBuildZig(@This(), .{
-        .target = step.root_module.resolved_target.?,
-        .optimize = step.root_module.optimize.?,
+        .target = step.root_module.resolved_target,
+        .optimize = step.root_module.optimize,
         .embed = opts.embed,
     });
 
