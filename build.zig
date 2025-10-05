@@ -6,7 +6,12 @@ pub const SetupOptions = struct {
 };
 
 pub fn setup(step: *std.Build.Step.Compile, opts: SetupOptions) void {
-    const tokamak = step.step.owner.dependencyFromBuildZig(@This(), .{ .embed = opts.embed });
+    const tokamak = step.step.owner.dependencyFromBuildZig(@This(), .{
+        .target = step.root_module.resolved_target.?,
+        .optimize = step.root_module.optimize.?,
+        .embed = opts.embed,
+    });
+
     step.root_module.addImport("tokamak", tokamak.module("tokamak"));
 }
 
@@ -24,7 +29,7 @@ pub fn build(b: *std.Build) !void {
     const httpz = b.dependency("httpz", .{ .target = target, .optimize = optimize });
     root.addImport("httpz", httpz.module("httpz"));
 
-    try embedFiles(b, root, @alignCast(embed));
+    try embedFiles(b, root, embed);
 
     const test_step = b.step("test", "Run tests");
     const test_filter = b.option([]const []const u8, "test-filter", "Skip tests that do not match any filter") orelse &[0][]const u8{};

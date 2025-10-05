@@ -39,7 +39,7 @@ pub fn main() !void {
     _ = c.webview_set_title(w, "Example");
     _ = c.webview_set_size(w, 800, 500, c.WEBVIEW_HINT_NONE);
 
-    const url = try std.fmt.allocPrintZ(gpa.allocator(), "http://127.0.0.1:{}", .{port});
+    const url = try std.fmt.allocPrintSentinel(gpa.allocator(), "http://127.0.0.1:{}", .{port}, 0);
     defer gpa.allocator().free(url);
 
     _ = c.webview_navigate(w, url);
