@@ -16,6 +16,8 @@ pub const Key = union(enum) {
     backspace,
     delete,
     escape,
+    ctrl_c,
+    ctrl_d,
     f1,
     f2,
     f3,
@@ -101,11 +103,12 @@ pub const Context = struct {
         while (true) {
             switch (try self.readKey()) {
                 .enter => break,
-                .escape => return null,
+                .escape, .ctrl_c, .ctrl_d => return null,
                 .backspace => {
                     if (len > 0) {
                         len -= 1;
                         try self.out.writeAll("\x08 \x08");
+                        try self.out.flush();
                     }
                 },
                 .char => |c| {
@@ -127,6 +130,8 @@ pub const Context = struct {
         const ch = try self.readByte();
 
         return switch (ch) {
+            0x03 => .ctrl_c,
+            0x04 => .ctrl_d,
             ansi.esc[0] => try self.readCSI(),
             '\t' => .tab,
             '\r', '\n' => .enter,
