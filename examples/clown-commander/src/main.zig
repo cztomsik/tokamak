@@ -161,6 +161,7 @@ const App = struct {
                     'm' => try createDirectory(&commander, ctx),
                     else => {},
                 },
+                .ctrl_c => break, // Ctrl-C to exit
                 .tab => commander.active = if (commander.active == .left) .right else .left,
                 .up => commander.getActivePanel().navigateUp(),
                 .down => commander.getActivePanel().navigateDown(),
