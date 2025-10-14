@@ -11,7 +11,7 @@ jobs:
 
       - uses: mlugg/setup-zig@v2.0.5
         with:
-          version: 0.15.1
+          version: 0.15.2
 
       - run: zig build test --summary all
   
@@ -22,7 +22,7 @@ jobs:
 
       - uses: mlugg/setup-zig@v2.0.5
         with:
-          version: 0.15.1
+          version: 0.15.2
       
       - name: Check examples
         run: |
