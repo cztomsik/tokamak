@@ -18,6 +18,15 @@ pub const BlogService = struct {
         return .{ .posts = posts };
     }
 
+    pub fn deinit(self: *BlogService) void {
+        // Free all duplicated strings in posts
+        for (self.posts.values()) |post| {
+            self.posts.allocator.free(post.title);
+            self.posts.allocator.free(post.body);
+        }
+        self.posts.deinit();
+    }
+
     pub fn getPosts(self: *BlogService, allocator: std.mem.Allocator) ![]const Post {
         var res = std.ArrayList(Post){};
         errdefer res.deinit(allocator);
