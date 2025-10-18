@@ -34,10 +34,12 @@ pub const ValueKind = enum {
     string,
     fun,
     err,
+    array,
 };
 
 pub const HeapValue = union(enum) {
     string: []u8,
+    array: []Value, // TODO: std.ArrayList(Value)?
     fun: Fun,
     err: Error,
 };
@@ -79,6 +81,7 @@ pub const Value = packed union {
             const heap = self.getHeap().?;
             return switch (heap.*) {
                 .string => .string,
+                .array => .array,
                 .fun => .fun,
                 .err => .err,
             };
@@ -112,6 +115,10 @@ pub const Value = packed union {
                 .string => self.getHeap().?.string,
                 else => error.TypeError,
             },
+            []const Value => switch (self.kind()) {
+                .array => self.getHeap().?.array,
+                else => error.TypeError,
+            },
             else => @compileError("TODO Value.into " ++ @typeName(T)),
         };
     }
@@ -126,12 +133,25 @@ pub const Value = packed union {
                 const heap = self.getHeap().?;
                 try writer.writeAll(heap.string);
             },
+            .array => try writer.writeAll("[array]"),
             .fun => try writer.writeAll("[function]"),
             .err => {
                 const heap = self.getHeap().?;
                 try writer.print("error: {s}", .{@errorName(heap.err)});
             },
         }
+    }
+
+    pub fn isTruthy(self: Value) bool {
+        return switch (self.kind()) {
+            .undefined, .null => false,
+            .bool => self.raw == Value.true.raw,
+            .number => self.number != 0,
+            .string => self.getHeap().?.string.len > 0,
+            .array => self.getHeap().?.array.len > 0,
+            .fun => true,
+            .err => false,
+        };
     }
 };
 
@@ -210,6 +230,7 @@ pub const Context = struct {
         for (self.heap.items) |heap_val| {
             switch (heap_val.*) {
                 .string => |s| self.gpa.free(s),
+                .array => |a| self.gpa.free(a),
                 .fun, .err => {}, // No additional cleanup needed
             }
             self.gpa.destroy(heap_val);
@@ -227,13 +248,32 @@ pub const Context = struct {
 
         if (meta.isString(T)) {
             const heap_val = try self.gpa.create(HeapValue);
+            errdefer self.gpa.destroy(heap_val);
+
             heap_val.* = .{ .string = try self.gpa.dupe(u8, input) };
             try self.heap.append(self.gpa, heap_val);
             return Value.fromHeap(heap_val);
         }
 
-        if (meta.isOptional(T)) return if (input) |v| try self.value(v) else Value.null;
-        if (meta.isSlice(T)) @compileError("TODO");
+        if (meta.isOptional(T)) {
+            return if (input) |v| try self.value(v) else Value.null;
+        }
+
+        if (meta.isSlice(T)) {
+            const heap_val = try self.gpa.create(HeapValue);
+            errdefer self.gpa.destroy(heap_val);
+
+            const array = try self.gpa.alloc(Value, input.len);
+            errdefer self.gpa.free(array);
+
+            for (input, 0..) |item, i| {
+                array[i] = try self.value(item);
+            }
+
+            heap_val.* = .{ .array = array };
+            try self.heap.append(self.gpa, heap_val);
+            return Value.fromHeap(heap_val);
+        }
 
         return switch (@typeInfo(T)) {
             .void => Value.undefined,
@@ -244,17 +284,22 @@ pub const Context = struct {
             .error_union => if (input) |v| try self.value(v) else |e| try self.value(e),
             .error_set => blk: {
                 const heap_val = try self.gpa.create(HeapValue);
+                errdefer self.gpa.destroy(heap_val);
+
                 heap_val.* = .{ .err = error.UnexpectedError };
                 try self.heap.append(self.gpa, heap_val);
                 break :blk Value.fromHeap(heap_val);
             },
             .@"fn" => blk: {
                 const heap_val = try self.gpa.create(HeapValue);
+                errdefer self.gpa.destroy(heap_val);
+
                 heap_val.* = .{ .fun = Fun.wrap(input) };
                 try self.heap.append(self.gpa, heap_val);
                 break :blk Value.fromHeap(heap_val);
             },
             .pointer => try self.value(input.*),
+            .array => |a| self.value(@as([]const a.child, &input)),
             else => @compileError("TODO: Context.value " ++ @typeName(T)),
         };
     }
