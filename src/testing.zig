@@ -1,6 +1,6 @@
 const std = @import("std");
 const meta = @import("meta.zig");
-const mem = @import("mem.zig");
+const util = @import("util.zig");
 const http = @import("http.zig");
 
 // re-export
@@ -58,7 +58,7 @@ pub fn expectTable(items: anytype, comptime expected: []const u8) !void {
 
     const header = comptime expected[0..std.mem.indexOfScalar(u8, expected, '\n').?];
     const cols = comptime blk: {
-        var cols: [mem.countScalar(u8, header, '|') - 1]Col = undefined;
+        var cols: [util.countScalar(u8, header, '|') - 1]Col = undefined;
         var it = std.mem.tokenizeScalar(u8, header, '|');
         for (0..cols.len) |i| {
             const cell = it.next().?;

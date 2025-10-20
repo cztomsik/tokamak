@@ -1,7 +1,7 @@
 const std = @import("std");
 const httpz = @import("httpz");
-const mem = @import("mem.zig");
 const meta = @import("meta.zig");
+const util = @import("util.zig");
 const Injector = @import("injector.zig").Injector;
 const Context = @import("context.zig").Context;
 const Handler = @import("context.zig").Handler;
@@ -210,7 +210,7 @@ fn route(comptime method: httpz.Method, comptime path: []const u8, comptime has_
 
 fn routeMetadata(comptime path: []const u8, comptime has_query: bool, comptime has_body: bool, comptime handler: anytype) Route.Metadata {
     const fields = std.meta.fields(std.meta.ArgsTuple(@TypeOf(handler)));
-    const n_params = comptime mem.countScalar(u8, path, ':');
+    const n_params = comptime util.countScalar(u8, path, ':');
     const n_deps = comptime fields.len - n_params - @intFromBool(has_query) - @intFromBool(has_body);
 
     return .{

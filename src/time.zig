@@ -4,7 +4,7 @@
 // https://en.wikipedia.org/wiki/Rata_Die
 // https://research.swtch.com/leap
 const std = @import("std");
-const sort = @import("sort.zig");
+const util = @import("util.zig");
 
 const RATA_MIN = date_to_rata(Date.MIN);
 const RATA_MAX = date_to_rata(Date.MAX);
@@ -13,7 +13,7 @@ const EOD = 86_400 - 1;
 
 // TODO: Decide if we want to use std.debug.assert(), @panic() or just throw an error
 fn checkRange(num: anytype, min: @TypeOf(num), max: @TypeOf(num)) void {
-    if (sort.lt(num, min) or sort.gt(num, max)) {
+    if (util.lt(num, min) or util.gt(num, max)) {
         // TODO: fix later (we can't use {f} and {any} is also wrong)
         // std.log.warn("Value {} is not in range [{}, {}]", .{ num, min, max });
         std.log.warn("Value not in range", .{});
@@ -47,9 +47,9 @@ pub const Date = struct {
     pub const MAX = Date.ymd(1471744, 12, 31);
 
     pub fn cmp(a: Date, b: Date) std.math.Order {
-        if (a.year != b.year) return sort.cmp(a.year, b.year);
-        if (a.month != b.month) return sort.cmp(a.month, b.month);
-        return sort.cmp(a.day, b.day);
+        if (a.year != b.year) return util.cmp(a.year, b.year);
+        if (a.month != b.month) return util.cmp(a.month, b.month);
+        return util.cmp(a.day, b.day);
     }
 
     pub fn parse(str: []const u8) !Date {
