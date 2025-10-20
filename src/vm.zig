@@ -35,11 +35,18 @@ pub const ValueKind = enum {
     fun,
     err,
     array,
+    object,
+};
+
+pub const Prop = struct {
+    key: []const u8, // TODO: Ident?
+    value: Value,
 };
 
 pub const HeapValue = union(enum) {
     string: []u8,
     array: []Value, // TODO: std.ArrayList(Value)?
+    object: []Prop, // TODO: std.StringHashMap(Value)?
     fun: Fun,
     err: Error,
 };
@@ -82,6 +89,7 @@ pub const Value = packed union {
             return switch (heap.*) {
                 .string => .string,
                 .array => .array,
+                .object => .object,
                 .fun => .fun,
                 .err => .err,
             };
@@ -119,6 +127,10 @@ pub const Value = packed union {
                 .array => self.getHeap().?.array,
                 else => error.TypeError,
             },
+            []const Prop => switch (self.kind()) {
+                .object => self.getHeap().?.object,
+                else => error.TypeError,
+            },
             else => @compileError("TODO Value.into " ++ @typeName(T)),
         };
     }
@@ -134,6 +146,7 @@ pub const Value = packed union {
                 try writer.writeAll(heap.string);
             },
             .array => try writer.writeAll("[array]"),
+            .object => try writer.writeAll("[object]"),
             .fun => try writer.writeAll("[function]"),
             .err => {
                 const heap = self.getHeap().?;
@@ -149,9 +162,24 @@ pub const Value = packed union {
             .number => self.number != 0,
             .string => self.getHeap().?.string.len > 0,
             .array => self.getHeap().?.array.len > 0,
+            .object => true,
             .fun => true,
             .err => false,
         };
+    }
+
+    pub fn get(self: Value, key: []const u8) ?Value {
+        if (self.kind() != .object) {
+            return null;
+        }
+
+        for (self.getHeap().?.object) |prop| {
+            if (std.mem.eql(u8, prop.key, key)) {
+                return prop.value;
+            }
+        }
+
+        return null;
     }
 };
 
@@ -231,7 +259,8 @@ pub const Context = struct {
             switch (heap_val.*) {
                 .string => |s| self.gpa.free(s),
                 .array => |a| self.gpa.free(a),
-                .fun, .err => {}, // No additional cleanup needed
+                .object => |o| self.gpa.free(o),
+                .fun, .err => {},
             }
             self.gpa.destroy(heap_val);
         }
@@ -282,24 +311,42 @@ pub const Context = struct {
             .comptime_int, .int => Value.fromNumber(@floatFromInt(input)),
             .comptime_float, .float => Value.fromNumber(@floatCast(input)),
             .error_union => if (input) |v| try self.value(v) else |e| try self.value(e),
-            .error_set => blk: {
+            .error_set => {
                 const heap_val = try self.gpa.create(HeapValue);
                 errdefer self.gpa.destroy(heap_val);
 
                 heap_val.* = .{ .err = error.UnexpectedError };
                 try self.heap.append(self.gpa, heap_val);
-                break :blk Value.fromHeap(heap_val);
+                return Value.fromHeap(heap_val);
             },
-            .@"fn" => blk: {
+            .@"fn" => {
                 const heap_val = try self.gpa.create(HeapValue);
                 errdefer self.gpa.destroy(heap_val);
 
                 heap_val.* = .{ .fun = Fun.wrap(input) };
                 try self.heap.append(self.gpa, heap_val);
-                break :blk Value.fromHeap(heap_val);
+                return Value.fromHeap(heap_val);
             },
             .pointer => try self.value(input.*),
             .array => |a| self.value(@as([]const a.child, &input)),
+            .@"struct" => |s| {
+                const heap_val = try self.gpa.create(HeapValue);
+                errdefer self.gpa.destroy(heap_val);
+
+                const props = try self.gpa.alloc(Prop, s.fields.len);
+                errdefer self.gpa.free(props);
+
+                inline for (s.fields, 0..) |f, i| {
+                    props[i] = .{
+                        .key = f.name,
+                        .value = try self.value(@field(input, f.name)),
+                    };
+                }
+
+                heap_val.* = .{ .object = props };
+                try self.heap.append(self.gpa, heap_val);
+                return Value.fromHeap(heap_val);
+            },
             else => @compileError("TODO: Context.value " ++ @typeName(T)),
         };
     }
