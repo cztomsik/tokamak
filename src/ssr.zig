@@ -1,7 +1,47 @@
 const std = @import("std");
+const resource = @import("resource.zig");
 const sax = @import("sax.zig");
 const js = @import("js.zig");
 const vm = @import("vm.zig");
+
+pub const Engine = struct {
+    pub const VTable = struct {
+        render: *const fn (*Engine, []const u8, std.mem.Allocator, vm.Value) anyerror![]const u8,
+    };
+
+    vtable: *const VTable,
+
+    pub fn render(self: *Engine, name: []const u8, arena: std.mem.Allocator, data: anytype) ![]const u8 {
+        const value = vm.Value.from(data);
+        return self.vtable.render(self, name, arena, value);
+    }
+};
+
+pub const DefaultEngine = struct {
+    loader: *resource.Loader,
+    interface: Engine = .{ .vtable = &.{ .render = &render } },
+
+    fn render(engine: *Engine, name: []const u8, arena: std.mem.Allocator, data: vm.Value) ![]const u8 {
+        const self: *DefaultEngine = @fieldParentPtr("interface", engine);
+
+        const res = try self.loader.load(arena, name) orelse return error.TemplateNotFound;
+        const template = try Template.parse(arena, res.content);
+        return template.render(arena, data);
+    }
+};
+
+// pub const MustacheEngine = struct {
+//     loader: *resource.Loader,
+//     interface: Engine = .{ .vtable = &.{ .render = &render } },
+
+//     fn render(engine: *Engine, name: []const u8, arena: std.mem.Allocator, data: vm.Value) ![]const u8 {
+//         const self: *MustacheEngine = @fieldParentPtr("interface", engine);
+
+//         const res = try self.loader.load(arena, name) orelse return error.TemplateNotFound;
+//         const template = try mustache.Template.parse(arena, res.content);
+//         return template.renderAlloc(arena, data);
+//     }
+// };
 
 pub const Template = struct {
     root: []Node,
@@ -312,9 +352,18 @@ const RenderContext = struct {
     }
 
     pub fn setData(self: *RenderContext, data: anytype) !void {
-        inline for (std.meta.fields(@TypeOf(data))) |f| {
-            const value = @field(data, f.name);
-            try self.js.vm.define(f.name, value);
+        const T = @TypeOf(data);
+
+        if (T == vm.Value and data.kind() == .object) {
+            const props = try data.into([]const vm.Prop);
+            for (props) |prop| {
+                try self.js.vm.define(prop.key, prop.value);
+            }
+        } else {
+            inline for (std.meta.fields(T)) |f| {
+                const value = @field(data, f.name);
+                try self.js.vm.define(f.name, value);
+            }
         }
     }
 
@@ -348,7 +397,7 @@ const RenderContext = struct {
 
         switch (value.kind()) {
             // These should be safe
-            .undefined, .null, .bool, .number, .fun, .err, .array => {
+            .undefined, .null, .bool, .number, .fun, .err, .array, .object => {
                 try value.format(self.writer);
             },
             .string => {
