@@ -1,14 +1,16 @@
 # Getting Started
 
-Tokamak is a server-side framework for Zig, built around [http.zig](https://github.com/karlseguin/http.zig) and a simple dependency injection container.
+Welcome to Tokamak! This guide will help you build your first web application with Zig.
 
-::: warning
-Tokamak is **not designed to be used alone**. Use it with a reverse proxy like Nginx or Cloudfront to handle SSL, caching, and sanitization.
+Tokamak is a server-side framework built around [http.zig](https://github.com/karlseguin/http.zig) and a simple but powerful dependency injection container. It's designed to make building web applications in Zig straightforward and enjoyable.
+
+::: warning Production Deployment
+Tokamak is designed to run behind a reverse proxy like Nginx or Cloudfront. The proxy should handle SSL termination, caching, and request sanitization.
 :::
 
 ## Installation
 
-Add Tokamak to your project using Zig's package manager:
+Getting started is easy! Add Tokamak to your project using Zig's package manager:
 
 ```bash
 zig fetch --save "git+https://github.com/cztomsik/tokamak#main"
@@ -29,9 +31,9 @@ pub fn build(b: *std.Build) void {
 }
 ```
 
-## Hello World
+## Your First Server
 
-Here's a minimal example to get you started:
+Let's create a simple "Hello" server. Here's all the code you need:
 
 ```zig
 const std = @import("std");
@@ -57,11 +59,15 @@ pub fn main() !void {
 }
 ```
 
-That's it! Your server is now running on port 8080.
+That's it! Build and run your application, then visit `http://localhost:8080` to see it in action.
 
 ## What's Next?
 
-- Learn about the [Server](/guide/server) setup and configuration
-- Explore [Routing](/guide/routing) patterns
-- Understand [Dependency Injection](/guide/dependency-injection)
-- Implement [Middlewares](/guide/middlewares) for cross-cutting concerns
+Now that you have a running server, let's explore what Tokamak can do:
+
+- **[Server Setup](/guide/server)** - Learn about configuration, static files, and server options
+- **[Routing](/guide/routing)** - Handle different paths, URL parameters, and HTTP methods
+- **[Dependency Injection](/guide/dependency-injection)** - Share services and configuration across your handlers
+- **[Middlewares](/guide/middlewares)** - Add logging, authentication, and other cross-cutting concerns
+
+Ready to dive deeper? Let's start with the Server guide!

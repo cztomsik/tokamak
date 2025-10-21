@@ -1,22 +1,22 @@
 # TUI (Terminal User Interface)
 
-Tokamak includes a lightweight TUI module for building interactive terminal applications with keyboard input handling and raw mode support.
+Terminal user interface module for interactive terminal applications.
 
 ## Overview
 
-The TUI module provides:
+Features:
 
-- Raw terminal mode for character-by-character input
-- Keyboard input parsing (arrow keys, function keys, special keys)
-- Line editing with backspace support
-- Buffered I/O for efficient rendering
+- Raw terminal mode (character-by-character input)
+- Keyboard input parsing (arrows, function keys, control keys)
+- Line editing with backspace
+- Buffered I/O
 - Terminal state management
 
 ::: warning TTY Required
-TUI features require a TTY (terminal). They won't work when input/output is piped or redirected.
+Requires a TTY. Does not work with piped or redirected I/O.
 :::
 
-## Basic Setup
+## Setup
 
 ```zig
 const std = @import("std");
@@ -50,14 +50,14 @@ pub fn main() !void {
 
 ## Context Initialization
 
-The TUI context manages terminal state and I/O:
+Context manages terminal state and I/O:
 
 ```zig
 var ctx = try tk.tui.Context.init(allocator);
 defer ctx.deinit();
 ```
 
-This automatically:
+Initialization:
 - Verifies stdin is a TTY
 - Saves original terminal settings
 - Switches to raw mode

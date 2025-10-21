@@ -1,20 +1,18 @@
 # CLI
 
-Tokamak includes a simple CLI framework for creating command-line tools that reuse your application's dependency injection modules.
+Command-line interface module for building CLI tools that reuse application dependencies.
 
 ## Overview
 
-The CLI module is **not** meant to be a full-featured CLI framework. Instead, it's designed for:
+The CLI module provides basic command parsing and execution. Designed for:
 
-- Creating companion CLI tools for existing server applications
-- Reusing your app's DI modules, services, and database connections
-- Running migrations, imports/exports, backups, and administrative tasks
+- Companion CLI tools for server applications
+- Reusing DI modules, services, and database connections
+- Administrative tasks (migrations, imports/exports, backups)
 
-::: tip Primary Use Case
-Build CLI tools that share your server application's configuration and dependencies without duplicating code.
-:::
+Not intended as a full-featured CLI framework.
 
-## Basic Example
+## Example
 
 ```zig
 const std = @import("std");
@@ -77,7 +75,7 @@ tk.cli.Command.cmd("complex", "Complex command", complexFn, 5)
 
 ## Dependency Injection
 
-Commands can inject dependencies just like HTTP handlers:
+Commands inject dependencies via the DI container:
 
 ```zig
 const commands = &[_]tk.cli.Command{

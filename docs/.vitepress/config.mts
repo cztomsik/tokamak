@@ -8,7 +8,8 @@ export default defineConfig({
   themeConfig: {
     nav: [
       { text: 'Home', link: '/' },
-      { text: 'Guide', link: '/guide/getting-started' }
+      { text: 'Guide', link: '/guide/getting-started' },
+      { text: 'Reference', link: '/monitoring' }
     ],
 
     sidebar: [
@@ -19,10 +20,18 @@ export default defineConfig({
           { text: 'Server', link: '/guide/server' },
           { text: 'Routing', link: '/guide/routing' },
           { text: 'Dependency Injection', link: '/guide/dependency-injection' },
-          { text: 'Middlewares', link: '/guide/middlewares' },
-          { text: 'Process Monitoring', link: '/guide/monitoring' },
-          { text: 'CLI', link: '/guide/cli' },
-          { text: 'TUI', link: '/guide/tui' }
+          { text: 'Middlewares', link: '/guide/middlewares' }
+        ]
+      },
+      {
+        text: 'Reference',
+        items: [
+          { text: 'Server', link: '/server' },
+          { text: 'Routing', link: '/routing' },
+          { text: 'Dependency Injection', link: '/dependency-injection' },
+          { text: 'Process Monitoring', link: '/monitoring' },
+          { text: 'CLI', link: '/cli' },
+          { text: 'TUI', link: '/tui' }
         ]
       }
     ],
