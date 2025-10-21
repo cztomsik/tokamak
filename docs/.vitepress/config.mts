@@ -4,6 +4,10 @@ export default defineConfig({
   title: "Tokamak",
   description: "A server-side framework for Zig",
   base: '/tokamak/',
+  ignoreDeadLinks: [
+    // Ignore localhost URLs in examples - these are valid URLs users visit when running examples
+    /^http:\/\/localhost:\d+/
+  ],
 
   themeConfig: {
     nav: [
