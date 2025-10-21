@@ -9,6 +9,7 @@ export default defineConfig({
     nav: [
       { text: 'Home', link: '/' },
       { text: 'Guide', link: '/guide/getting-started' },
+      { text: 'Examples', link: '/guide/examples' },
       { text: 'Reference', link: '/monitoring' }
     ],
 
@@ -20,8 +21,13 @@ export default defineConfig({
           { text: 'Server', link: '/guide/server' },
           { text: 'Routing', link: '/guide/routing' },
           { text: 'Dependency Injection', link: '/guide/dependency-injection' },
-          { text: 'Middlewares', link: '/guide/middlewares' },
-          { text: 'Examples', link: '/guide/examples' }
+          { text: 'Middlewares', link: '/guide/middlewares' }
+        ]
+      },
+      {
+        text: 'Examples',
+        items: [
+          { text: 'Overview', link: '/guide/examples' }
         ]
       },
       {
