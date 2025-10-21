@@ -27,7 +27,15 @@ export default defineConfig({
       {
         text: 'Examples',
         items: [
-          { text: 'Overview', link: '/guide/examples' }
+          { text: 'Overview', link: '/guide/examples' },
+          { text: 'hello', link: '/examples/hello' },
+          { text: 'hello_app', link: '/examples/hello_app' },
+          { text: 'blog', link: '/examples/blog' },
+          { text: 'todos_orm_sqlite', link: '/examples/todos_orm_sqlite' },
+          { text: 'hello_cli', link: '/examples/hello_cli' },
+          { text: 'clown-commander', link: '/examples/clown-commander' },
+          { text: 'webview_app', link: '/examples/webview_app' },
+          { text: 'hello_ai', link: '/examples/hello_ai' }
         ]
       },
       {
