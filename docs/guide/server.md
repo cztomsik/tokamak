@@ -53,21 +53,6 @@ fn getUser(db: *sqlite.Database, name: []const u8) !User {
 }
 ```
 
-## Process Monitoring
-
-The `tk.monitor()` function runs multiple processes in parallel with automatic restart on crashes:
-
-```zig
-tk.monitor(.{
-    .{ "server", &runServer, .{ 8080 } },
-    .{ "worker", &runWorker, .{} },
-});
-```
-
-::: warning
-Process monitoring requires `fork()` support and takes over the main thread. Use with caution.
-:::
-
 ## Static Files
 
 Serve static files with built-in helpers:
