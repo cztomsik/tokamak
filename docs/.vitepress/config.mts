@@ -26,6 +26,9 @@ export default defineConfig({
       {
         text: 'Reference',
         items: [
+          { text: 'Server', link: '/server' },
+          { text: 'Routing', link: '/routing' },
+          { text: 'Dependency Injection', link: '/dependency-injection' },
           { text: 'Process Monitoring', link: '/monitoring' },
           { text: 'CLI', link: '/cli' },
           { text: 'TUI', link: '/tui' }
