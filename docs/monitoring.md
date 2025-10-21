@@ -1,8 +1,8 @@
 # Process Monitoring
 
-The `tk.monitor()` function provides a robust process monitoring system that runs multiple processes in parallel with automatic restart on crashes, creating a self-healing application.
+`tk.monitor()` runs multiple processes in parallel with automatic restart on crashes.
 
-## Basic Usage
+## Usage
 
 ```zig
 const std = @import("std");
