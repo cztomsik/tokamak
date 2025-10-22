@@ -20,7 +20,8 @@ export default defineConfig({
           { text: 'Server', link: '/guide/server' },
           { text: 'Routing', link: '/guide/routing' },
           { text: 'Dependency Injection', link: '/guide/dependency-injection' },
-          { text: 'Middlewares', link: '/guide/middlewares' }
+          { text: 'Middlewares', link: '/guide/middlewares' },
+          { text: 'Terminal', link: '/guide/terminal' }
         ]
       },
       {
