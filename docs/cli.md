@@ -1,230 +1,157 @@
 # CLI
 
-Command-line interface module for building CLI tools that reuse application dependencies.
+Command-line interface module for building CLI tools with dependency injection support.
 
-## Overview
-
-The CLI module provides basic command parsing and execution. Designed for:
-
-- Companion CLI tools for server applications
-- Reusing DI modules, services, and database connections
-- Administrative tasks (migrations, imports/exports, backups)
-
-Not intended as a full-featured CLI framework.
-
-## Example
+## run()
 
 ```zig
-const std = @import("std");
-const tk = @import("tokamak");
-
-const commands = &[_]tk.cli.Command{
-    tk.cli.Command.cmd1("hello", "Say hello", hello),
-    tk.cli.Command.cmd0("version", "Show version", version),
-};
-
-fn hello(name: []const u8) ![]const u8 {
-    return std.fmt.allocPrint(allocator, "Hello, {s}!", .{name});
-}
-
-fn version() []const u8 {
-    return "1.0.0";
-}
-
-pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-
-    var injector = tk.Injector.init(&.{}, null);
-    try tk.cli.run(&injector, gpa.allocator(), commands);
-}
+tk.cli.run(injector: *Injector, allocator: std.mem.Allocator, commands: []const Command) !void
 ```
 
-Usage:
-```bash
-$ myapp hello World
-Hello, World!
-
-$ myapp version
-1.0.0
-```
-
-## Command Definitions
-
-Commands are created using helper functions based on argument count:
+Executes CLI command parsing and routing. Blocks until command completes.
 
 ```zig
-// No arguments
-tk.cli.Command.cmd0("version", "Show version", getVersion)
-
-// One argument
-tk.cli.Command.cmd1("greet", "Greet someone", greet)
-
-// Two arguments
-tk.cli.Command.cmd2("add-user", "Add a user", addUser)
-
-// Three arguments
-tk.cli.Command.cmd3("create-post", "Create post", createPost)
+var injector = tk.Injector.init(&.{ .ref(&db) }, null);
+try tk.cli.run(&injector, allocator, commands);
 ```
 
-For more than 3 arguments, use the generic `cmd()`:
+**Output flags:**
+- `--json` - JSON output format
+- `--yaml` - YAML output format
+- Default: Auto (strings as-is, structs as YAML)
+
+## Command
 
 ```zig
-tk.cli.Command.cmd("complex", "Complex command", complexFn, 5)
+tk.cli.Command.cmd0(name: []const u8, description: []const u8, handler: fn) Command
+tk.cli.Command.cmd1(name: []const u8, description: []const u8, handler: fn) Command
+tk.cli.Command.cmd2(name: []const u8, description: []const u8, handler: fn) Command
+tk.cli.Command.cmd3(name: []const u8, description: []const u8, handler: fn) Command
+tk.cli.Command.cmd(name: []const u8, description: []const u8, handler: fn, n_args: usize) Command
 ```
 
-## Dependency Injection
-
-Commands inject dependencies via the DI container:
+Creates command definitions for different argument counts.
 
 ```zig
 const commands = &[_]tk.cli.Command{
-    tk.cli.Command.cmd1("find-user", "Find user by ID", findUser),
+    .cmd0("version", "Show version", getVersion),
+    .cmd1("hello", "Greet user", hello),
+    .cmd2("add-user", "Create user", addUser),
 };
-
-fn findUser(db: *Database, id: []const u8) !User {
-    return db.findById(User, id);
-}
-
-pub fn main() !void {
-    var db = try Database.open("app.db");
-    defer db.close();
-
-    var injector = tk.Injector.init(&.{ .ref(&db) }, null);
-    try tk.cli.run(&injector, gpa.allocator(), commands);
-}
 ```
 
-## Output Formats
+### Built-in Command
 
-The CLI supports multiple output formats:
+```zig
+tk.cli.Command.usage
+```
 
-### Automatic Format (default)
+Displays help information. Automatically included.
 
-Strings are printed as-is, other types as YAML:
+## Handler Functions
 
-```bash
-$ myapp hello World
-Hello, World!
+Handlers can inject dependencies and accept command arguments:
 
-$ myapp get-user 123
+```zig
+// No dependencies, no arguments
+fn version() []const u8
+
+// With dependencies, no arguments
+fn migrate(db: *Database) !void
+
+// With dependencies and arguments
+fn findUser(db: *Database, id: []const u8) !User
+
+// With allocator
+fn hello(arena: std.mem.Allocator, name: []const u8) ![]const u8
+```
+
+**Argument order:**
+1. Injected dependencies (from DI container)
+2. Command arguments (from CLI args)
+
+**Optional arguments:**
+
+```zig
+fn greet(name: []const u8, title: ?[]const u8) ![]const u8
+```
+
+## Context
+
+```zig
+tk.cli.Context
+```
+
+Available as injectable dependency for advanced control.
+
+**Fields:**
+- `arena: std.mem.Allocator` - Request-scoped allocator
+- `bin: []const u8` - Binary name
+- `command: *const Command` - Current command
+- `args: []const []const u8` - Remaining arguments
+- `in: *std.io.Reader` - stdin
+- `out: *std.io.Writer` - stdout
+- `err: *std.io.Writer` - stderr
+- `injector: *Injector` - DI container
+- `format: OutputFormat` - Output format (.auto, .json, .yaml)
+
+**Methods:**
+
+```zig
+ctx.parse(T: type, s: []const u8) !T
+```
+
+Parses string to type T.
+
+```zig
+ctx.output(value: anytype) !void
+```
+
+Outputs value according to format setting.
+
+## Output Format
+
+**Strings:** Printed as-is
+```zig
+fn handler() []const u8 { return "Hello"; }
+```
+```
+$ myapp handler
+Hello
+```
+
+**Structs:** Serialized to JSON or YAML
+```zig
+fn handler() User { return user; }
+```
+```
+$ myapp handler
 id: 123
-name: John Doe
-email: john@example.com
+name: John
+
+$ myapp --json handler
+{"id": 123, "name": "John"}
 ```
 
-### JSON Output
-
-```bash
-$ myapp --json get-user 123
-{
-  "id": 123,
-  "name": "John Doe",
-  "email": "john@example.com"
-}
-```
-
-### YAML Output
-
-```bash
-$ myapp --yaml get-user 123
-id: 123
-name: John Doe
-email: john@example.com
-```
-
-## CLI Context
-
-Commands can access the CLI context for advanced features:
-
+**Errors:** Formatted as error objects
 ```zig
-fn interactiveCommand(ctx: *tk.cli.Context) !void {
-    try ctx.out.print("Enter your name: ", .{});
-    const input = try ctx.in.readLine();
-    try ctx.output(.{ .greeting = input });
-}
+fn handler() !void { return error.Failed; }
+```
+```
+$ myapp handler
+error: Failed
+
+$ myapp --json handler
+{"error": "Failed"}
 ```
 
-The context provides:
+**void:** No output
 
-- `arena` - Request-scoped allocator
-- `args` - Remaining command arguments
-- `in` / `out` / `err` - Standard I/O streams
-- `injector` - DI container
-- `format` - Output format setting
-- `parse(T, str)` - Parse string to type
-- `output(value)` - Output value with format
+## Usage Information
 
-## Optional Arguments
+Automatic help display when no command provided or invalid command:
 
-Commands support optional arguments using Zig's optional types:
-
-```zig
-fn greet(name: []const u8, title: ?[]const u8) ![]const u8 {
-    if (title) |t| {
-        return std.fmt.allocPrint(allocator, "Hello, {s} {s}!", .{ t, name });
-    }
-    return std.fmt.allocPrint(allocator, "Hello, {s}!", .{name});
-}
-
-const commands = &[_]tk.cli.Command{
-    tk.cli.Command.cmd("greet", "Greet someone", greet, 2),
-};
 ```
-
-```bash
-$ myapp greet Alice
-Hello, Alice!
-
-$ myapp greet Alice Dr.
-Hello, Dr. Alice!
-```
-
-## Reusing App Modules
-
-Share your server application's configuration and services:
-
-```zig
-// shared.zig
-const AppModule = struct {
-    db: Database,
-    config: Config,
-    email: EmailService,
-};
-
-// server.zig
-pub fn main() !void {
-    try tk.app.run(tk.Server.start, &.{ AppModule });
-}
-
-// cli.zig
-const commands = &[_]tk.cli.Command{
-    tk.cli.Command.cmd1("send-email", "Send email", sendEmail),
-    tk.cli.Command.cmd0("migrate", "Run migrations", runMigrations),
-};
-
-fn sendEmail(email: *EmailService, to: []const u8) !void {
-    try email.send(to, "Subject", "Body");
-}
-
-fn runMigrations(db: *Database) !void {
-    try db.migrate();
-}
-
-pub fn main() !void {
-    const ct = try tk.Container.init(allocator, &.{ AppModule });
-    defer ct.deinit();
-
-    try tk.cli.run(&ct.injector, allocator, commands);
-}
-```
-
-## Built-in Help
-
-The CLI automatically provides usage information:
-
-```bash
-$ myapp
 Usage: myapp [--json|--yaml] <command> [args...]
 
 Options:
@@ -232,83 +159,32 @@ Options:
   --yaml               Output in YAML format
 
 Commands:
-  hello                Say hello to someone
   version              Show version
+  hello                Greet user
 
 Syntax:
-  myapp hello <string>
   myapp version
+  myapp hello <string>
 ```
 
-## Error Handling
+## Module Reuse
 
-Errors are automatically formatted and displayed:
+CLI tools can share DI modules with server applications:
 
 ```zig
-fn riskyCommand() !void {
-    return error.DatabaseConnectionFailed;
-}
-```
-
-```bash
-$ myapp risky
-error: DatabaseConnectionFailed
-
-$ myapp --json risky
-{
-  "error": "DatabaseConnectionFailed"
-}
-```
-
-## Real-World Examples
-
-### Database Migration Tool
-
-```zig
-const commands = &[_]tk.cli.Command{
-    tk.cli.Command.cmd0("migrate", "Run migrations", migrate),
-    tk.cli.Command.cmd0("rollback", "Rollback last migration", rollback),
-    tk.cli.Command.cmd0("seed", "Seed database", seed),
+// Shared module
+const AppModule = struct {
+    db: Database,
+    config: Config,
 };
 
-fn migrate(db: *Database) !void {
-    try db.runMigrations();
+// CLI main
+pub fn main() !void {
+    const ct = try tk.Container.init(allocator, &.{AppModule});
+    defer ct.deinit();
+
+    try tk.cli.run(&ct.injector, allocator, commands);
 }
 ```
 
-### Data Export Tool
-
-```zig
-const commands = &[_]tk.cli.Command{
-    tk.cli.Command.cmd1("export", "Export data", exportData),
-};
-
-fn exportData(db: *Database, table: []const u8) ![]Row {
-    return db.query(Row, "SELECT * FROM {s}", .{table});
-}
-```
-
-```bash
-$ myapp --json export users > users.json
-$ myapp --yaml export products > products.yaml
-```
-
-### Admin Tasks
-
-```zig
-const commands = &[_]tk.cli.Command{
-    tk.cli.Command.cmd2("create-user", "Create user", createUser),
-    tk.cli.Command.cmd1("reset-password", "Reset password", resetPassword),
-};
-
-fn createUser(db: *Database, email: []const u8, name: []const u8) !User {
-    return db.create(User, .{ .email = email, .name = name });
-}
-```
-
-```bash
-$ myapp create-user john@example.com "John Doe"
-id: 42
-email: john@example.com
-name: John Doe
-```
+Commands automatically have access to all module dependencies.
