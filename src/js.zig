@@ -50,8 +50,15 @@ pub const Context = struct {
 
         switch (expr) {
             .atom => |tok| {
-                const val = try tok.value(&self.vm);
-                try ops.append(arena, .{ .push = val });
+                switch (tok) {
+                    .ident => |name| {
+                        try ops.append(arena, .{ .load = vm.Ident.parse(name) });
+                    },
+                    else => {
+                        const val = try tok.value(&self.vm);
+                        try ops.append(arena, .{ .push = val });
+                    },
+                }
             },
             .cons => |cons| {
                 if (cons.args.len != 2) return error.NotImplemented;
@@ -479,6 +486,12 @@ test Context {
 
     // TODO: call expressions
     // try expectEval(&js, "print(1 + 2)", "undefined");
+
+    // Vars
+    try js.vm.define("x", 10);
+    try expectEval(&js, "x", "10");
+    try expectEval(&js, "x + 20", "30");
+
 }
 
 test "js context parent" {
