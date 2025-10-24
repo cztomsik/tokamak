@@ -223,12 +223,23 @@ pub const Value = packed union {
         };
     }
 
-    pub fn get(self: Value, key: []const u8) ?Value {
+    pub fn get(self: Value, key: Value) ?Value {
+        // TODO: key.into() shortstring footgun
         if (self.kind() == .object) {
+            const key_str = key.into([]const u8) catch return null;
             for (self.getHeap().?.object) |prop| {
-                if (std.mem.eql(u8, prop.key, key)) {
+                if (std.mem.eql(u8, prop.key, key_str)) {
                     return prop.value;
                 }
+            }
+        }
+
+        if (self.kind() == .array) {
+            const index = key.into(f64) catch return null;
+            const idx: usize = @intFromFloat(index);
+            const arr = self.getHeap().?.array;
+            if (idx < arr.len) {
+                return arr[idx];
             }
         }
 
@@ -312,6 +323,7 @@ pub const Op = union(enum) {
     call: Value, // TODO: argless?
     pop,
     dup,
+    get,
 };
 
 pub const Context = struct {
@@ -496,6 +508,12 @@ pub const Context = struct {
                 .dup => {
                     const val = self.pop() orelse return Error.StackUnderflow;
                     try self.push(val);
+                    try self.push(val);
+                },
+                .get => {
+                    const key = self.pop() orelse return Error.StackUnderflow;
+                    const obj = self.pop() orelse return Error.StackUnderflow;
+                    const val = obj.get(key) orelse return Error.UndefinedVar;
                     try self.push(val);
                 },
             }

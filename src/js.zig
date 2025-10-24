@@ -63,6 +63,28 @@ pub const Context = struct {
             .cons => |cons| {
                 if (cons.args.len != 2) return error.NotImplemented;
 
+                if (cons.op == .dot or cons.op == .lbracket) {
+                    const lhs_ops = try self.compile(arena, cons.args[0]);
+                    try ops.appendSlice(arena, lhs_ops);
+
+                    if (cons.op == .dot) {
+                        const key = switch (cons.args[1]) {
+                            .atom => |tok| switch (tok) {
+                                .ident => |name| name,
+                                else => return error.NotImplemented,
+                            },
+                            else => return error.NotImplemented,
+                        };
+                        try ops.append(arena, .{ .push = try self.vm.value(key) });
+                    } else {
+                        const rhs_ops = try self.compile(arena, cons.args[1]);
+                        try ops.appendSlice(arena, rhs_ops);
+                    }
+
+                    try ops.append(arena, .get);
+                    return ops.toOwnedSlice(arena);
+                }
+
                 const lhs_ops = try self.compile(arena, cons.args[0]);
                 const rhs_ops = try self.compile(arena, cons.args[1]);
 
@@ -493,6 +515,20 @@ test Context {
     try expectEval(&js, "x", "10");
     try expectEval(&js, "x + 20", "30");
 
+    // Property access
+    try js.vm.define("user", .{ .name = "Alice", .age = 30 });
+    try expectEval(&js, "user.name", "Alice");
+    try expectEval(&js, "user.age", "30");
+
+    // Array indexing
+    try js.vm.define("items", &[_]f64{ 10, 20, 30 });
+    try expectEval(&js, "items[0]", "10");
+    try expectEval(&js, "items[1]", "20");
+    try expectEval(&js, "items[2]", "30");
+
+    // Combined operations
+    try expectEval(&js, "items[0] + items[1]", "30");
+    try expectEval(&js, "user.age + 10", "40");
 }
 
 test "js context parent" {

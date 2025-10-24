@@ -421,6 +421,11 @@ test "rendering" {
     try expectRender("Hello {{ name }}", .{ .name = "Alice" }, "Hello Alice");
     try expectRender("<a>Hello {{ name }}</a>", .{ .name = "Alice" }, "<a>Hello Alice</a>");
 
+    try expectRender("<p>{{ user.name }}</p>", .{ .user = .{ .name = "Bob", .age = 25 } }, "<p>Bob</p>");
+    try expectRender("<p>{{ user.age }}</p>", .{ .user = .{ .name = "Bob", .age = 25 } }, "<p>25</p>");
+    try expectRender("<p>{{ price * quantity }}</p>", .{ .price = 10, .quantity = 3 }, "<p>30</p>");
+    try expectRender("<p>{{ items[0] + items[2] }}</p>", .{ .items = [_]u32{ 10, 20, 30 } }, "<p>40</p>");
+
     try expectRender("<div class=\"p-4\">\n  <p>Hello {{name}}</p>\n  <span>You have {{ n }} new messages</span></div>", .{ .name = "Alice", .n = 10 }, "<div class=\"p-4\">" ++
         "<p>Hello Alice</p>" ++
         "<span>You have 10 new messages</span>" ++
