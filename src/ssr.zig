@@ -368,9 +368,7 @@ const RenderContext = struct {
     }
 
     pub fn evalBool(self: *RenderContext, expr: []const u8) bool {
-        // TODO: js.vm.eval()
-        const val = self.js.vm.get(expr) orelse return false;
-
+        const val = self.js.eval(expr) catch return false;
         return val.isTruthy();
     }
 
@@ -392,16 +390,15 @@ const RenderContext = struct {
     }
 
     pub fn writeExpr(self: *RenderContext, expr: []const u8) !void {
-        // TODO: js.vm.eval()
-        const value = self.js.vm.get(expr) orelse return error.UndefinedVar;
+        const val = try self.js.eval(expr);
 
-        switch (value.kind()) {
+        switch (val.kind()) {
             // These should be safe
             .undefined, .null, .bool, .number, .fun, .err, .array, .object => {
-                try value.format(self.writer);
+                try val.format(self.writer);
             },
-            .string => {
-                const str = try value.into([]const u8);
+            .shortstring, .string => {
+                const str = try val.into([]const u8);
                 try self.writeEscaped(str);
             },
         }

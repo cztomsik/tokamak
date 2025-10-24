@@ -13,24 +13,12 @@ pub const Error = error{
     UnexpectedError,
 };
 
-pub const Ident = enum(u128) {
-    _,
-
-    pub fn parse(ident: []const u8) Ident {
-        const x = util.Smol128.initShort(ident) orelse util.Smol128.initComptime("unknown");
-        return @enumFromInt(x.raw);
-    }
-
-    pub fn name(self: *const Ident) []const u8 {
-        return util.Smol128.str(@ptrCast(self));
-    }
-};
-
 pub const ValueKind = enum {
     undefined,
     null,
     bool,
     number,
+    shortstring,
     string,
     fun,
     err,
@@ -39,7 +27,7 @@ pub const ValueKind = enum {
 };
 
 pub const Prop = struct {
-    key: []const u8, // TODO: Ident?
+    key: []const u8,
     value: Value,
 };
 
@@ -51,18 +39,36 @@ pub const HeapValue = union(enum) {
     err: Error,
 };
 
+// JSC-style layout (I think)
+//   special values in low range, pointers direct (no tagging), all ptrs are
+//   align(4) so we can use those bits
+//   https://bun.com/blog/how-bun-supports-v8-apis-without-using-v8-part-1#jsvalue
+// See also:
+//   https://www.iro.umontreal.ca/~feeley/papers/MelanconSerranoFeeleyOOPSLA25.pdf
+//   https://clementbera.wordpress.com/2018/11/09/64-bits-immediate-floats/
+//   https://medium.com/@kannanvijayan/exboxing-bridging-the-divide-between-tag-boxing-and-nan-boxing-07e39840e0ca
 pub const Value = packed union {
     raw: u64,
     number: f64,
 
-    const QNAN: u64 = 0x7FF8000000000000;
-    const PTR_TAG_MASK: u64 = 0xFFFF000000000000;
-    const PTR_TAG: u64 = 0x7FFC000000000000;
+    pub const @"undefined": Value = .{ .raw = 0x0A };
+    pub const @"null": Value = .{ .raw = 0x02 };
+    pub const @"false": Value = .{ .raw = 0x06 };
+    pub const @"true": Value = .{ .raw = 0x07 };
 
-    pub const @"undefined": Value = .{ .raw = QNAN | 0 };
-    pub const @"null": Value = .{ .raw = QNAN | 1 };
-    pub const @"false": Value = .{ .raw = QNAN | 2 };
-    pub const @"true": Value = .{ .raw = QNAN | 3 };
+    // Pointer mask: upper 16 bits = 0, bottom 2 bits = 0 (4-byte aligned)
+    const POINTER_MASK: u64 = 0x0000FFFFFFFFFFFC;
+
+    // By adding 7 * 2^48 to all doubles, we shift them from range 0x0000..0x7FF8
+    // up to range 0x0007..0xFFFF, freeing up 0x0000..0x0006 for other uses.
+    const DOUBLE_ENCODE_OFFSET: u64 = 0x0007000000000000;
+
+    // Short string constants (auxillary space: 0x0001..0x0005)
+    const MIN_AUX_TAG: u32 = 0x00010000;
+    const SHORT_STRING_MAX_LEN: usize = 4;
+
+    // Minimum value for encoded numbers (integers and doubles)
+    const MIN_NUMBER: u64 = 0x0006000000000000;
 
     // TODO: fromPrimitive()? or just from(anytype) and comptime-fail if it's not supported?
     pub fn fromBool(b: bool) Value {
@@ -70,12 +76,52 @@ pub const Value = packed union {
     }
 
     pub fn fromNumber(n: f64) Value {
-        return .{ .number = n };
+        var val = Value{ .number = n };
+        val.raw += DOUBLE_ENCODE_OFFSET;
+        return val;
+    }
+
+    pub fn asNumber(self: Value) f64 {
+        std.debug.assert(self.kind() == .number);
+        var val = self;
+        val.raw -= DOUBLE_ENCODE_OFFSET;
+        return val.number;
     }
 
     pub fn fromHeap(heap: *HeapValue) Value {
         const addr = @intFromPtr(heap);
-        return .{ .raw = PTR_TAG | (addr & 0xFFFFFFFFFFFF) };
+        std.debug.assert(addr & 0x3 == 0);
+        std.debug.assert(addr & 0xFFFF000000000000 == 0);
+        return .{ .raw = addr };
+    }
+
+    pub fn fromShortString(str: []const u8) ?Value {
+        if (str.len > SHORT_STRING_MAX_LEN) return null;
+
+        const len: u32 = @intCast(str.len);
+        const tag: u32 = MIN_AUX_TAG + len;
+        var raw: u64 = @as(u64, tag) << 32;
+
+        for (str, 0..) |byte, i| {
+            const shift: u6 = @intCast(i * 8);
+            raw |= @as(u64, byte) << shift;
+        }
+
+        return .{ .raw = raw };
+    }
+
+    pub fn isShortString(self: Value) bool {
+        const tag: u32 = @intCast((self.raw >> 32) & 0xFFFFFFFF);
+        return tag >= MIN_AUX_TAG and tag <= MIN_AUX_TAG + SHORT_STRING_MAX_LEN;
+    }
+
+    pub fn asShortString(self: Value) []const u8 {
+        std.debug.assert(self.isShortString());
+
+        const tag: u32 = @intCast((self.raw >> 32) & 0xFFFFFFFF);
+        const len: usize = tag - MIN_AUX_TAG;
+        const bytes: *const [8]u8 = @ptrCast(&self.raw);
+        return bytes[0..len];
     }
 
     pub fn kind(self: Value) ValueKind {
@@ -83,8 +129,10 @@ pub const Value = packed union {
         if (self.raw == Value.null.raw) return .null;
         if (self.raw == Value.false.raw) return .bool;
         if (self.raw == Value.true.raw) return .bool;
+        if (self.raw >= MIN_NUMBER) return .number;
+        if (self.isShortString()) return .shortstring;
 
-        if ((self.raw & PTR_TAG_MASK) == PTR_TAG) {
+        if (self.isPointer()) {
             const heap = self.getHeap().?;
             return switch (heap.*) {
                 .string => .string,
@@ -94,13 +142,17 @@ pub const Value = packed union {
                 .err => .err,
             };
         }
-        return .number;
+
+        return .undefined;
+    }
+
+    fn isPointer(self: Value) bool {
+        return (self.raw & ~POINTER_MASK) == 0 and self.raw != 0;
     }
 
     fn getHeap(self: Value) ?*HeapValue {
-        if ((self.raw & PTR_TAG_MASK) != PTR_TAG) return null;
-        const addr = self.raw & 0xFFFFFFFFFFFF;
-        return @ptrFromInt(addr);
+        if (!self.isPointer()) return null;
+        return @ptrFromInt(self.raw);
     }
 
     pub fn into(self: Value, comptime T: type) Error!T {
@@ -116,10 +168,11 @@ pub const Value = packed union {
                 else => error.TypeError,
             },
             f64 => switch (self.kind()) {
-                .number => self.number,
+                .number => self.asNumber(),
                 else => error.TypeError,
             },
             []const u8 => switch (self.kind()) {
+                .shortstring => self.asShortString(),
                 .string => self.getHeap().?.string,
                 else => error.TypeError,
             },
@@ -140,7 +193,8 @@ pub const Value = packed union {
             .undefined => try writer.writeAll("undefined"),
             .null => try writer.writeAll("null"),
             .bool => try writer.print("{}", .{self.raw == Value.true.raw}),
-            .number => try writer.print("{d}", .{self.number}),
+            .number => try writer.print("{d}", .{self.asNumber()}),
+            .shortstring => try writer.writeAll(self.asShortString()),
             .string => {
                 const heap = self.getHeap().?;
                 try writer.writeAll(heap.string);
@@ -159,7 +213,8 @@ pub const Value = packed union {
         return switch (self.kind()) {
             .undefined, .null => false,
             .bool => self.raw == Value.true.raw,
-            .number => self.number != 0,
+            .number => self.asNumber() != 0,
+            .shortstring => self.asShortString().len > 0,
             .string => self.getHeap().?.string.len > 0,
             .array => self.getHeap().?.array.len > 0,
             .object => true,
@@ -169,17 +224,40 @@ pub const Value = packed union {
     }
 
     pub fn get(self: Value, key: []const u8) ?Value {
-        if (self.kind() != .object) {
-            return null;
-        }
-
-        for (self.getHeap().?.object) |prop| {
-            if (std.mem.eql(u8, prop.key, key)) {
-                return prop.value;
+        if (self.kind() == .object) {
+            for (self.getHeap().?.object) |prop| {
+                if (std.mem.eql(u8, prop.key, key)) {
+                    return prop.value;
+                }
             }
         }
 
         return null;
+    }
+
+    pub fn hash(self: Value) u64 {
+        return switch (self.kind()) {
+            .string => std.hash.Wyhash.hash(0, self.into([]const u8) catch unreachable),
+            else => self.raw,
+        };
+    }
+
+    pub fn eql(a: Value, b: Value) bool {
+        if (a.kind() == .shortstring and b.kind() == .shortstring) {
+            return a.raw == b.raw;
+        }
+
+        if ((a.kind() == .shortstring or a.kind() == .string) and
+            (b.kind() == .shortstring or b.kind() == .string))
+        {
+            return std.mem.eql(
+                u8,
+                a.into([]const u8) catch unreachable,
+                b.into([]const u8) catch unreachable,
+            );
+        }
+
+        return a.raw == b.raw;
     }
 };
 
@@ -229,9 +307,9 @@ pub const Fun = union(enum) {
 
 pub const Op = union(enum) {
     push: Value,
-    store: Ident,
-    load: Ident,
-    call: Ident, // TODO: argless?
+    store: Value,
+    load: Value,
+    call: Value, // TODO: argless?
     pop,
     dup,
 };
@@ -240,8 +318,19 @@ pub const Context = struct {
     parent: ?*Context,
     gpa: std.mem.Allocator,
     stack: std.ArrayList(Value),
-    env: std.AutoHashMap(Ident, Value),
+    env: std.HashMap(Value, Value, HashCx, std.hash_map.default_max_load_percentage),
     heap: std.ArrayList(*HeapValue),
+
+    // TODO: *const T footgun (see smol.zig)
+    const HashCx = struct {
+        pub fn hash(_: HashCx, v: Value) u64 {
+            return v.hash();
+        }
+
+        pub fn eql(_: HashCx, a: Value, b: Value) bool {
+            return a.eql(b);
+        }
+    };
 
     pub fn init(gpa: std.mem.Allocator) Context {
         return .{
@@ -276,6 +365,10 @@ pub const Context = struct {
         if (T == Value) return input;
 
         if (meta.isString(T)) {
+            if (Value.fromShortString(input)) |short_val| {
+                return short_val;
+            }
+
             const heap_val = try self.gpa.create(HeapValue);
             errdefer self.gpa.destroy(heap_val);
 
@@ -362,12 +455,13 @@ pub const Context = struct {
     }
 
     pub fn define(self: *Context, name: []const u8, val: anytype) Error!void {
-        try self.env.put(Ident.parse(name), try self.value(val));
+        const key = try self.value(name);
+        try self.env.put(key, try self.value(val));
     }
 
     pub fn get(self: *Context, name: []const u8) ?Value {
-        const ident = Ident.parse(name);
-        if (self.env.get(ident)) |val| return val;
+        const key = self.value(name) catch return null;
+        if (self.env.get(key)) |val| return val;
         if (self.parent) |p| return p.get(name);
         return null;
     }
@@ -385,7 +479,7 @@ pub const Context = struct {
             switch (op) {
                 .push => |val| try self.push(val),
                 .call => |ident| {
-                    const res = try self.call(ident.name());
+                    const res = try self.call(try ident.into([]const u8));
                     try self.push(res);
                 },
                 .load => |ident| {
@@ -411,7 +505,8 @@ pub const Context = struct {
     }
 
     pub fn call(self: *Context, fn_name: []const u8) Error!Value {
-        if (self.env.get(Ident.parse(fn_name))) |f| {
+        const key = try self.value(fn_name);
+        if (self.env.get(key)) |f| {
             switch (f.kind()) {
                 .fun => {
                     const heap = f.getHeap().?;
@@ -448,9 +543,9 @@ test {
     const ops: []const Op = &.{
         .{ .push = try vm.value(5.0) },
         .{ .push = try vm.value(3.0) },
-        .{ .call = Ident.parse("+") },
+        .{ .call = try vm.value("+") },
         .{ .push = try vm.value(2.0) },
-        .{ .call = Ident.parse("+") },
+        .{ .call = try vm.value("+") },
     };
 
     const result = try vm.eval(ops);

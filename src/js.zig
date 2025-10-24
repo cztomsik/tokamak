@@ -52,7 +52,7 @@ pub const Context = struct {
             .atom => |tok| {
                 switch (tok) {
                     .ident => |name| {
-                        try ops.append(arena, .{ .load = vm.Ident.parse(name) });
+                        try ops.append(arena, .{ .load = try self.vm.value(name) });
                     },
                     else => {
                         const val = try tok.value(&self.vm);
@@ -79,7 +79,7 @@ pub const Context = struct {
                     else => return error.NotImplemented,
                 };
 
-                try ops.append(arena, .{ .call = .parse(fun) });
+                try ops.append(arena, .{ .call = try self.vm.value(fun) });
             },
         }
 
@@ -102,11 +102,12 @@ const Builtins = struct {
     pub fn @"+"(ctx: *vm.Context, a: Value, b: Value) !Value {
         // Happy path
         if (a.kind() == .number and b.kind() == .number) {
-            return Value.fromNumber(a.number + b.number);
+            return Value.fromNumber(a.asNumber() + b.asNumber());
         }
 
-        // Concat if either of args is a string
-        if (a.kind() == .string or b.kind() == .string) {
+        if ((a.kind() == .shortstring or a.kind() == .string) or
+            (b.kind() == .shortstring or b.kind() == .string))
+        {
             const res = try std.fmt.allocPrint(ctx.gpa, "{f}{f}", .{ a, b });
             const hval = try ctx.gpa.create(vm.HeapValue);
             hval.* = .{ .string = res };
