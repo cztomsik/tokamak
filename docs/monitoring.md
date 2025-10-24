@@ -176,19 +176,6 @@ fn runServer(port: u16) !void {
 }
 ```
 
-### Graceful Shutdown
-
-```zig
-fn runWorker() !void {
-    while (true) {
-        processJobs() catch |err| {
-            std.log.err("Job processing failed: {}", .{err});
-            // Continue running, don't exit
-        };
-    }
-}
-```
-
 ### Shared Configuration
 
 ```zig

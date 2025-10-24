@@ -88,6 +88,70 @@ const api = struct {
 const routes = &.{ .router(api) };
 ```
 
+## Scoped Dependencies
+
+```zig
+.provide(fn, routes)
+```
+
+Inject dependencies to nested routes (middleware pattern):
+
+```zig
+const routes = &.{
+    .provide(authenticate, &.{
+        .get("/profile", getProfile),
+        .post("/logout", logout),
+    }),
+};
+
+fn authenticate(req: *tk.Request) !*User {
+    const token = req.header("Authorization") orelse return error.Unauthorized;
+    return try validateToken(token);
+}
+
+fn getProfile(user: *User) !UserProfile {
+    return .{
+        .id = user.id,
+        .name = user.name,
+        .email = user.email,
+    };
+}
+```
+
+The `user` dependency is automatically available to nested route handlers.
+
+## Route Helpers
+
+### Static Responses
+
+```zig
+tk.Route.send(value)
+```
+
+Send a compile-time constant response:
+
+```zig
+const routes = &.{
+    .get("/health", tk.Route.send(.{ .status = "ok" })),
+    .get("/version", tk.Route.send("1.0.0")),
+};
+```
+
+### Redirects
+
+```zig
+tk.Route.redirect(url)
+```
+
+Redirect to another URL:
+
+```zig
+const routes = &.{
+    .get("/old-path", tk.Route.redirect("/new-path")),
+    .get("/home", tk.Route.redirect("/")),
+};
+```
+
 ## Request Body Parsing
 
 Routes with bodies (`.post()`, `.put()`, `.patch()`) automatically parse JSON into the `body` parameter:

@@ -93,6 +93,29 @@ const api = struct {
 };
 ```
 
+## Query Strings
+
+Add a `?` suffix to the path to enable query string parsing:
+
+```zig
+const routes: []const tk.Route = &.{
+    .get("/search?", search),
+};
+
+fn search(query: SearchQuery) ![]SearchResult {
+    // query.term, query.limit, query.offset are automatically parsed
+    return db.search(query.term, query.limit, query.offset);
+}
+
+const SearchQuery = struct {
+    term: []const u8,
+    limit: ?u32 = null,
+    offset: ?u32 = null,
+};
+```
+
+**Request:** `GET /search?term=zig&limit=10&offset=20`
+
 ## Request Body
 
 POST/PUT routes automatically parse JSON bodies:

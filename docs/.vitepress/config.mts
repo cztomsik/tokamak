@@ -27,6 +27,7 @@ export default defineConfig({
             { text: 'Routing', link: '/guide/routing' },
             { text: 'Dependency Injection', link: '/guide/dependency-injection' },
             { text: 'Middlewares', link: '/guide/middlewares' },
+            { text: 'Time', link: '/guide/time' },
             { text: 'Terminal', link: '/guide/terminal' }
           ]
         }
@@ -55,6 +56,7 @@ export default defineConfig({
             { text: 'Routing', link: '/routing' },
             { text: 'Dependency Injection', link: '/dependency-injection' },
             { text: 'Process Monitoring', link: '/monitoring' },
+            { text: 'Time', link: '/time' },
             { text: 'CLI', link: '/cli' },
             { text: 'TUI', link: '/tui' }
           ]
