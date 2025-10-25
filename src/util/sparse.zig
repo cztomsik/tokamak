@@ -30,7 +30,7 @@ pub fn Sparse(comptime S: type, comptime D: type) type {
             self.len += 1;
         }
 
-        pub fn has(self: *@This(), i: u32) bool {
+        pub fn has(self: *@This(), i: S) bool {
             std.debug.assert(i < self.sparse.len);
             return self.sparse[i] < self.len and self.dense[self.sparse[i]] == i;
         }
