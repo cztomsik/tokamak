@@ -1,5 +1,7 @@
 # Tokamak
 
+📚 **[Documentation](https://tomsik.cz/tokamak)**
+
 Tokamak is a server-side framework for Zig, built around
 [http.zig](https://github.com/karlseguin/http.zig) and a simple dependency
 injection container.

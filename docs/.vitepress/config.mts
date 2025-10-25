@@ -14,7 +14,7 @@ export default defineConfig({
       { text: 'Home', link: '/' },
       { text: 'Guide', link: '/guide/getting-started' },
       { text: 'Examples', link: '/guide/examples' },
-      { text: 'Reference', link: '/monitoring' }
+      { text: 'Reference', link: '/reference/' }
     ],
 
     sidebar: {
@@ -48,17 +48,18 @@ export default defineConfig({
           ]
         }
       ],
-      '/': [
+      '/reference/': [
         {
           text: 'Reference',
           items: [
-            { text: 'Server', link: '/server' },
-            { text: 'Routing', link: '/routing' },
-            { text: 'Dependency Injection', link: '/dependency-injection' },
-            { text: 'Process Monitoring', link: '/monitoring' },
-            { text: 'Time', link: '/time' },
-            { text: 'CLI', link: '/cli' },
-            { text: 'TUI', link: '/tui' }
+            { text: 'Overview', link: '/reference/' },
+            { text: 'Server', link: '/reference/server' },
+            { text: 'Routing', link: '/reference/routing' },
+            { text: 'Dependency Injection', link: '/reference/dependency-injection' },
+            { text: 'Process Monitoring', link: '/reference/monitoring' },
+            { text: 'Time', link: '/reference/time' },
+            { text: 'CLI', link: '/reference/cli' },
+            { text: 'TUI', link: '/reference/tui' }
           ]
         }
       ]
