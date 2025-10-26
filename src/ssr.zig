@@ -329,8 +329,8 @@ const RenderContext = struct {
                 }
             },
             .loop => |loop| {
-                const val = ctx.js.vm.get(loop.array_name) orelse return error.UndefinedVar;
-                const arr = try val.into([]const vm.Value);
+                const val = ctx.js.vm.get(loop.array_name);
+                const arr = try val.expect(.array);
 
                 for (arr) |item| {
                     try ctx.js.vm.define(loop.item_name, item);
@@ -354,9 +354,8 @@ const RenderContext = struct {
     pub fn setData(self: *RenderContext, data: anytype) !void {
         const T = @TypeOf(data);
 
-        if (T == vm.Value and data.kind() == .object) {
-            const props = try data.into([]const vm.Prop);
-            for (props) |prop| {
+        if (T == vm.Value and data == .object) {
+            for (data.object) |prop| {
                 try self.js.vm.define(prop.key, prop.value);
             }
         } else {
@@ -392,15 +391,12 @@ const RenderContext = struct {
     pub fn writeExpr(self: *RenderContext, expr: []const u8) !void {
         const val = try self.js.eval(expr);
 
-        switch (val.kind()) {
-            // These should be safe
+        switch (val) {
             .undefined, .null, .bool, .number, .fun, .err, .array, .object => {
                 try val.format(self.writer);
             },
-            .shortstring, .string => {
-                const str = try val.into([]const u8);
-                try self.writeEscaped(str);
-            },
+            .shortstring => |ss| try self.writeEscaped(ss.slice()),
+            .string => |s| try self.writeEscaped(s),
         }
     }
 };
@@ -423,7 +419,7 @@ test "rendering" {
 
     try expectRender("<p>{{ user.name }}</p>", .{ .user = .{ .name = "Bob", .age = 25 } }, "<p>Bob</p>");
     try expectRender("<p>{{ user.age }}</p>", .{ .user = .{ .name = "Bob", .age = 25 } }, "<p>25</p>");
-    try expectRender("<p>{{ price * quantity }}</p>", .{ .price = 10, .quantity = 3 }, "<p>30</p>");
+    try expectRender("<p>{{ price * qty }}</p>", .{ .price = 10, .qty = 3 }, "<p>30</p>");
     try expectRender("<p>{{ items[0] + items[2] }}</p>", .{ .items = [_]u32{ 10, 20, 30 } }, "<p>40</p>");
 
     try expectRender("<div class=\"p-4\">\n  <p>Hello {{name}}</p>\n  <span>You have {{ n }} new messages</span></div>", .{ .name = "Alice", .n = 10 }, "<div class=\"p-4\">" ++

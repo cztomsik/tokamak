@@ -10,8 +10,8 @@ const Op = vm.Op;
 pub const Context = struct {
     vm: vm.Context,
 
-    pub fn init(gpa: std.mem.Allocator) !Context {
-        var ctx = vm.Context.init(gpa);
+    pub fn init(arena: std.mem.Allocator) !Context {
+        var ctx = vm.Context.init(arena);
         errdefer ctx.deinit();
 
         inline for (comptime std.meta.declarations(Builtins)) |d| {
@@ -33,13 +33,10 @@ pub const Context = struct {
     }
 
     pub fn eval(self: *Context, expr: []const u8) !Value {
-        var arena = std.heap.ArenaAllocator.init(self.vm.gpa);
-        defer arena.deinit();
-
-        var parser = Parser.init(arena.allocator(), expr);
+        var parser = Parser.init(self.vm.arena, expr);
         const exp = try parser.parseExpr(0);
 
-        const ops = try self.compile(arena.allocator(), exp);
+        const ops = try self.compile(self.vm.arena, exp);
         return self.vm.eval(ops);
     }
 
@@ -52,7 +49,7 @@ pub const Context = struct {
             .atom => |tok| {
                 switch (tok) {
                     .ident => |name| {
-                        try ops.append(arena, .{ .load = try self.vm.value(name) });
+                        try ops.append(arena, .{ .load = name });
                     },
                     else => {
                         const val = try tok.value(&self.vm);
@@ -93,15 +90,18 @@ pub const Context = struct {
 
                 // TODO: We need to do something about idents (pass them down?) and
                 //       it's also likely that some of these should be VM ops
-                const fun = switch (cons.op) {
+
+                // TODO: We also neeed to do something about the lifetime, maybe we could really just
+                //       constraint the max len and keep all the idents inline?
+                try ops.append(arena, .{ .load = switch (cons.op) {
                     .plus => "+",
                     .minus => "-",
                     .mul => "*",
                     .div => "/",
                     else => return error.NotImplemented,
-                };
+                } });
 
-                try ops.append(arena, .{ .call = try self.vm.value(fun) });
+                try ops.append(arena, .call);
             },
         }
 
@@ -122,19 +122,15 @@ fn cx(vm_ctx: *vm.Context) *Context {
 
 const Builtins = struct {
     pub fn @"+"(ctx: *vm.Context, a: Value, b: Value) !Value {
-        // Happy path
-        if (a.kind() == .number and b.kind() == .number) {
-            return Value.fromNumber(a.asNumber() + b.asNumber());
+        if (a == .number and b == .number) {
+            return .{ .number = a.number + b.number };
         }
 
-        if ((a.kind() == .shortstring or a.kind() == .string) or
-            (b.kind() == .shortstring or b.kind() == .string))
+        if ((a == .shortstring or a == .string) or
+            (b == .shortstring or b == .string))
         {
-            const res = try std.fmt.allocPrint(ctx.gpa, "{f}{f}", .{ a, b });
-            const hval = try ctx.gpa.create(vm.HeapValue);
-            hval.* = .{ .string = res };
-            try ctx.heap.append(ctx.gpa, hval);
-            return Value.fromHeap(hval);
+            const res = try std.fmt.allocPrint(ctx.arena, "{f}{f}", .{ a, b });
+            return .{ .string = res };
         }
 
         return error.TypeError;
@@ -471,19 +467,11 @@ fn expectEval(js: *Context, expr: []const u8, expected: []const u8) !void {
 }
 
 test Context {
-    var js = try Context.init(std.testing.allocator);
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var js = try Context.init(arena.allocator());
     defer js.deinit();
-
-    // const add = js.vm.get("+");
-    // const res = try js.vm.call(add, &.{ js.vm.value(1), js.vm.value(2) });
-    try js.vm.push(1);
-    try js.vm.push(2);
-    const res = try js.vm.call("+");
-
-    try std.testing.expectEqual(3.0, try res.into(f64));
-
-    const res2 = try js.eval("123");
-    try std.testing.expectEqual(123.0, try res2.into(f64));
 
     // TODO: empty
     // try expectEval(&js, "", "undefined");
@@ -492,6 +480,7 @@ test Context {
     // try expectEval(&js, "null", "null");
     // try expectEval(&js, "true", "true");
 
+    // Literals
     try expectEval(&js, "1", "1");
     try expectEval(&js, "1.2", "1.2");
 
@@ -529,24 +518,4 @@ test Context {
     // Combined operations
     try expectEval(&js, "items[0] + items[1]", "30");
     try expectEval(&js, "user.age + 10", "40");
-}
-
-test "js context parent" {
-    var parent_js = try Context.init(std.testing.allocator);
-    defer parent_js.deinit();
-
-    try parent_js.vm.define("x", 42);
-
-    var child_vm = parent_js.vm.child(std.testing.allocator);
-    defer child_vm.deinit();
-
-    var child_js = Context{ .vm = child_vm };
-
-    // Test parent() method
-    const parent_ref = child_js.parent();
-    try std.testing.expect(parent_ref != null);
-    try std.testing.expectEqual(&parent_js, parent_ref);
-
-    // Test that child can access parent variables through vm
-    try std.testing.expectEqual(42.0, try child_js.vm.get("x").?.into(f64));
 }
