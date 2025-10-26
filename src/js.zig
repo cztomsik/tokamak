@@ -44,7 +44,7 @@ pub const Context = struct {
             .atom => |tok| {
                 switch (tok) {
                     .ident => |name| {
-                        try ops.append(arena, .{ .load = name });
+                        try ops.append(arena, .{ .load = try self.vm.ident(name) });
                     },
                     else => {
                         const val = try tok.value(&self.vm);
@@ -67,7 +67,7 @@ pub const Context = struct {
                             },
                             else => return error.NotImplemented,
                         };
-                        try ops.append(arena, .{ .push = try self.vm.value(key) });
+                        try ops.append(arena, .{ .push = try self.vm.value(try self.vm.ident(key)) });
                     } else {
                         const rhs_ops = try self.compile(arena, cons.args[1]);
                         try ops.appendSlice(arena, rhs_ops);
@@ -182,7 +182,7 @@ const Token = union(enum) {
                 return ctx.value(val);
             },
             .string => |str| {
-                return ctx.value(str);
+                return ctx.value(try ctx.intern(str));
             },
             else => error.NotAValue,
         };

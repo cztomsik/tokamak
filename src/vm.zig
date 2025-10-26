@@ -136,14 +136,18 @@ pub const Context = struct {
         return gop.key_ptr.*;
     }
 
+    pub fn ident(self: *Context, str: []const u8) ![]const u8 {
+        return self.intern(str);
+    }
+
     pub fn value(self: *Context, input: anytype) Error!Value {
         const T = @TypeOf(input);
 
         if (T == Value) return input;
 
         if (meta.isString(T)) {
-            // TODO: We should not blindly intern every string...
-            return .{ .string = try self.intern(input) };
+            // Let's not blindly intern every string...
+            return .{ .string = try self.arena.dupe(u8, input) };
         }
 
         if (meta.isOptional(T)) {
@@ -184,7 +188,7 @@ pub const Context = struct {
                 try props.ensureUnusedCapacity(self.arena, s.fields.len);
 
                 inline for (s.fields) |f| {
-                    props.putAssumeCapacity(f.name, try self.value(@field(input, f.name)));
+                    props.putAssumeCapacity(try self.ident(f.name), try self.value(@field(input, f.name)));
                 }
 
                 return .{ .object = props };
@@ -213,11 +217,11 @@ pub const Context = struct {
         for (code) |op| {
             switch (op) {
                 .push => |val| try self.push(val),
-                .store => |ident| {
-                    try self.define(ident, try self.pop());
+                .store => |key| {
+                    try self.define(key, try self.pop());
                 },
-                .load => |ident| {
-                    try self.push(self.get(ident));
+                .load => |key| {
+                    try self.push(self.get(key));
                 },
                 .call => {
                     const val = try self.pop();
