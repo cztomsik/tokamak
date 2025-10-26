@@ -338,7 +338,7 @@ const RenderContext = struct {
     fn renderElement(ctx: *RenderContext, elem: Template.Element) anyerror!void {
         try ctx.writer.print("<{s}", .{elem.tag});
         for (elem.attrs) |attr| {
-            // TODO: escaping
+            // TODO: escaping (once we add support for attr interpolation - which we don't have right now)
             try ctx.writer.print(" {s}=\"{s}\"", .{ attr.name, attr.value });
         }
         try ctx.writer.writeAll(">");

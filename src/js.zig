@@ -36,28 +36,44 @@ pub const Context = struct {
     }
 
     fn compile(self: *Context, arena: std.mem.Allocator, expr: Expr) ![]const Op {
-        // TODO: we should first compute the size and then do something like compileInto(&buf)
-        //       and maybe even introduce Compiler? IDK but at least this works for now...
-        var ops = std.ArrayList(Op){};
+        const ops = try arena.alloc(Op, self.computeSize(expr));
+        _ = try self.compileInto(ops, expr);
+        return ops;
+    }
+
+    fn computeSize(self: *Context, expr: Expr) usize {
+        return switch (expr) {
+            .atom => 1,
+            .cons => |cons| {
+                if (cons.args.len != 2) return 0;
+
+                if (cons.op == .dot) {
+                    return self.computeSize(cons.args[0]) + 2;
+                } else if (cons.op == .lbracket) {
+                    return self.computeSize(cons.args[0]) + self.computeSize(cons.args[1]) + 1;
+                } else {
+                    return self.computeSize(cons.args[0]) + self.computeSize(cons.args[1]) + 2;
+                }
+            },
+        };
+    }
+
+    fn compileInto(self: *Context, buf: []Op, expr: Expr) !usize {
+        var pos: usize = 0;
 
         switch (expr) {
             .atom => |tok| {
-                switch (tok) {
-                    .ident => |name| {
-                        try ops.append(arena, .{ .load = try self.vm.ident(name) });
-                    },
-                    else => {
-                        const val = try tok.value(&self.vm);
-                        try ops.append(arena, .{ .push = val });
-                    },
-                }
+                buf[pos] = switch (tok) {
+                    .ident => |name| .{ .load = try self.vm.ident(name) },
+                    else => .{ .push = try tok.value(&self.vm) },
+                };
+                pos += 1;
             },
             .cons => |cons| {
                 if (cons.args.len != 2) return error.NotImplemented;
 
                 if (cons.op == .dot or cons.op == .lbracket) {
-                    const lhs_ops = try self.compile(arena, cons.args[0]);
-                    try ops.appendSlice(arena, lhs_ops);
+                    pos += try self.compileInto(buf[pos..], cons.args[0]);
 
                     if (cons.op == .dot) {
                         const key = switch (cons.args[1]) {
@@ -67,40 +83,39 @@ pub const Context = struct {
                             },
                             else => return error.NotImplemented,
                         };
-                        try ops.append(arena, .{ .push = try self.vm.value(try self.vm.ident(key)) });
+                        buf[pos] = .{ .push = try self.vm.value(try self.vm.ident(key)) };
+                        pos += 1;
                     } else {
-                        const rhs_ops = try self.compile(arena, cons.args[1]);
-                        try ops.appendSlice(arena, rhs_ops);
+                        pos += try self.compileInto(buf[pos..], cons.args[1]);
                     }
 
-                    try ops.append(arena, .get);
-                    return ops.toOwnedSlice(arena);
+                    buf[pos] = .get;
+                    pos += 1;
+                } else {
+                    pos += try self.compileInto(buf[pos..], cons.args[0]);
+                    pos += try self.compileInto(buf[pos..], cons.args[1]);
+
+                    // TODO: We need to do something about idents (pass them down?) and
+                    //       it's also likely that some of these should be VM ops
+
+                    // TODO: We also neeed to do something about the lifetime, maybe we could really just
+                    //       constraint the max len and keep all the idents inline?
+                    buf[pos] = .{ .load = switch (cons.op) {
+                        .plus => "+",
+                        .minus => "-",
+                        .mul => "*",
+                        .div => "/",
+                        else => return error.NotImplemented,
+                    } };
+                    pos += 1;
+
+                    buf[pos] = .call;
+                    pos += 1;
                 }
-
-                const lhs_ops = try self.compile(arena, cons.args[0]);
-                const rhs_ops = try self.compile(arena, cons.args[1]);
-
-                try ops.appendSlice(arena, lhs_ops);
-                try ops.appendSlice(arena, rhs_ops);
-
-                // TODO: We need to do something about idents (pass them down?) and
-                //       it's also likely that some of these should be VM ops
-
-                // TODO: We also neeed to do something about the lifetime, maybe we could really just
-                //       constraint the max len and keep all the idents inline?
-                try ops.append(arena, .{ .load = switch (cons.op) {
-                    .plus => "+",
-                    .minus => "-",
-                    .mul => "*",
-                    .div => "/",
-                    else => return error.NotImplemented,
-                } });
-
-                try ops.append(arena, .call);
             },
         }
 
-        return ops.toOwnedSlice(arena);
+        return pos;
     }
 
     pub fn print(self: *Context, writer: *std.io.Writer, val: Value) !void {
