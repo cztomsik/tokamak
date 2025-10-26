@@ -187,5 +187,5 @@ The application will launch in your terminal with a dual-panel file browser.
 ## Next Steps
 
 - See [hello_cli](./hello_cli.md) for CLI command patterns
-- Check out the [TUI reference](/tui) for more TUI capabilities
+- Check out the [TUI reference](/reference/tui) for more TUI capabilities
 - Explore keyboard event handling for custom controls

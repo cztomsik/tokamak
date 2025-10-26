@@ -326,5 +326,5 @@ pub fn main() !void {
 
 For detailed API reference and advanced features:
 
-- **[CLI Reference](/cli)** - Command definitions, context API, output formats
-- **[TUI Reference](/tui)** - Keyboard input, terminal control, raw mode details
+- **[CLI Reference](/reference/cli)** - Command definitions, context API, output formats
+- **[TUI Reference](/reference/tui)** - Keyboard input, terminal control, raw mode details
