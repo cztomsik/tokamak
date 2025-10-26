@@ -12,7 +12,6 @@ pub const Context = struct {
 
     pub fn init(arena: std.mem.Allocator) !Context {
         var ctx = vm.Context.init(arena);
-        errdefer ctx.deinit();
 
         inline for (comptime std.meta.declarations(Builtins)) |d| {
             try ctx.define(d.name, @field(Builtins, d.name));
@@ -21,10 +20,6 @@ pub const Context = struct {
         return .{
             .vm = ctx,
         };
-    }
-
-    pub fn deinit(self: *Context) void {
-        self.vm.deinit();
     }
 
     pub fn parent(self: *Context) ?*Context {
@@ -126,9 +121,7 @@ const Builtins = struct {
             return .{ .number = a.number + b.number };
         }
 
-        if ((a == .shortstring or a == .string) or
-            (b == .shortstring or b == .string))
-        {
+        if (a == .string or b == .string) {
             const res = try std.fmt.allocPrint(ctx.arena, "{f}{f}", .{ a, b });
             return .{ .string = res };
         }
@@ -471,7 +464,6 @@ test Context {
     defer arena.deinit();
 
     var js = try Context.init(arena.allocator());
-    defer js.deinit();
 
     // TODO: empty
     // try expectEval(&js, "", "undefined");

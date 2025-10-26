@@ -102,9 +102,8 @@ pub const Template = struct {
 
     pub fn renderInto(self: Template, writer: *std.io.Writer, data: anytype) !void {
         var ctx = try RenderContext.init(self.arena, writer);
-        defer ctx.deinit();
 
-        try ctx.setData(data);
+        try ctx.setData(try ctx.js.vm.value(data));
         try ctx.renderNodes(self.root);
 
         try writer.flush();
@@ -304,10 +303,6 @@ const RenderContext = struct {
         };
     }
 
-    fn deinit(self: *RenderContext) void {
-        self.js.deinit();
-    }
-
     fn renderNodes(ctx: *RenderContext, nodes: []const Template.Node) anyerror!void {
         for (nodes) |node| {
             try renderNode(ctx, node);
@@ -332,7 +327,7 @@ const RenderContext = struct {
                 const val = ctx.js.vm.get(loop.array_name);
                 const arr = try val.expect(.array);
 
-                for (arr) |item| {
+                for (arr.items) |item| {
                     try ctx.js.vm.define(loop.item_name, item);
                     try renderElement(ctx, loop.element);
                 }
@@ -351,18 +346,12 @@ const RenderContext = struct {
         try ctx.writer.print("</{s}>", .{elem.tag});
     }
 
-    pub fn setData(self: *RenderContext, data: anytype) !void {
-        const T = @TypeOf(data);
+    pub fn setData(self: *RenderContext, data: vm.Value) !void {
+        const props = try data.expect(.object);
+        var it = props.iterator();
 
-        if (T == vm.Value and data == .object) {
-            for (data.object) |prop| {
-                try self.js.vm.define(prop.key, prop.value);
-            }
-        } else {
-            inline for (std.meta.fields(T)) |f| {
-                const value = @field(data, f.name);
-                try self.js.vm.define(f.name, value);
-            }
+        while (it.next()) |entry| {
+            try self.js.vm.define(entry.key_ptr.*, entry.value_ptr.*);
         }
     }
 
@@ -392,11 +381,8 @@ const RenderContext = struct {
         const val = try self.js.eval(expr);
 
         switch (val) {
-            .undefined, .null, .bool, .number, .fun, .err, .array, .object => {
-                try val.format(self.writer);
-            },
-            .shortstring => |ss| try self.writeEscaped(ss.slice()),
             .string => |s| try self.writeEscaped(s),
+            else => try val.format(self.writer),
         }
     }
 };

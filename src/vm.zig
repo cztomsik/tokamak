@@ -6,47 +6,20 @@ const util = @import("util.zig");
 
 pub const Error = error{
     TypeError,
-    UndefinedFunction,
-    UndefinedVar,
     StackUnderflow,
     OutOfMemory,
     UnexpectedError,
 };
 
-pub const Prop = struct {
-    key: []const u8,
-    value: Value,
-};
-
-pub const ShortString = struct {
-    len: u8,
-    data: [7]u8 = [_]u8{0} ** 7,
-
-    pub fn init(str: []const u8) ?ShortString {
-        if (str.len > 7) return null;
-
-        var result = ShortString{ .len = @intCast(str.len) };
-        @memcpy(result.data[0..str.len], str);
-        return result;
-    }
-
-    pub fn slice(self: *const ShortString) []const u8 {
-        return self.data[0..self.len];
-    }
-};
-
-// NOTE: NaN-boxing is cool but I don't think it's worth the complexity.
-//       Our scopes are short-lived and if anything, we will rather benefit
-//       from longer inline strings.
+// NOTE: NaN-boxing is cool but I don't think it's worth the complexity (most of our scopes will be short-lived)
 pub const Value = union(enum) {
     undefined,
     null,
     bool: bool,
     number: f64,
-    shortstring: ShortString,
-    string: []u8,
-    array: []Value, // TODO: std.ArrayList(Value)?
-    object: []Prop, // TODO: std.StringHashMap(Value)?
+    string: []const u8,
+    array: std.ArrayList(Value),
+    object: std.StringHashMapUnmanaged(Value),
     fun: Fun,
     err: anyerror,
 
@@ -67,16 +40,8 @@ pub const Value = union(enum) {
             void => self.expect(.undefined),
             bool => self.expect(.bool),
             f64 => self.expect(.number),
+            []const u8 => self.expect(.string),
 
-            []const u8 => switch (self.*) {
-                // NOTE: |ss| ss.slice() would point to the temp memory!
-                .shortstring => self.shortstring.slice(),
-                .string => |s| s,
-                else => error.TypeError,
-            },
-
-            []const Value => self.expect(.array),
-            []const Prop => self.expect(.object),
             else => @compileError("TODO Value.into " ++ @typeName(T)),
         };
     }
@@ -87,7 +52,6 @@ pub const Value = union(enum) {
             .null => try writer.writeAll("null"),
             .bool => |b| try writer.print("{}", .{b}),
             .number => |n| try writer.print("{d}", .{n}),
-            .shortstring => |ss| try writer.writeAll(ss.slice()),
             .string => |s| try writer.writeAll(s),
             .array => try writer.writeAll("[array]"),
             .object => try writer.writeAll("[object]"),
@@ -101,34 +65,10 @@ pub const Value = union(enum) {
             .undefined, .null => false,
             .bool => |b| b,
             .number => |n| n != 0,
-            inline .shortstring, .string, .array => |s| s.len > 0,
+            .string => |s| s.len > 0,
+            .array => |a| a.items.len > 0,
             else => true,
         };
-    }
-
-    // TODO: IDK, maybe we should keep this separate for each kind, and maybe
-    //       even keep these methods in the inner structs.
-    pub fn get(self: Value, key: Value) ?Value {
-        switch (self) {
-            .object => |obj| {
-                const key_str = key.into([]const u8) catch return null;
-                for (obj) |prop| {
-                    if (std.mem.eql(u8, prop.key, key_str)) {
-                        return prop.value;
-                    }
-                }
-            },
-            .array => |arr| {
-                const index = key.into(f64) catch return null;
-                const idx: usize = @intFromFloat(index);
-                if (idx < arr.len) {
-                    return arr[idx];
-                }
-            },
-            else => {},
-        }
-
-        return null;
     }
 };
 
@@ -178,19 +118,22 @@ pub const Op = union(enum) {
 pub const Context = struct {
     arena: std.mem.Allocator,
     stack: std.ArrayList(Value),
-    env: std.AutoHashMap(ShortString, Value),
+    env: std.StringHashMapUnmanaged(Value),
+    intern_pool: std.StringHashMapUnmanaged(void),
 
     pub fn init(arena: std.mem.Allocator) Context {
         return .{
             .arena = arena,
-            .stack = .{},
-            .env = .init(arena),
+            .stack = .empty,
+            .env = .empty,
+            .intern_pool = .empty,
         };
     }
 
-    pub fn deinit(self: *Context) void {
-        self.stack.deinit(self.arena);
-        self.env.deinit();
+    pub fn intern(self: *Context, str: []const u8) ![]const u8 {
+        const gop = try self.intern_pool.getOrPut(self.arena, str);
+        if (!gop.found_existing) gop.key_ptr.* = try self.arena.dupe(u8, str);
+        return gop.key_ptr.*;
     }
 
     pub fn value(self: *Context, input: anytype) Error!Value {
@@ -199,11 +142,8 @@ pub const Context = struct {
         if (T == Value) return input;
 
         if (meta.isString(T)) {
-            if (ShortString.init(input)) |short| {
-                return .{ .shortstring = short };
-            }
-
-            return .{ .string = try self.arena.dupe(u8, input) };
+            // TODO: We should not blindly intern every string...
+            return .{ .string = try self.intern(input) };
         }
 
         if (meta.isOptional(T)) {
@@ -211,10 +151,11 @@ pub const Context = struct {
         }
 
         if (meta.isSlice(T)) {
-            const array = try self.arena.alloc(Value, input.len);
+            var array: std.ArrayList(Value) = .empty;
+            try array.ensureUnusedCapacity(self.arena, input.len);
 
-            for (input, 0..) |item, i| {
-                array[i] = try self.value(item);
+            for (input) |item| {
+                array.appendAssumeCapacity(try self.value(item));
             }
 
             return .{ .array = array };
@@ -239,13 +180,11 @@ pub const Context = struct {
                 @compileError("TODO: Context.value (union) " ++ @typeName(T));
             },
             .@"struct" => |s| {
-                const props = try self.arena.alloc(Prop, s.fields.len);
+                var props: std.StringHashMapUnmanaged(Value) = .empty;
+                try props.ensureUnusedCapacity(self.arena, s.fields.len);
 
-                inline for (s.fields, 0..) |f, i| {
-                    props[i] = .{
-                        .key = f.name,
-                        .value = try self.value(@field(input, f.name)),
-                    };
+                inline for (s.fields) |f| {
+                    props.putAssumeCapacity(f.name, try self.value(@field(input, f.name)));
                 }
 
                 return .{ .object = props };
@@ -255,13 +194,13 @@ pub const Context = struct {
     }
 
     pub fn define(self: *Context, name: []const u8, val: anytype) Error!void {
-        const key = ShortString.init(name) orelse return error.TypeError;
-        try self.env.put(key, try self.value(val));
+        const key = try self.intern(name);
+        try self.env.put(self.arena, key, try self.value(val));
     }
 
     pub fn get(self: *Context, name: []const u8) Value {
-        const key = ShortString.init(name) orelse return .undefined;
-        if (self.env.get(key)) |val| return val;
+        // No iterning needed here
+        if (self.env.get(name)) |val| return val;
         return .undefined;
     }
 
@@ -295,7 +234,16 @@ pub const Context = struct {
                 .get => {
                     const key = try self.pop();
                     const obj = try self.pop();
-                    const val = obj.get(key) orelse return Error.UndefinedVar;
+                    const val = blk: switch (obj) {
+                        .object => |o| {
+                            break :blk o.get(key.into([]const u8) catch return Error.TypeError) orelse .undefined;
+                        },
+                        .array => |a| {
+                            const i: usize = @intFromFloat(try key.expect(.number));
+                            break :blk if (i < a.items.len) a.items[i] else .undefined;
+                        },
+                        else => return Error.TypeError,
+                    };
                     try self.push(val);
                 },
             }
@@ -316,7 +264,6 @@ test {
     defer arena.deinit();
 
     var vm = Context.init(arena.allocator());
-    defer vm.deinit();
 
     const H = struct {
         fn add(a: f64, b: f64) f64 {
