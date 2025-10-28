@@ -1,6 +1,6 @@
 const std = @import("std");
-const http = @import("http.zig");
-const testing = @import("testing.zig");
+const http = @import("../http.zig");
+const testing = @import("../testing.zig");
 
 pub const Config = struct {
     base_url: []const u8 = "https://api.github.com/",
