@@ -347,7 +347,7 @@ pub const Bundle = struct {
         }
 
         switch (dep.provider) {
-            .autowire => for (std.meta.fields(dep.type)) |f| self.mark(f.type, &dep.mask),
+            .autowire => for (std.meta.fields(dep.type)) |f| if (!std.mem.eql(u8, f.name, "interface")) self.mark(f.type, &dep.mask),
             .val => {},
             .fac => |f| for (@typeInfo(f.type).@"fn".params) |p| self.mark(p.type orelse continue, &dep.mask),
             // TODO: maybe we can lift the first-arg constraint for initializers and only check p.type != dep.type?
