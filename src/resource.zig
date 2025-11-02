@@ -9,7 +9,7 @@ pub const Resource = struct {
 pub const Loader = struct {
     pub const VTable = struct {
         load: *const fn (*Loader, std.mem.Allocator, []const u8) anyerror!?Resource,
-        exists: *const fn (*Loader, []const u8) bool,
+        resolve: *const fn (*Loader, std.mem.Allocator, []const u8) ?[]const u8,
     };
 
     vtable: *const VTable,
@@ -18,55 +18,63 @@ pub const Loader = struct {
         return self.vtable.load(self, arena, path);
     }
 
-    pub fn exists(self: *Loader, path: []const u8) bool {
-        return self.vtable.exists(self, path);
+    pub fn resolve(self: *Loader, allocator: std.mem.Allocator, path: []const u8) ?[]const u8 {
+        return self.vtable.resolve(self, allocator, path);
     }
 };
 
-pub const FileSystemLoader = struct {
+pub const FsLoaderOptions = struct {
+    base_dir: []const u8 = ".",
+};
+
+pub const FsLoader = struct {
     interface: Loader,
     allocator: std.mem.Allocator,
     base_dir: []const u8,
 
-    pub fn init(allocator: std.mem.Allocator, base_dir: []const u8) !FileSystemLoader {
+    pub fn init(allocator: std.mem.Allocator, options: FsLoaderOptions) !FsLoader {
+        const base_dir = try std.fs.cwd().realpathAlloc(allocator, options.base_dir);
+        errdefer allocator.free(base_dir);
+
         return .{
             .interface = .{
                 .vtable = &.{
                     .load = &load,
-                    .exists = &exists,
+                    .resolve = &resolve,
                 },
             },
             .allocator = allocator,
-            .base_dir = try allocator.dupe(u8, base_dir),
+            .base_dir = base_dir,
         };
     }
 
-    pub fn deinit(self: *FileSystemLoader) void {
+    pub fn deinit(self: *FsLoader) void {
         self.allocator.free(self.base_dir);
     }
 
-    fn resolve(self: *FileSystemLoader, allocator: std.mem.Allocator, path: []const u8) ?[]const u8 {
+    fn resolve(loader: *Loader, allocator: std.mem.Allocator, path: []const u8) ?[]const u8 {
+        const self: *FsLoader = @fieldParentPtr("interface", loader);
+
         const clean_path = std.mem.trimLeft(u8, path, "/");
         const full_path = std.fs.path.join(allocator, &.{ self.base_dir, clean_path }) catch return null;
 
-        const resolved = std.fs.path.resolve(allocator, &.{full_path}) catch {
+        const resolved_path = std.fs.path.resolve(allocator, &.{full_path}) catch {
             allocator.free(full_path);
             return null;
         };
         allocator.free(full_path);
 
-        if (!std.mem.startsWith(u8, resolved, self.base_dir)) {
-            allocator.free(resolved);
+        // Check against path traversal
+        if (!std.mem.startsWith(u8, resolved_path, self.base_dir)) {
+            allocator.free(resolved_path);
             return null;
         }
 
-        return resolved;
+        return resolved_path;
     }
 
     fn load(loader: *Loader, arena: std.mem.Allocator, path: []const u8) !?Resource {
-        const self: *FileSystemLoader = @fieldParentPtr("interface", loader);
-
-        const resolved = self.resolve(arena, path) orelse return null;
+        const resolved = resolve(loader, arena, path) orelse return null;
 
         const content = std.fs.cwd().readFileAlloc(arena, resolved, std.math.maxInt(usize)) catch |err| {
             return if (err == error.FileNotFound) null else err;
@@ -76,15 +84,5 @@ pub const FileSystemLoader = struct {
             .content = content,
             .content_type = mime(std.fs.path.extension(resolved)),
         };
-    }
-
-    fn exists(loader: *Loader, path: []const u8) bool {
-        const self: *FileSystemLoader = @fieldParentPtr("interface", loader);
-
-        const resolved = self.resolve(self.allocator, path) orelse return false;
-        defer self.allocator.free(resolved);
-
-        std.fs.cwd().access(resolved, .{}) catch return false;
-        return true;
     }
 };
