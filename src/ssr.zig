@@ -12,7 +12,8 @@ pub const Engine = struct {
     vtable: *const VTable,
 
     pub fn render(self: *Engine, name: []const u8, arena: std.mem.Allocator, data: anytype) ![]const u8 {
-        const value = vm.Value.from(data);
+        var ctx = vm.Context.init(arena);
+        const value = try ctx.value(data);
         return self.vtable.render(self, name, arena, value);
     }
 };
