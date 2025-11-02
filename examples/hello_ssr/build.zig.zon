@@ -1,0 +1,14 @@
+.{
+    .name = .hello_ssr,
+    .fingerprint = 0xce3b633941c47424,
+    .version = "0.0.0",
+    .dependencies = .{
+        .tokamak = .{ .path = "../.." },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        "templates",
+    },
+}

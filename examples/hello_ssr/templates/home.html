@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>{{ title }}</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+</head>
+<body class="font-sans max-w-3xl mx-auto my-10 px-5">
+    <h1 class="text-3xl font-bold text-gray-800 mb-6">{{ title }}</h1>
+
+    <div class="border border-gray-300 rounded-lg p-5 my-5">
+        <h2 class="text-xl font-semibold mb-4">Users</h2>
+
+        <div v-for="user in users">
+            <div class="p-2.5 border-b border-gray-200 last:border-b-0">
+                <strong>{{ user.name }}</strong> - {{ user.email }}
+                <span v-if="user.admin" class="bg-blue-600 text-white px-2 py-1 rounded text-xs ml-2">Admin</span>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
