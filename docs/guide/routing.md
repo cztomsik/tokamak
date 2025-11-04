@@ -25,8 +25,8 @@ const routes: []const tk.Route = &.{
     .get("/users/:id/posts/:postId", getUserPost),
 };
 
-fn helloName(name: []const u8) ![]const u8 {
-    return std.fmt.allocPrint(allocator, "Hello {s}", .{name});
+fn helloName(arena: std.mem.Allocator, name: []const u8) ![]const u8 {
+    return std.fmt.allocPrint(arena, "Hello {s}", .{name});
 }
 
 fn getUserPost(id: []const u8, postId: []const u8) !Post {

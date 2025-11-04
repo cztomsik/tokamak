@@ -89,7 +89,7 @@ server or the request/response types.
 
 ```zig
 fn hello(arena: std.mem.Allocator) ![]const u8 {
-    return std.fmt.allocPrint(allocator, "Hello {}", .{std.time.timestamp()});
+    return std.fmt.allocPrint(arena, "Hello {}", .{std.time.timestamp()});
 }
 ```
 
@@ -228,7 +228,7 @@ const api = struct {
     }
 
     pub fn @"GET /:name"(arena: std.mem.Allocator, name: []const u8) ![]const u8 {
-        return std.fmt.allocPrint(allocator, "Hello {s}", .{name});
+        return std.fmt.allocPrint(arena, "Hello {s}", .{name});
     }
 };
 ```
