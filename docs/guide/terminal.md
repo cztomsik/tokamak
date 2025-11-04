@@ -23,8 +23,8 @@ fn version() []const u8 {
     return "1.0.0";
 }
 
-fn hello(name: []const u8) ![]const u8 {
-    return std.fmt.allocPrint(allocator, "Hello, {s}!", .{name});
+fn hello(arena: std.mem.Allocator, name: []const u8) ![]const u8 {
+    return std.fmt.allocPrint(arena, "Hello, {s}!", .{name});
 }
 
 pub fn main() !void {
