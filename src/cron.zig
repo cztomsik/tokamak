@@ -1,6 +1,6 @@
 const std = @import("std");
-const time = @import("time.zig");
 const testing = @import("testing.zig");
+const Time = @import("time.zig").Time;
 const Queue = @import("queue.zig").Queue;
 const MemQueue = @import("queue.zig").MemQueue;
 const log = std.log.scoped(.cron);
@@ -17,7 +17,7 @@ pub const Job = struct {
     schedule: Expr,
     name: []const u8,
     data: []const u8,
-    next: i64,
+    next: Time,
 };
 
 pub const Cron = struct {
@@ -25,16 +25,16 @@ pub const Cron = struct {
     queue: *Queue,
     allocator: std.mem.Allocator,
     jobs: std.ArrayList(Job),
-    time: *const fn () time.Time = time.Time.now,
+    time: *const fn () Time = Time.now,
     mutex: std.Thread.Mutex = .{},
     wait: std.Thread.Condition = .{},
 
     // NOTE: global & shared
     var next_id: std.atomic.Value(usize) = .init(1);
 
-    pub fn init(allocator: std.mem.Allocator, queue: *Queue, config: ?Config) Cron {
+    pub fn init(allocator: std.mem.Allocator, queue: *Queue, config: Config) Cron {
         return .{
-            .config = config orelse .{},
+            .config = config,
             .queue = queue,
             .allocator = allocator,
             .jobs = .{},
@@ -54,7 +54,7 @@ pub const Cron = struct {
 
         const id: JobId = @enumFromInt(next_id.fetchAdd(1, .monotonic));
         const exp = try Expr.parse(expr);
-        const next = exp.next(self.time()).epoch;
+        const next = exp.next(self.time());
 
         try self.jobs.append(self.allocator, .{
             .id = id,
@@ -83,11 +83,18 @@ pub const Cron = struct {
         self.mutex.lock();
         defer self.mutex.unlock();
 
-        var step = self.time() - self.config.catchup_window;
+        var step = Time.unix(self.time().epoch - self.config.catchup_window);
 
-        while (step.epoch < self.time().epoch) {
-            log.debug("catching up to {}", .{step});
-            step = try self.tick(step);
+        if (self.config.catchup_window > 0) {
+            // NOTE: cron.schedule() appends each job with .next relative to the current time so we need to undo that
+            for (self.jobs.items) |*job| {
+                job.next = job.schedule.next(step);
+            }
+
+            while (step.epoch < self.time().epoch) {
+                log.debug("catching up to {f}", .{step});
+                step = try self.tick(step);
+            }
         }
 
         while (true) {
@@ -100,20 +107,21 @@ pub const Cron = struct {
         }
     }
 
-    pub fn tick(self: *Cron, now: i64) !i64 {
-        var next_tick: i64 = 60;
+    pub fn tick(self: *Cron, now: Time) !Time {
+        var next_tick = now.next(.minute);
 
         for (self.jobs.items) |*job| {
-            if (job.next <= now) {
+            if (job.next.epoch <= now.epoch) {
                 var buf: [20]u8 = undefined;
 
+                log.debug("scheduling {s} {s}", .{ job.name, job.data });
                 try self.queue.push(job.name, job.data, .{
-                    .key = try std.fmt.bufPrint(&buf, "{d}", .{job.next}),
-                    .schedule_at = job.next,
+                    .key = try std.fmt.bufPrint(&buf, "{d}", .{job.next.epoch}),
+                    .schedule_at = job.next.epoch,
                 });
 
-                job.next = job.schedule.next(time.Time.unix(now)).epoch;
-                next_tick = @min(next_tick, job.next);
+                job.next = job.schedule.next(now);
+                next_tick.epoch = @min(next_tick.epoch, job.next.epoch);
             }
         }
 
@@ -127,7 +135,7 @@ test Cron {
 
     const queue = &mem_queue.interface;
 
-    var cron = Cron.init(testing.allocator, queue, null);
+    var cron = Cron.init(testing.allocator, queue, .{});
     defer cron.deinit();
 
     testing.time.value = 0;
@@ -144,7 +152,7 @@ test Cron {
         \\|------|-----|---------|
     );
 
-    _ = try cron.tick(60);
+    _ = try cron.tick(.unix(60));
 
     try testing.expectTable(try queue.listJobs(arena.allocator(), .{}),
         \\| name | key | state   |
@@ -152,7 +160,7 @@ test Cron {
         \\| bar  | 60  | pending |
     );
 
-    _ = try cron.tick(120);
+    _ = try cron.tick(.unix(120));
 
     try testing.expectTable(try queue.listJobs(arena.allocator(), .{}),
         \\| name | key | state   |
@@ -162,7 +170,7 @@ test Cron {
     );
 
     cron.unschedule(id);
-    _ = try cron.tick(180);
+    _ = try cron.tick(.unix(180));
 
     try testing.expectTable(try queue.listJobs(arena.allocator(), .{}),
         \\| name | key | state   |
@@ -179,7 +187,7 @@ pub const Expr = struct {
     month: u13, // 1-12
     weekday: u7, // 0-6
 
-    pub fn match(self: *const Expr, step: time.Time) bool {
+    pub fn match(self: *const Expr, step: Time) bool {
         const date = step.date();
 
         return isSet(self.minute, step.minute()) and
@@ -189,13 +197,13 @@ pub const Expr = struct {
             isSet(self.weekday, date.dayOfWeek());
     }
 
-    pub fn next(self: *const Expr, since: time.Time) time.Time {
+    pub fn next(self: *const Expr, since: Time) Time {
         var res = since.next(.minute);
         while (!self.match(res)) : (res = res.next(.minute)) {}
         return res;
     }
 
-    // pub fn next(self: *const Expr, since: time.Time) time.Time {
+    // pub fn next(self: *const Expr, since: Time) Time {
     //     while (true) {
     //         var res = since.setSecond(0);
     //         // std.debug.print("{}\n", .{res});
