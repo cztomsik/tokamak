@@ -11,6 +11,8 @@ front of it, like Nginx or Cloudfront, which will handle SSL, caching,
 sanitization, etc.
 
 > ### Recent changes
+> - opt dependencies were removed, ie. you can no longer inject `?Cfg` - it was
+>   undocumented, incomplete, subtly broken, and not worth the extra complexity
 > - multi-mod API has changed
 >   [considerably](https://github.com/cztomsik/tokamak/pull/25)
 > - there's a new [cli module](https://github.com/cztomsik/tokamak/tree/master/src/cli.zig)
