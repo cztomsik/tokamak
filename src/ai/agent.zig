@@ -176,7 +176,7 @@ pub const AgentTool = struct {
             fn handleTool(inj: *Injector, arena: std.mem.Allocator, args: []const u8) anyerror![]const u8 {
                 const arg = try std.json.parseFromSliceLeaky(meta.LastArg(handler), arena, args, .{});
 
-                const res = try inj.call(handler, .{arg});
+                const res = try inj.callArgs(handler, .{arg});
                 return stringifyAlloc(arena, res);
             }
         };

@@ -40,5 +40,5 @@ pub fn runAlloc(comptime fun: anytype, allocator: std.mem.Allocator, comptime mo
     const ct = try Container.init(allocator, mods ++ &[_]type{Base});
     defer ct.deinit();
 
-    try ct.injector.call0(fun);
+    try ct.injector.call(fun);
 }

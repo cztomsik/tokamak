@@ -97,7 +97,7 @@ const How = union(enum) {
         return .{ .fac = .wrap(fac) };
     }
 
-    /// Initialize the dependency using `try inj.call(fun, .{ ptr, ...deps })`.
+    /// Initialize the dependency using `try inj.callArgs(fun, .{ ptr, ...deps })`.
     /// Like with factory, if you get into a cycle, you can either adapt the
     /// other end, or in the worst case, force `undefined`.
     pub fn initializer(init: anytype) How {
@@ -140,8 +140,8 @@ const Dep = struct {
                 }
             },
             .val => |v| inst.* = v.unwrap(),
-            .fac => |f| inst.* = try inj.call0(f.unwrap()),
-            .fun => |f| try inj.call0(f.unwrap()),
+            .fac => |f| inst.* = try inj.call(f.unwrap()),
+            .fun => |f| try inj.call(f.unwrap()),
             .fref => |r| inst.* = &@field(try inj.get(*r[0]), r[1]),
             else => unreachable,
         }

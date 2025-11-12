@@ -221,7 +221,7 @@ test "user registration" {
     );
     defer ct.deinit();
 
-    try ct.injector.call0(testUserRegistration);
+    try ct.injector.call(testUserRegistration);
 }
 ```
 

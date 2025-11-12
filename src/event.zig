@@ -20,7 +20,7 @@ const Node = struct {
     fn init(comptime E: type, comptime listener: anytype) Node {
         const H = struct {
             fn handleEvent(injector: *Injector) anyerror!void {
-                return injector.call(listener, .{});
+                return injector.call(listener);
             }
         };
 

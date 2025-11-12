@@ -77,7 +77,7 @@ pub const Injector = struct {
     }
 
     /// Call a function with all the args filled-in from this scope.
-    pub fn call0(self: *Injector, comptime fun: anytype) anyerror!meta.Result(fun) {
+    pub fn call(self: *Injector, comptime fun: anytype) anyerror!meta.Result(fun) {
         var args: std.meta.ArgsTuple(@TypeOf(fun)) = undefined;
         inline for (0..args.len) |i| args[i] = try self.get(@TypeOf(args[i]));
         return @call(.auto, fun, args);
@@ -86,7 +86,7 @@ pub const Injector = struct {
     /// Call a function with dependencies. The `extra_args` tuple is used to
     /// pass additional arguments to the function. Function with anytype can
     /// be called as long as the concrete value is provided in the `extra_args`.
-    pub fn call(self: *Injector, comptime fun: anytype, extra_args: anytype) anyerror!meta.Result(fun) {
+    pub fn callArgs(self: *Injector, comptime fun: anytype, extra_args: anytype) anyerror!meta.Result(fun) {
         if (comptime @typeInfo(@TypeOf(extra_args)) != .@"struct") {
             @compileError("Expected a tuple of arguments");
         }

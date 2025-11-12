@@ -11,6 +11,8 @@ front of it, like Nginx or Cloudfront, which will handle SSL, caching,
 sanitization, etc.
 
 > ### Recent changes
+> - renamed `inj.call0(fun)` → `inj.call(fun)`, `inj.call(fun, ...args)` →
+>   `inj.callArgs(fun, ...args)`
 > - opt dependencies were removed, ie. you can no longer inject `?Cfg` - it was
 >   undocumented, incomplete, subtly broken, and not worth the extra complexity
 > - multi-mod API has changed
@@ -420,7 +422,7 @@ const TestModule = struct {
 
 // Run test with mocked dependencies
 const ct = try Container.init(test_allocator, &.{AppModule, TestModule});
-ct.injector.call0(myTestFun)
+ct.injector.call(myTestFun)
 ```
 
 ## License
