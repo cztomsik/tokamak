@@ -147,7 +147,7 @@ const Dep = struct {
         }
     }
 
-    fn deinitInstance(self: Dep, data: []u8, inj: *Injector) void {
+    fn deinitInstance(self: Dep, _: []u8, inj: *Injector) void {
         switch (self.provider) {
             .val, .fref, .autowire => return, // No-op!
             .fac, .fun => {}, // Proceed
@@ -156,14 +156,21 @@ const Dep = struct {
 
         // TODO: not 100% sure if this is always the case
         if (std.meta.hasMethod(self.type, "deinit")) {
-            const deinit = meta.Deref(self.type).deinit;
-            const params = @typeInfo(@TypeOf(deinit)).@"fn".params;
+            inj.call(meta.Deref(self.type).deinit) catch unreachable;
 
-            if (params.len == 1 and meta.Deref(params[0].type.?) == meta.Deref(self.type)) {
-                self.ptr(data).deinit();
-            } else {
-                inj.call0(deinit) catch unreachable;
-            }
+            // TODO: this didn't work properly with heap-allocated services
+            // (we'd need to also check if ptr is ** and then deref once)
+            // TODO: if we don't do that we should probably also remove the
+            // `data` arg from deinit, and maybe rethink this again?
+            //
+            // const deinit = meta.Deref(self.type).deinit;
+            // const params = @typeInfo(@TypeOf(deinit)).@"fn".params;
+
+            // if (params.len == 1 and meta.Deref(params[0].type.?) == meta.Deref(self.type)) {
+            //     self.ptr(data).deinit();
+            // } else {
+            //     inj.call(deinit) catch unreachable;
+            // }
         }
     }
 };
@@ -462,21 +469,22 @@ fn CompiledBundle(comptime ops: []const Op, comptime n_inst: usize, comptime n_d
             inline for (ops) |op| {
                 switch (op) {
                     .dep => |dep| {
-                        if (dep.provider != .fref) {
+                        // NOTE: this should be the only case where we need the pointer in advance
+                        if (dep.provider == .fun) {
                             self.pushRef(inj, dep.ptr(&self.data));
                         }
 
                         try dep.initInstance(&self.data, inj);
 
                         // NOTE: pushRef() auto-derefs **T, and we can't save ref at the top because it is not yet initialized!
-                        if (dep.provider == .fref) {
+                        if (dep.provider != .fun) {
                             self.pushRef(inj, dep.ptr(&self.data));
                         }
                     },
 
                     .hook => |hook| {
                         if (hook.kind == .init) {
-                            try inj.call0(hook.fun.unwrap());
+                            try inj.call(hook.fun.unwrap());
                         }
                     },
                 }
@@ -502,7 +510,7 @@ fn CompiledBundle(comptime ops: []const Op, comptime n_inst: usize, comptime n_d
                         .hook => |hook| {
                             if (hook.kind == .deinit) {
                                 // TODO: this is not 100% right (child scopes)
-                                ct.injector.call0(hook.fun.unwrap()) catch unreachable;
+                                ct.injector.call(hook.fun.unwrap()) catch unreachable;
                             }
                         },
                     }
@@ -671,4 +679,40 @@ test "partial deinit" {
     };
 
     _ = Container.init(std.testing.allocator, &.{App}) catch {};
+}
+
+test "heap-allocated svc (ct2 regression)" {
+    const Svc = struct {
+        gpa: std.mem.Allocator,
+        x: u32,
+
+        var deinit_called: bool = false;
+
+        pub fn init(allocator: std.mem.Allocator) !*@This() {
+            const self = try allocator.create(@This());
+            self.* = .{
+                .gpa = allocator,
+                .x = 123,
+            };
+            return self;
+        }
+
+        pub fn deinit(self: *@This()) void {
+            deinit_called = true;
+            const allocator = self.gpa;
+            allocator.destroy(self);
+        }
+    };
+
+    const App = struct {
+        service: *Svc,
+    };
+
+    const ct = try Container.init(std.testing.allocator, &.{App});
+    const svc = try ct.injector.get(*Svc);
+
+    try std.testing.expectEqual(123, svc.x);
+
+    ct.deinit();
+    try std.testing.expect(Svc.deinit_called);
 }
