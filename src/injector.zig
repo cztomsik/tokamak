@@ -79,10 +79,7 @@ pub const Injector = struct {
     /// Call a function with all the args filled-in from this scope.
     pub fn call0(self: *Injector, comptime fun: anytype) anyerror!meta.Result(fun) {
         var args: std.meta.ArgsTuple(@TypeOf(fun)) = undefined;
-        inline for (0..args.len) |i| args[i] = switch (comptime @typeInfo(@TypeOf(args[i]))) {
-            .optional => |o| self.find(o.child),
-            else => try self.get(@TypeOf(args[i])),
-        };
+        inline for (0..args.len) |i| args[i] = try self.get(@TypeOf(args[i]));
         return @call(.auto, fun, args);
     }
 
@@ -107,10 +104,7 @@ pub const Injector = struct {
         var args: std.meta.Tuple(types) = undefined;
         inline for (0..args.len) |i| {
             if (i < extra_start) {
-                args[i] = switch (comptime @typeInfo(types[i])) {
-                    .optional => |o| self.find(o.child),
-                    else => try self.get(types[i]),
-                };
+                args[i] = try self.get(types[i]);
             } else {
                 args[i] = extra_args[i - extra_start];
             }
