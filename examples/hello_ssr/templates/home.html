@@ -17,5 +17,29 @@
             </div>
         </div>
     </div>
+
+    <div class="border border-gray-300 rounded-lg p-5 my-5">
+        <h2 class="text-xl font-semibold mb-4">Components Demo</h2>
+
+        <div class="mb-4">
+            <h3 class="text-lg font-medium mb-2">Badge Component</h3>
+            <x-badge label="Primary"></x-badge>
+            <x-badge label="Success" variant="success"></x-badge>
+            <x-badge label="Warning" variant="warning"></x-badge>
+            <x-badge label="Danger" variant="danger"></x-badge>
+        </div>
+
+        <div class="mb-4">
+            <h3 class="text-lg font-medium mb-2">Counter Component</h3>
+            <x-counter count="3" label="Total Users"></x-counter>
+            <x-counter count="1" label="Admin Users"></x-counter>
+        </div>
+
+        <div class="mb-4">
+            <h3 class="text-lg font-medium mb-2">UserRow Components</h3>
+            <x-user-row name="Alice" email="alice@example.com" is_admin="true"></x-user-row>
+            <x-user-row name="Bob" email="bob@example.com"></x-user-row>
+        </div>
+    </div>
 </body>
 </html>

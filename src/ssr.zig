@@ -3,6 +3,9 @@ const resource = @import("resource.zig");
 const sax = @import("sax.zig");
 const js = @import("js.zig");
 const vm = @import("vm.zig");
+const parse = @import("parse.zig");
+const Injector = @import("injector.zig").Injector;
+const Ref = @import("injector.zig").Ref;
 
 pub const Engine = struct {
     pub const VTable = struct {
@@ -18,31 +21,100 @@ pub const Engine = struct {
     }
 };
 
+// Simple wrapper over StringHashMap, mainly because of `error: dependency loop detected` (which is broken for at least 2 years!!!)
+// but it's also a good place where we can hide the type-erased fn type and its comptime creation.
+const ComponentRegistry = struct {
+    components: std.StringHashMap(*const RenderFn),
+
+    const RenderFn = fn (ctx: *RenderContext, comp: Template.Component) anyerror!void;
+
+    fn init(allocator: std.mem.Allocator) ComponentRegistry {
+        return .{
+            .components = .init(allocator),
+        };
+    }
+
+    fn deinit(self: *ComponentRegistry) void {
+        self.components.deinit();
+    }
+
+    fn get(self: *ComponentRegistry, name: []const u8) ?*const RenderFn {
+        return self.components.get(name);
+    }
+
+    fn put(self: *ComponentRegistry, name: []const u8, comptime T: type) !void {
+        const H = struct {
+            fn render(ctx: *RenderContext, comp: Template.Component) anyerror!void {
+                var inst: T = undefined;
+                var inj = Injector.init(&.{ .ref(&inst), .ref(ctx) }, &ctx.injector);
+
+                inline for (std.meta.fields(T)) |f| {
+                    for (comp.props) |prop| {
+                        if (std.mem.eql(u8, f.name, prop.name)) {
+                            @field(inst, f.name) = try parse.parseValue(f.type, prop.value, ctx.js.vm.arena);
+                            break;
+                        }
+                    } else {
+                        @field(inst, f.name) = f.defaultValue() orelse return error.MissingProp;
+                    }
+                }
+
+                // TODO: children support
+                _ = comp.children;
+
+                try inj.call(T.render);
+            }
+        };
+
+        try self.components.put(name, H.render);
+    }
+};
+
 pub const DefaultEngine = struct {
     loader: *resource.Loader,
-    interface: Engine = .{ .vtable = &.{ .render = &render } },
+    components: ComponentRegistry,
+    interface: Engine = .{
+        .vtable = &.{ .render = &render },
+    },
+
+    pub fn init(loader: *resource.Loader, gpa: std.mem.Allocator) DefaultEngine {
+        return .{
+            .loader = loader,
+            .components = .init(gpa),
+        };
+    }
+
+    pub fn deinit(self: *DefaultEngine) void {
+        self.components.deinit();
+    }
+
+    pub fn defineComponent(self: *DefaultEngine, comptime name: []const u8, comptime T: type) !void {
+        try self.components.put(name, T);
+    }
 
     fn render(engine: *Engine, name: []const u8, arena: std.mem.Allocator, data: vm.Value) ![]const u8 {
         const self: *DefaultEngine = @fieldParentPtr("interface", engine);
 
+        // TODO: caching
         const res = try self.loader.load(arena, name) orelse return error.TemplateNotFound;
-        const template = try Template.parse(arena, res.content);
-        return template.render(arena, data);
+        const tpl = try Template.parse(arena, res.content);
+
+        return self.renderTemplate(tpl, arena, data);
+    }
+
+    pub fn renderTemplate(self: *DefaultEngine, tpl: Template, arena: std.mem.Allocator, data: anytype) ![]const u8 {
+        var aw = std.io.Writer.Allocating.init(arena);
+        defer aw.deinit();
+
+        // TODO: decide if we ever want to do streaming, ie. renderTemplateInto(tpl, arena, writer)
+        var ctx = try RenderContext.init(arena, &aw.writer, &self.components);
+        try ctx.setData(try ctx.js.vm.value(data));
+        try ctx.renderNodes(tpl.root);
+        try aw.writer.flush();
+
+        return aw.toOwnedSlice();
     }
 };
-
-// pub const MustacheEngine = struct {
-//     loader: *resource.Loader,
-//     interface: Engine = .{ .vtable = &.{ .render = &render } },
-
-//     fn render(engine: *Engine, name: []const u8, arena: std.mem.Allocator, data: vm.Value) ![]const u8 {
-//         const self: *MustacheEngine = @fieldParentPtr("interface", engine);
-
-//         const res = try self.loader.load(arena, name) orelse return error.TemplateNotFound;
-//         const template = try mustache.Template.parse(arena, res.content);
-//         return template.renderAlloc(arena, data);
-//     }
-// };
 
 pub const Template = struct {
     root: []Node,
@@ -54,6 +126,7 @@ pub const Template = struct {
         interpolation: []const u8,
         conditional: Conditional,
         loop: Loop,
+        component: Component,
     };
 
     const Element = struct {
@@ -79,6 +152,12 @@ pub const Template = struct {
         element: Element,
     };
 
+    const Component = struct {
+        name: []const u8,
+        props: []Attribute,
+        children: []Node,
+    };
+
     pub fn parse(arena: std.mem.Allocator, input: []const u8) !Template {
         var parser = Parser.init(arena);
         defer parser.deinit();
@@ -91,24 +170,6 @@ pub const Template = struct {
 
         return parser.finish();
     }
-
-    pub fn render(self: Template, allocator: std.mem.Allocator, data: anytype) ![]const u8 {
-        var aw = std.io.Writer.Allocating.init(allocator);
-        defer aw.deinit();
-
-        try self.renderInto(&aw.writer, data);
-
-        return aw.toOwnedSlice();
-    }
-
-    pub fn renderInto(self: Template, writer: *std.io.Writer, data: anytype) !void {
-        var ctx = try RenderContext.init(self.arena, writer);
-
-        try ctx.setData(try ctx.js.vm.value(data));
-        try ctx.renderNodes(self.root);
-
-        try writer.flush();
-    }
 };
 
 const Parser = struct {
@@ -120,6 +181,7 @@ const Parser = struct {
         tag: []const u8,
         attrs: std.ArrayList(Template.Attribute),
         children: std.ArrayList(Template.Node),
+        is_component: bool,
     };
 
     const Directives = struct {
@@ -149,6 +211,7 @@ const Parser = struct {
                     .tag = try self.arena.dupe(u8, tag),
                     .attrs = .{},
                     .children = .{},
+                    .is_component = std.mem.startsWith(u8, tag, "x-"),
                 });
             },
 
@@ -227,6 +290,16 @@ const Parser = struct {
     }
 
     fn createNode(self: *Parser, item: *StackItem, dirs: *Directives) !Template.Node {
+        if (item.is_component) {
+            return .{
+                .component = .{
+                    .name = item.tag[2..], // Strip "x-" prefix
+                    .props = try dirs.attrs.toOwnedSlice(self.arena),
+                    .children = try item.children.toOwnedSlice(self.arena),
+                },
+            };
+        }
+
         const elem = Template.Element{
             .tag = item.tag,
             .attrs = try dirs.attrs.toOwnedSlice(self.arena),
@@ -293,14 +366,18 @@ const Parser = struct {
     }
 };
 
-const RenderContext = struct {
+pub const RenderContext = struct {
     writer: *std.io.Writer,
     js: js.Context,
+    components: *ComponentRegistry,
+    injector: Injector,
 
-    fn init(allocator: std.mem.Allocator, writer: *std.io.Writer) !RenderContext {
+    fn init(allocator: std.mem.Allocator, writer: *std.io.Writer, components: *ComponentRegistry) !RenderContext {
         return .{
             .writer = writer,
             .js = try js.Context.init(allocator),
+            .components = components,
+            .injector = Injector.empty,
         };
     }
 
@@ -313,7 +390,7 @@ const RenderContext = struct {
     fn renderNode(ctx: *RenderContext, node: Template.Node) anyerror!void {
         switch (node) {
             .element => |elem| try renderElement(ctx, elem),
-            .text => |text| try ctx.write(text),
+            .text => |txt| try ctx.raw(txt),
             .interpolation => |interp| {
                 try ctx.writeExpr(interp);
             },
@@ -332,6 +409,10 @@ const RenderContext = struct {
                     try ctx.js.vm.define(loop.item_name, item);
                     try renderElement(ctx, loop.element);
                 }
+            },
+            .component => |comp| {
+                const render_fn = ctx.components.get(comp.name) orelse return error.ComponentNotFound;
+                try render_fn(ctx, comp);
             },
         }
     }
@@ -361,11 +442,11 @@ const RenderContext = struct {
         return val.isTruthy();
     }
 
-    pub fn write(self: *RenderContext, bytes: []const u8) !void {
+    pub fn raw(self: *RenderContext, bytes: []const u8) !void {
         try self.writer.writeAll(bytes);
     }
 
-    pub fn writeEscaped(self: *RenderContext, bytes: []const u8) !void {
+    pub fn text(self: *RenderContext, bytes: []const u8) !void {
         for (bytes) |c| {
             switch (c) {
                 '&' => try self.writer.writeAll("&amp;"),
@@ -378,22 +459,50 @@ const RenderContext = struct {
         }
     }
 
+    // TODO: auto-escape args
+    pub fn print(self: *RenderContext, comptime format: []const u8, args: anytype) !void {
+        try self.writer.print(format, args);
+    }
+
+    // TODO: I'm still not sure if this is the way...
+    //       Maybe we could do something something like .declLit() VDOM/JSX?
+    pub fn open(self: *RenderContext, tag: []const u8, attrs: []const [2][]const u8) !void {
+        try self.writer.writeByte('<');
+        try self.writer.writeAll(tag);
+        for (attrs) |attr| {
+            try self.writer.writeByte(' ');
+            try self.writer.writeAll(attr[0]);
+            try self.writer.writeAll("=\"");
+            try self.text(attr[1]); // escape
+            try self.writer.writeByte('"');
+        }
+        try self.writer.writeByte('>');
+    }
+
+    pub fn close(self: *RenderContext, tag: []const u8) !void {
+        try self.writer.writeAll("</");
+        try self.writer.writeAll(tag);
+        try self.writer.writeByte('>');
+    }
+
     pub fn writeExpr(self: *RenderContext, expr: []const u8) !void {
         const val = try self.js.eval(expr);
 
         switch (val) {
-            .string => |s| try self.writeEscaped(s),
+            .string => |s| try self.text(s),
             else => try val.format(self.writer),
         }
     }
 };
 
-fn expectRender(input: []const u8, data: anytype, expected: []const u8) !void {
+fn expectRender(template: []const u8, data: anytype, expected: []const u8) !void {
+    var engine = DefaultEngine.init(undefined, std.testing.allocator);
+
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
 
-    const tpl = try Template.parse(arena.allocator(), input);
-    const res = try tpl.render(arena.allocator(), data);
+    const tpl = try Template.parse(arena.allocator(), template);
+    const res = try engine.renderTemplate(tpl, arena.allocator(), data);
 
     try std.testing.expectEqualStrings(expected, res);
 }
