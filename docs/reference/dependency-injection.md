@@ -138,8 +138,8 @@ const AppModule = struct {
     db: Database,
 
     pub fn configure(bundle: *tk.Bundle) void {
-        bundle.add(Logger, .factory(createLogger));
-        bundle.addOverride(Cache, .factory(createRedisCache));
+        bundle.provide(Logger, .factory(createLogger));
+        bundle.override(Cache, .factory(createRedisCache));
         bundle.addInitHook(onInit);
         bundle.addDeinitHook(onDeinit);
     }
@@ -148,20 +148,20 @@ const AppModule = struct {
 
 ### Bundle Methods
 
-**add(T, how)**
-Add a dependency with initialization strategy.
+**provide(T, how)**
+Provide a dependency with initialization strategy.
 
 **addModule(M)**
 Add all fields of module M as dependencies.
 
-**addOverride(T, how)**
+**override(T, how)**
 Override existing dependency initialization.
 
-**addMock(T, how)**
+**mock(T, how)**
 Test-only override for mocking.
 
-**addFieldRef(T, field)**
-Add reference to a struct field as dependency.
+**expose(T, field)**
+Expose a reference to a struct field as dependency.
 
 **addInitHook(fn)**
 Add runtime initialization callback.
@@ -209,8 +209,8 @@ Override dependencies for testing:
 ```zig
 const TestModule = struct {
     pub fn configure(bundle: *tk.Bundle) void {
-        bundle.addMock(Database, .value(MockDatabase{}));
-        bundle.addMock(EmailService, .factory(createMockEmail));
+        bundle.mock(Database, .value(MockDatabase{}));
+        bundle.mock(EmailService, .factory(createMockEmail));
     }
 };
 

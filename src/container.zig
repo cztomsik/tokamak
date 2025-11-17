@@ -216,7 +216,7 @@ pub const Bundle = struct {
     /// init/deinit/compile hooks or even add more dependencies conditionally
     /// and/or be more explicit about how it will be initialized.
     pub fn addModule(self: *Bundle, comptime M: type) void {
-        self.add(M, .value(undefined));
+        self.provide(M, .value(undefined));
         const start = self.findDep(M).?.state.instance.offset;
 
         for (std.meta.fields(M)) |f| {
@@ -233,7 +233,7 @@ pub const Bundle = struct {
 
             // Auto-add &T.interface, if present
             if (meta.isStruct(f.type) and @hasField(f.type, "interface")) {
-                self.addFieldRef(f.type, "interface");
+                self.expose(f.type, "interface");
             }
         }
 
@@ -242,9 +242,9 @@ pub const Bundle = struct {
         }
     }
 
-    /// Add a dependency to the container. It can still be mocked or overridden,
+    /// Provide a dependency to the container. It can still be mocked or overridden,
     /// but any other re-definition will result in a compile error.
-    pub fn add(self: *Bundle, comptime T: type, how: How) void {
+    pub fn provide(self: *Bundle, comptime T: type, how: How) void {
         self.insertDep(.{
             .state = self.allocInstance(T),
             .type = T,
@@ -256,9 +256,9 @@ pub const Bundle = struct {
     /// how some dependency should be initialized. This should not be part of
     /// your regular modules, and calling it outside of the test runner will
     /// result in a compile error.
-    pub fn addMock(self: *Bundle, comptime T: type, how: How) void {
-        if (!builtin.is_test) @compileError("bundle.addMock() can only be used in tests");
-        self.addOverride(T, how);
+    pub fn mock(self: *Bundle, comptime T: type, how: How) void {
+        if (!builtin.is_test) @compileError("bundle.mock() can only be used in tests");
+        self.override(T, how);
     }
 
     /// Override how a dependency should be initialized. It works cross-module
@@ -267,7 +267,7 @@ pub const Bundle = struct {
     ///
     /// NOTE: DO NOT use this just because you need to do something after the
     ///       dep is initialized. use `addInitHook()` for that.
-    pub fn addOverride(self: *Bundle, comptime T: type, how: How) void {
+    pub fn override(self: *Bundle, comptime T: type, how: How) void {
         self.insertDep(.{
             .state = .override,
             .type = T,
@@ -275,12 +275,12 @@ pub const Bundle = struct {
         });
     }
 
-    /// Add ref to a `&T.field`. Use this if you need to inject ptr to some
+    /// Expose a reference to `&T.field`. Use this if you need to inject ptr to some
     /// sub-part of your struct.
-    pub fn addFieldRef(self: *Bundle, comptime T: type, comptime field: []const u8) void {
+    pub fn expose(self: *Bundle, comptime T: type, comptime field: []const u8) void {
         // TODO: would be great, if we could just write the ref, without any data overhead
         //       also, should this still be part of the regular unique/override chain?
-        self.add(*@FieldType(T, field), .{ .fref = .{ T, field } });
+        self.provide(*@FieldType(T, field), .{ .fref = .{ T, field } });
     }
 
     /// Call this `fn(*Bundle)` later, but still in **comptime**, right before
@@ -623,8 +623,8 @@ test "M.configure()" {
         var hook_ok: bool = false;
 
         pub fn configure(bundle: *Bundle) void {
-            bundle.add(S1, .auto);
-            bundle.add(u32, .value(123));
+            bundle.provide(S1, .auto);
+            bundle.provide(u32, .value(123));
             bundle.addInitHook(check);
         }
 

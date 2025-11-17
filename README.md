@@ -11,6 +11,8 @@ front of it, like Nginx or Cloudfront, which will handle SSL, caching,
 sanitization, etc.
 
 > ### Recent changes
+> - renamed few `bundle.addXxx()` methods to `bundle.provide()`,
+>   `bundle.override()`, ...
 > - renamed `inj.call0(fun)` → `inj.call(fun)`, `inj.call(fun, ...args)` →
 >   `inj.callArgs(fun, ...args)`
 > - opt dependencies were removed, ie. you can no longer inject `?Cfg` - it was
@@ -376,10 +378,10 @@ pub fn main() !void {
 The Bundle API provides compile-time dependency configuration:
 
 - `addModule(M)` - Add all fields of module M as dependencies
-- `add(T, how)` - Add a single dependency with initialization strategy
-- `addOverride(T, how)` - Override dependency initialization (works across modules)
-- `addMock(T, how)` - Test-only override for mocking
-- `addFieldRef(T, field)` - Add reference to a struct field as dependency
+- `provide(T, how)` - Provide a single dependency with initialization strategy
+- `override(T, how)` - Override dependency initialization (works across modules)
+- `mock(T, how)` - Test-only override for mocking
+- `expose(T, field)` - Expose a reference to a struct field as dependency
 - `addInitHook(fn)` - Add runtime initialization callback
 - `addDeinitHook(fn)` - Add runtime cleanup callback
 
@@ -415,8 +417,8 @@ For testing, you can override dependencies:
 ```zig
 const TestModule = struct {
     pub fn configure(bundle: *Bundle) void {
-        bundle.addMock(Database, .value(MockDatabase{}));
-        bundle.addMock(EmailService, .factory(createMockEmailService));
+        bundle.mock(Database, .value(MockDatabase{}));
+        bundle.mock(EmailService, .factory(createMockEmailService));
     }
 };
 

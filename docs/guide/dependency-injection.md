@@ -124,11 +124,11 @@ const AppModule = struct {
     db: Database,
 
     pub fn configure(bundle: *tk.Bundle) void {
-        // Add dependencies
-        bundle.add(Logger, .factory(createLogger));
+        // Provide dependencies
+        bundle.provide(Logger, .factory(createLogger));
 
         // Override existing dependencies
-        bundle.addOverride(Cache, .factory(createRedisCache));
+        bundle.override(Cache, .factory(createRedisCache));
 
         // Add lifecycle hooks
         bundle.addInitHook(onInit);
@@ -152,8 +152,8 @@ Override dependencies for testing:
 ```zig
 const TestModule = struct {
     pub fn configure(bundle: *tk.Bundle) void {
-        bundle.addMock(Database, .value(MockDatabase{}));
-        bundle.addMock(EmailService, .factory(createMockEmail));
+        bundle.mock(Database, .value(MockDatabase{}));
+        bundle.mock(EmailService, .factory(createMockEmail));
     }
 };
 

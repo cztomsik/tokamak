@@ -14,7 +14,7 @@ pub const Base = struct {
         if (bundle.findDep(*Server)) |_| {
             // TODO: auto-provide defaults? shorthand for this pattern?
             if (bundle.findDep(ServerOptions) == null) {
-                bundle.add(ServerOptions, .value(ServerOptions{}));
+                bundle.provide(ServerOptions, .value(ServerOptions{}));
             }
 
             bundle.addInitHook(setServerInjector);
