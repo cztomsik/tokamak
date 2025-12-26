@@ -29,10 +29,15 @@ pub const Grep = struct {
     }
 };
 
-const N_SPARSE = 128;
-const N_DENSE = 32;
-const MAX_OPS = N_SPARSE - 1;
-const MAX_SPLITS = (N_DENSE / 2) - 1;
+// TODO: It's probably easier to set both to the same number (256) but I'd like to know the real formula for MAX_SPLITS
+//       and we could probably make both sets use user-provided buffer too, most regexes will be short, so there's no need
+//       to require 2x2xN bytes when the worst case is much smaller.
+const N_SPARSE = 128; // Range of addressable program counters
+const N_DENSE = 48; // Maximum NFA states active simultaneously
+const MAX_OPS = N_SPARSE - 1; // Total bytecode instructions
+// Worst case: n pipes need 3n + 3 states (dotstar + n splits + (n+1) chars + n jmps + match)
+// Other split types (?, +, *) need fewer states, so this bound is conservative.
+const MAX_SPLITS = (N_DENSE - 3) / 3;
 
 // https://www.cs.princeton.edu/courses/archive/spr09/cos333/beautiful.html
 // https://dl.acm.org/doi/pdf/10.1145/363347.363387
@@ -1146,6 +1151,7 @@ test "Regex.match()" {
 
     // Alternatives can snowball but they should never overflow the sparse set
     try expectMatch("a|b|c|d|e|f|g|h|i|j|k|l|m|n|o|p", "o", true);
+    try expectMatch("a|b|c|d|e|f|g|h|i|j|k|l|m|n|o|p", "abc", true);
 }
 
 test "Real-world patterns" {
