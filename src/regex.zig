@@ -524,30 +524,57 @@ const Op = union(enum) {
 // https://dl.acm.org/doi/10.1145/363347.363387
 // https://swtch.com/~rsc/regexp/regexp2.html#pike
 // TODO: captures
-// NOTE: bitset impl https://github.com/cztomsik/tokamak/blob/7d313d0b4f54192480cfc0684d4fe1731327ff03/src/regex.zig#L497
 fn pikevm(code: []const Op, clist: *Sparse, nlist: *Sparse, text: []const u8) bool {
     var sp: usize = 0;
-    addThread(code, clist, text, sp, 0);
+    clist.add(0);
 
     while (true) : (sp += 1) {
         var i: u32 = 0;
+
+        // NOTE: It is safe to insert during iteration, and this is also how we can avoid recursion.
+        //       It's also a bit similar to what we did in the previous bitset-based impl
+        //       https://github.com/cztomsik/tokamak/blob/7d313d0b4f54192480cfc0684d4fe1731327ff03/src/regex.zig#L497
         while (i < clist.len) : (i += 1) {
             const pc = clist.dense[i];
             const op = code[pc];
 
             switch (op) {
-                .dotstar => {
-                    if (sp < text.len) addThread(code, nlist, text, sp, pc);
+                // Anchors
+                .begin => {
+                    if (sp == 0) clist.add(pc + 1);
                 },
+                .end => {
+                    if (sp == text.len) clist.add(pc + 1);
+                },
+
+                // Char-matching
                 .char, .dot, .word, .non_word, .digit, .non_digit, .space, .non_space => {
-                    if (sp < text.len and matchChar(op, text[sp])) addThread(code, nlist, text, sp, pc + 1);
+                    if (sp < text.len and matchChar(op, text[sp])) nlist.add(pc + 1);
                 },
                 .char_class => |clz| {
-                    if (sp < text.len and matchCharClass(code[clz[0]..clz[1]], text[sp])) addThread(code, nlist, text, sp, pc + 1);
+                    if (sp < text.len and matchCharClass(code[clz[0]..clz[1]], text[sp])) nlist.add(pc + 1);
                 },
+
+                // Branching
+                .jmp => |addr| {
+                    clist.add(addr);
+                },
+                .split => |addrs| {
+                    clist.add(addrs[0]);
+                    clist.add(addrs[1]);
+                },
+                .plus => |addr| {
+                    clist.add(addr);
+                    clist.add(pc + 1);
+                },
+
+                // Other
                 .match => return true,
-                .ijmp, .isplit, .iplus => unreachable,
-                else => return false,
+                .dotstar => {
+                    if (sp < text.len) nlist.add(pc);
+                    clist.add(pc + 1);
+                },
+                else => unreachable,
             }
         }
 
@@ -558,44 +585,6 @@ fn pikevm(code: []const Op, clist: *Sparse, nlist: *Sparse, text: []const u8) bo
     }
 
     return false;
-}
-
-fn addThread(code: []const Op, list: *Sparse, text: []const u8, sp: usize, pc1: u16) void {
-    var pc = pc1;
-
-    while (true) {
-        switch (code[pc]) {
-            .begin => {
-                if (sp == 0) pc += 1 else return;
-            },
-            .end => {
-                if (sp + 1 == text.len) pc += 1 else return;
-            },
-            .dotstar => {
-                list.add(pc);
-                pc += 1;
-            },
-            .jmp => |addr| {
-                pc = addr;
-            },
-            .split => |addrs| {
-                // TODO: Can we get rid of this too?
-                addThread(code, list, text, sp, addrs[0]);
-                pc = addrs[1];
-            },
-            .plus => |addr| {
-                // TODO: Is this always atom? Can we make it so?
-                // list.add(addr);
-                addThread(code, list, text, sp, addr);
-                pc += 1;
-            },
-            .ijmp, .isplit, .iplus => unreachable,
-            else => {
-                list.add(pc);
-                return;
-            },
-        }
-    }
 }
 
 fn matchChar(op: Op, ch: u8) bool {
@@ -1150,11 +1139,11 @@ test "Regex.match()" {
     try expectMatch("|a", "", true);
     try expectMatch("a||b", "", true);
 
-    // TODO: These are currently broken (recursion / infinite loop)
-    // try expectMatch("([a-z]*)*", "abc", true);
-    // try expectMatch("(a*)*", "abc", true);
-    // try expectMatch("((a*)*)*", "abc", true);
-    // try expectMatch("(" ** 30 ++ "a*" ++ ")*" ** 30, "abc", true);
+    // Nullables (repeated empty match should not cause infinite loop)
+    try expectMatch("([a-z]*)*", "abc", true);
+    try expectMatch("(a*)*", "abc", true);
+    try expectMatch("((a*)*)*", "abc", true);
+    try expectMatch("(" ** 30 ++ "a*" ++ ")*" ** 30, "abc", true);
 }
 
 test "Real-world patterns" {
