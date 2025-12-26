@@ -1,7 +1,7 @@
 const builtin = @import("builtin");
 const std = @import("std");
 const Buf = @import("util.zig").Buf;
-const Sparse = @import("util.zig").Sparse(u16, u8);
+const Sparse = @import("util.zig").Sparse(u16, u16);
 
 pub const Grep = struct {
     reader: *std.io.Reader,
@@ -29,15 +29,7 @@ pub const Grep = struct {
     }
 };
 
-// TODO: It's probably easier to set both to the same number (256) but I'd like to know the real formula for MAX_SPLITS
-//       and we could probably make both sets use user-provided buffer too, most regexes will be short, so there's no need
-//       to require 2x2xN bytes when the worst case is much smaller.
-const N_SPARSE = 128; // Range of addressable program counters
-const N_DENSE = 48; // Maximum NFA states active simultaneously
-const MAX_OPS = N_SPARSE - 1; // Total bytecode instructions
-// Worst case: n pipes need 3n + 3 states (dotstar + n splits + (n+1) chars + n jmps + match)
-// Other split types (?, +, *) need fewer states, so this bound is conservative.
-const MAX_SPLITS = (N_DENSE - 3) / 3;
+const MAX_OPS = 127; // TODO: we can lift this later
 
 // https://www.cs.princeton.edu/courses/archive/spr09/cos333/beautiful.html
 // https://dl.acm.org/doi/pdf/10.1145/363347.363387
@@ -47,9 +39,10 @@ const MAX_SPLITS = (N_DENSE - 3) / 3;
 // https://burntsushi.net/regex-internals/
 // https://github.com/rust-lang/regex/discussions/1121
 // https://github.com/BurntSushi/rebar
+// NOTE: Not thread-safe. Each thread needs its own Regex instance (because clist/nlist lives in self.buf)
 pub const Regex = struct {
-    // [ops_main][...ops_clz]
-    code: []const Op,
+    code: []const Op, // [ops_main][...ops_clz]
+    buf: []u16, // [4 * n_ops]u16 for clist/nlist sparse+dense
 
     pub fn compile(allocator: std.mem.Allocator, regex: []const u8) !Regex {
         var compiler = try Compiler.init(allocator, regex);
@@ -58,22 +51,24 @@ pub const Regex = struct {
         try compiler.compile();
         compiler.optimize();
 
+        const buf = try allocator.alloc(u16, 4 * compiler.ops_main.len);
+        errdefer allocator.free(buf);
+
         return .{
             .code = try compiler.finish(),
+            .buf = buf,
         };
     }
 
     pub fn deinit(self: *Regex, allocator: std.mem.Allocator) void {
         allocator.free(self.code);
+        allocator.free(self.buf);
     }
 
     pub fn match(self: *Regex, text: []const u8) bool {
-        var buf1: [2 * N_SPARSE]u8 = undefined;
-        var buf2: [2 * N_DENSE]u16 = undefined;
-
-        var clist = Sparse.init(buf1[0..N_SPARSE], buf2[0..N_DENSE]);
-        var nlist = Sparse.init(buf1[N_SPARSE..], buf2[N_DENSE..]);
-
+        const n = self.buf.len / 4;
+        var clist = Sparse.init(self.buf[0..n], self.buf[2 * n .. 3 * n]);
+        var nlist = Sparse.init(self.buf[n .. 2 * n], self.buf[3 * n .. 4 * n]);
         return pikevm(self.code, &clist, &nlist, text);
     }
 };
@@ -95,14 +90,13 @@ const Compiler = struct {
         depth: usize,
         n_main: usize,
         n_clz: usize,
-        n_splits: usize,
     };
 
     fn init(allocator: std.mem.Allocator, regex: []const u8) !Compiler {
         var tokenizer: Tokenizer = .{ .input = regex };
         const info = try analyze(&tokenizer);
 
-        if (info.n_main > MAX_OPS or info.n_splits > MAX_SPLITS) {
+        if (info.n_main > MAX_OPS) {
             return error.RegexTooComplex;
         }
 
@@ -129,7 +123,6 @@ const Compiler = struct {
 
     fn analyze(tokenizer: *Tokenizer) !Info {
         var n_main: usize = 1; // we always append match
-        var n_splits: usize = 0;
         var n_clz: usize = 0; // total count of ops inside brackets
         var depth: usize = 0; // current grouping level
         var max_depth: usize = 0; // stack size we need for compilation
@@ -158,17 +151,11 @@ const Compiler = struct {
                     n_main += 1;
                 },
                 .rbracket => {},
-                .que => {
+                .que, .plus => {
                     n_main += 1;
-                    n_splits += 1;
-                },
-                .plus => {
-                    n_main += 1;
-                    n_splits += 1;
                 },
                 .pipe, .star => {
                     n_main += 2;
-                    n_splits += 1;
                 },
                 .rep => |n| {
                     if (n == 0) return error.InvalidRep;
@@ -217,7 +204,6 @@ const Compiler = struct {
             .n_clz = n_clz,
             .depth = max_depth,
             .anchored = anchored,
-            .n_splits = n_splits,
         };
     }
 
@@ -686,7 +672,6 @@ test "Regex.compile()" {
     try testing.expectError(Regex.compile(undefined, ")"), error.NoGroupToClose);
     try testing.expectError(Regex.compile(undefined, "("), error.UnclosedGroup);
     try testing.expectError(Regex.compile(undefined, "a" ** (MAX_OPS + 1)), error.RegexTooComplex);
-    try testing.expectError(Regex.compile(undefined, "|b" ** (MAX_SPLITS + 1)), error.RegexTooComplex);
 
     try expectCompile("",
         \\  0: dotstar
