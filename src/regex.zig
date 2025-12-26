@@ -32,7 +32,7 @@ pub const Grep = struct {
 const N_SPARSE = 128;
 const N_DENSE = 32;
 const MAX_OPS = N_SPARSE - 1;
-const MAX_SPLITS = N_DENSE - 1;
+const MAX_SPLITS = (N_DENSE / 2) - 1;
 
 // https://www.cs.princeton.edu/courses/archive/spr09/cos333/beautiful.html
 // https://dl.acm.org/doi/pdf/10.1145/363347.363387
@@ -680,8 +680,8 @@ test "Regex.compile()" {
     try testing.expectError(Regex.compile(undefined, "*"), error.NothingToRepeat);
     try testing.expectError(Regex.compile(undefined, ")"), error.NoGroupToClose);
     try testing.expectError(Regex.compile(undefined, "("), error.UnclosedGroup);
-    try testing.expectError(Regex.compile(undefined, "a" ** 256), error.RegexTooComplex);
-    try testing.expectError(Regex.compile(undefined, "|b" ** 32), error.RegexTooComplex);
+    try testing.expectError(Regex.compile(undefined, "a" ** (MAX_OPS + 1)), error.RegexTooComplex);
+    try testing.expectError(Regex.compile(undefined, "|b" ** (MAX_SPLITS + 1)), error.RegexTooComplex);
 
     try expectCompile("",
         \\  0: dotstar
@@ -1143,7 +1143,9 @@ test "Regex.match()" {
     try expectMatch("([a-z]*)*", "abc", true);
     try expectMatch("(a*)*", "abc", true);
     try expectMatch("((a*)*)*", "abc", true);
-    try expectMatch("(" ** 30 ++ "a*" ++ ")*" ** 30, "abc", true);
+
+    // Alternatives can snowball but they should never overflow the sparse set
+    try expectMatch("a|b|c|d|e|f|g|h|i|j|k|l|m|n|o|p", "o", true);
 }
 
 test "Real-world patterns" {
