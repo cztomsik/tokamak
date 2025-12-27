@@ -151,6 +151,9 @@ const Compiler = struct {
                     n_main += 1;
                 },
                 .rbracket => {},
+                .word_boundary, .non_word_boundary => {
+                    n_main += 1;
+                },
                 .que, .plus => {
                     n_main += 1;
                 },
@@ -322,6 +325,8 @@ const Compiler = struct {
 
                 .caret => self.push(.begin),
                 .dollar => self.push(.end),
+                .word_boundary => self.push(.word_boundary),
+                .non_word_boundary => self.push(.non_word_boundary),
             }
         }
 
@@ -387,6 +392,8 @@ const Token = union(enum) {
     non_digit,
     space,
     non_space,
+    word_boundary,
+    non_word_boundary,
     que,
     plus,
     star,
@@ -427,6 +434,8 @@ const Tokenizer = struct {
                 'D' => .non_digit,
                 's' => .space,
                 'S' => .non_space,
+                'b' => .word_boundary,
+                'B' => .non_word_boundary,
                 else => .{ .char = next_ch },
             };
         }
@@ -481,6 +490,8 @@ const Tokenizer = struct {
 const Op = union(enum) {
     begin,
     end,
+    word_boundary,
+    non_word_boundary,
 
     // Char ops
     char: u8,
@@ -536,6 +547,11 @@ fn pikevm(code: []const Op, clist: *Sparse, nlist: *Sparse, text: []const u8) bo
                 },
                 .end => {
                     if (sp == text.len) clist.add(pc + 1);
+                },
+                .word_boundary, .non_word_boundary => {
+                    const prev_word = sp > 0 and isWord(text[sp - 1]);
+                    const curr_word = sp < text.len and isWord(text[sp]);
+                    if ((prev_word != curr_word) != (op == .non_word_boundary)) clist.add(pc + 1);
                 },
 
                 // Char-matching
@@ -1070,7 +1086,7 @@ test "Regex.match()" {
         .{ "d", false },
     });
 
-    // Start/End
+    // Anchors
     try expectMatches("^hello", &.{
         .{ "hello world", true },
         .{ "say hello", false },
@@ -1080,6 +1096,24 @@ test "Regex.match()" {
         .{ "world", true },
         .{ "hello world", true },
         .{ "world peace", false },
+    });
+
+    try expectMatches("\\bword", &.{
+        .{ "word", true },
+        .{ "a word", true },
+        .{ "sword", false },
+    });
+
+    try expectMatches("word\\b", &.{
+        .{ "word", true },
+        .{ "word here", true },
+        .{ "words", false },
+    });
+
+    try expectMatches("\\Bword\\B", &.{
+        .{ "word", false },
+        .{ " word ", false },
+        .{ "swords", true },
     });
 
     // Empty
