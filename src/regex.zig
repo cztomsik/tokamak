@@ -436,6 +436,10 @@ const Tokenizer = struct {
                 'S' => .non_space,
                 'b' => .word_boundary,
                 'B' => .non_word_boundary,
+                // NOTE: Useful when regex comes from user-provided string, db, or whatever where it's awkward to type whitespace
+                't' => .{ .char = '\t' },
+                'n' => .{ .char = '\n' },
+                'r' => .{ .char = '\r' },
                 else => .{ .char = next_ch },
             };
         }
@@ -1159,9 +1163,27 @@ test "Regex.match()" {
         .{ "", false },
     });
 
+    try expectMatches("[a-zA-Z0-9]+", &.{
+        .{ "abCD123", true },
+        .{ "@", false },
+    });
+
+    try expectMatches("[a-z\\d]+", &.{
+        .{ "abc123", true },
+        .{ "@", false },
+    });
+
+    try expectMatches("[\\t\\n\\r]+", &.{
+        .{ "\t\n\r", true },
+        .{ "x", false },
+    });
+
     // Edge-cases
     try expectMatch("|a", "", true);
     try expectMatch("a||b", "", true);
+    try expectMatch("[\\]]", "]", true);
+    try expectMatch("[-a]+", "-aa-", true);
+    try expectMatch("[a-]+", "-aa-", true);
 
     // Nullables (repeated empty match should not cause infinite loop)
     try expectMatch("([a-z]*)*", "abc", true);
