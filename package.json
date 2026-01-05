@@ -1,13 +1,11 @@
 {
   "name": "tokamak-docs",
-  "version": "1.0.0",
-  "description": "Documentation for Tokamak server framework",
+  "private": true,
+  "type": "module",
   "scripts": {
-    "docs:dev": "vitepress dev docs",
-    "docs:build": "vitepress build docs",
-    "docs:preview": "vitepress preview docs"
+    "docs:build": "node build_docs.js"
   },
-  "devDependencies": {
-    "vitepress": "^1.0.0"
+  "dependencies": {
+    "marked": "^15.0.0"
   }
 }

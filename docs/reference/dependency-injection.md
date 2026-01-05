@@ -5,26 +5,16 @@ Compile-time dependency injection container with automatic resolution.
 ## Injector
 
 ```zig
-tk.Injector.init(providers: []const Provider, parent: ?*Injector) Injector
+tk.Injector.init(refs: []const Ref, parent: ?*Injector) Injector
 ```
 
-Creates an injector with the given providers.
+Creates an injector with the given refs.
 
 ```zig
 var injector = tk.Injector.init(&.{
     .ref(&db),
     .ref(&cache),
 }, null);
-```
-
-### Provider Types
-
-```zig
-.ref(ptr)              // Reference to existing value
-.value(val)            // Compile-time value
-.factory(fn)           // Factory function
-.init                  // Call T.init()
-.autowire              // Inject all struct fields
 ```
 
 ### get()
@@ -58,25 +48,6 @@ Always available for injection:
 - `*tk.Response` - HTTP response
 - `*tk.Injector` - Injector instance
 - `*tk.Context` - Request context (middleware only)
-
-### Return Types
-
-**String**: Sent as-is with `text/plain`
-```zig
-fn handler() []const u8 { return "Hello"; }
-```
-
-**Struct/Other**: Serialized to JSON
-```zig
-fn handler() User { return user; }
-```
-
-**void**: No response body
-```zig
-fn handler(res: *tk.Response) !void {
-    try res.json(.{ .status = "ok" }, .{});
-}
-```
 
 ## Multi-Module System
 
@@ -116,7 +87,7 @@ const WebModule = struct {
 ## Container API
 
 ```zig
-tk.Container.init(allocator: std.mem.Allocator, modules: []const type) !Container
+tk.Container.init(allocator: std.mem.Allocator, modules: []const type) !*Container
 ```
 
 Creates a container from modules without running.
@@ -193,7 +164,7 @@ const StdClient = struct {
 };
 
 const AppModule = struct {
-    http_client: StdClient,  // Registers StdClient
+    http_client: StdClient,  // Register StdClient and auto-expose its `&interface` field as *HttpClient
 };
 
 // Handlers receive the interface pointer
@@ -231,7 +202,7 @@ Middleware can add request-scoped dependencies:
 
 ```zig
 fn auth(ctx: *tk.Context) !void {
-    const db = ctx.injector.get(*Database);
+    const db = try ctx.injector.get(*Database);
     const user = try authenticateUser(db, ctx.req);
 
     // Add user to request scope
