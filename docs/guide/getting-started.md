@@ -55,6 +55,8 @@ pub fn main() !void {
     var server = try tk.Server.init(allocator, routes, .{
         .listen = .{ .port = 8080 }
     });
+    defer server.deinit();
+
     try server.start();
 }
 ```

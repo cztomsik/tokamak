@@ -152,23 +152,3 @@ const routes: []const tk.Route = &.{
     ),
 };
 ```
-
-Or use groups for better organization:
-
-```zig
-const routes: []const tk.Route = &.{
-    .group("/", &.{
-        .handler(errorHandler),
-        .handler(logger),
-        .handler(cors),
-
-        .get("/public", publicHandler),
-
-        .group("/api", &.{
-            .handler(requireAuth),
-            .get("/users", getUsers),
-            .post("/posts", createPost),
-        }),
-    }),
-};
-```

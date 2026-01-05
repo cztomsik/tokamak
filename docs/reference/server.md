@@ -12,7 +12,7 @@ Creates a server instance with the provided routes and configuration.
 
 ```zig
 var server = try tk.Server.init(allocator, routes, .{
-    .listen = .{ .port = 8080, .address = "127.0.0.1" },
+    .listen = .{ .port = 8080, .hostname = "127.0.0.1" },
     .injector = &injector,
 });
 defer server.deinit();
@@ -23,7 +23,7 @@ defer server.deinit();
 ```zig
 .listen = .{
     .port: u16,           // Default: 8080
-    .address: []const u8, // Default: "127.0.0.1"
+    .hostname: []const u8, // Default: "127.0.0.1"
 }
 .injector: ?*Injector,    // Optional DI container
 ```

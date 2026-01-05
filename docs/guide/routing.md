@@ -147,7 +147,8 @@ Routes are hierarchical and introspectable, making it easy to generate documenta
 ```zig
 // Tokamak includes basic Swagger support
 const routes: []const tk.Route = &.{
-    tk.swagger(.{}),
+    .get("/openapi.json", tk.swagger.json(.{ .info = .{ .title = "My API" } })),
+    .get("/swagger-ui", tk.swagger.ui(.{ .url = "openapi.json" })),
     .get("/users", getUsers),
 };
 ```

@@ -11,8 +11,6 @@ const routes: []const tk.Route = &.{
     .put(path, handler),
     .delete(path, handler),
     .patch(path, handler),
-    .head(path, handler),
-    .options(path, handler),
 };
 ```
 
@@ -190,21 +188,23 @@ fn createUser(db: *Database, body: User) !User
 
 ## Middleware
 
-```zig
-.handler(fn)
-```
-
-Middleware receives `*Context` and must call `ctx.next()`:
+Middleware is implemented as functions that wrap child routes:
 
 ```zig
-fn logger(ctx: *tk.Context) !void {
-    log.info("{s} {s}", .{@tagName(ctx.req.method), ctx.req.url});
-    return ctx.next();
+fn logger(children: []const tk.Route) tk.Route {
+    const H = struct {
+        fn handle(ctx: *tk.Context) !void {
+            log.info("{s} {s}", .{@tagName(ctx.req.method), ctx.req.url});
+            return ctx.next();
+        }
+    };
+    return .{ .handler = &H.handle, .children = children };
 }
 
 const routes = &.{
-    .handler(logger),
-    .get("/", index),
+    logger(&.{
+        .get("/", index),
+    }),
 };
 ```
 
