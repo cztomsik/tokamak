@@ -4,6 +4,7 @@ import { marked } from 'marked';
 
 const DOCS_DIR = 'docs';
 const DIST_DIR = 'docs/dist';
+const BASE_PATH = process.env.BASE_PATH || '';
 
 const SECTIONS = {
   guide: {
@@ -138,12 +139,12 @@ function convertInfoBoxes(markdown) {
 }
 
 function fixLinks(html, currentPath) {
-  // Fix markdown links: /guide/foo -> /guide/foo/
+  // Fix markdown links: /guide/foo -> BASE_PATH/guide/foo/
   // Fix relative links: ./foo.md -> ../foo/
   return html
     .replace(/href="\/([^"]+)"/g, (_, path) => {
-      if (path.endsWith('/') || path.includes('.') || path.startsWith('http')) return `href="/${path}"`;
-      return `href="/${path}/"`;
+      if (path.endsWith('/') || path.includes('.') || path.startsWith('http')) return `href="${BASE_PATH}/${path}"`;
+      return `href="${BASE_PATH}/${path}/"`;
     })
     .replace(/href="\.\/([^"]+)\.md"/g, (_, name) => `href="../${name}/"`)
     .replace(/href="([^"]+)\.md"/g, (_, path) => {
@@ -175,7 +176,10 @@ function buildHomePage(filepath, template, nav) {
   let heroHtml = '';
   if (hero.name) {
     const actions = (hero.actions || [])
-      .map(a => `<a href="${a.link}" class="btn ${a.theme || ''}">${a.text}</a>`)
+      .map(a => {
+        const href = a.link.startsWith('/') ? `${BASE_PATH}${a.link}` : a.link;
+        return `<a href="${href}" class="btn ${a.theme || ''}">${a.text}</a>`;
+      })
       .join('\n');
 
     heroHtml = `
@@ -221,7 +225,7 @@ function buildPage(filepath, template, nav) {
 }
 
 function buildNav(pages) {
-  let html = '<nav>\n<a href="/" class="logo">Tokamak</a>\n';
+  let html = `<nav>\n<a href="${BASE_PATH}/" class="logo">Tokamak</a>\n`;
 
   for (const [section, config] of Object.entries(SECTIONS)) {
     const sectionPages = pages.filter(p => p.section === section);
@@ -230,7 +234,7 @@ function buildNav(pages) {
     html += `<details open><summary>${config.title}</summary>\n<ul>\n`;
     for (const page of sectionPages) {
       const label = page.title === 'Index' ? config.title : page.title;
-      html += `<li><a href="/${section}/${page.slug}/">${label}</a></li>\n`;
+      html += `<li><a href="${BASE_PATH}/${section}/${page.slug}/">${label}</a></li>\n`;
     }
     html += '</ul>\n</details>\n';
   }
