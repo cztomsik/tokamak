@@ -125,6 +125,12 @@ pub fn SlotMap(comptime T: type) type {
             };
         }
 
+        pub fn len(self: *const @This()) usize {
+            var count: usize = 0;
+            for (self.pages) |p| count += @popCount(p.used);
+            return count;
+        }
+
         fn findSlot(self: *@This(), index: u32) ?*Slot {
             const page = index / 64;
             const slot = index % 64;
@@ -148,6 +154,7 @@ test SlotMap {
 
     const id = try map.insert(123);
     try std.testing.expectEqual(123, map.find(id).?.*);
+    try std.testing.expectEqual(1, map.len());
 
     map.remove(id);
     try std.testing.expectEqual(null, map.find(id));
@@ -163,6 +170,7 @@ test SlotMap {
         try std.testing.expectEqual(j, entry.value.*);
     }
 
+    try std.testing.expectEqual(128, map.len());
     try std.testing.expectError(error.Overflow, map.insert(128));
 
     // Check paging in remove()
