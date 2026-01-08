@@ -147,36 +147,36 @@ test Cron {
 
     const id = try cron.schedule("* * * * *", "bar", "baz");
 
-    try testing.expectTable(try queue.listJobs(arena.allocator(), .{}),
-        \\| name | key | state   |
-        \\|------|-----|---------|
+    try testing.expectTable(try queue.listJobs(arena.allocator()),
+        \\| name | key |
+        \\|------|-----|
     );
 
     _ = try cron.tick(.unix(60));
 
-    try testing.expectTable(try queue.listJobs(arena.allocator(), .{}),
-        \\| name | key | state   |
-        \\|------|-----|---------|
-        \\| bar  | 60  | pending |
+    try testing.expectTable(try queue.listJobs(arena.allocator()),
+        \\| name | key |
+        \\|------|-----|
+        \\| bar  | 60  |
     );
 
     _ = try cron.tick(.unix(120));
 
-    try testing.expectTable(try queue.listJobs(arena.allocator(), .{}),
-        \\| name | key | state   |
-        \\|------|-----|---------|
-        \\| bar  | 60  | pending |
-        \\| bar  | 120 | pending |
+    try testing.expectTable(try queue.listJobs(arena.allocator()),
+        \\| name | key |
+        \\|------|-----|
+        \\| bar  | 60  |
+        \\| bar  | 120 |
     );
 
     cron.unschedule(id);
     _ = try cron.tick(.unix(180));
 
-    try testing.expectTable(try queue.listJobs(arena.allocator(), .{}),
-        \\| name | key | state   |
-        \\|------|-----|---------|
-        \\| bar  | 60  | pending |
-        \\| bar  | 120 | pending |
+    try testing.expectTable(try queue.listJobs(arena.allocator()),
+        \\| name | key |
+        \\|------|-----|
+        \\| bar  | 60  |
+        \\| bar  | 120 |
     );
 }
 
