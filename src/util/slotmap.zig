@@ -113,7 +113,7 @@ pub fn SlotMap(comptime T: type) type {
         pub fn remove(self: *@This(), id: Id) void {
             if (self.findSlot(id.index)) |slot| {
                 if (slot.gen == id.gen) {
-                    self.pages[id.index % 64].used &= ~@as(u64, 1) << @as(u6, @intCast(id.index % 64));
+                    self.pages[id.index / 64].used &= ~@as(u64, 1) << @as(u6, @intCast(id.index % 64));
                     slot.gen +%= 1; // overflow to zero means the slot is exhausted and can't be used anymore
                 }
             }
@@ -154,7 +154,6 @@ test SlotMap {
 
     for (0..128) |i| {
         const id2 = try map.insert(i);
-        // Test fails here: attempt to use null
         try std.testing.expectEqual(i, map.find(id2).?.*);
     }
 
@@ -165,4 +164,9 @@ test SlotMap {
     }
 
     try std.testing.expectError(error.Overflow, map.insert(128));
+
+    // Check paging in remove()
+    const last: @TypeOf(map).Id = .{ .gen = map.findSlot(127).?.gen, .index = 127 };
+    map.remove(last);
+    try std.testing.expectEqual(null, map.find(id));
 }
