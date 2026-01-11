@@ -42,7 +42,7 @@ pub fn SlotMap(comptime T: type) type {
                                 .value = &page.slots[si].value,
                             };
                         }
-                    } else self.index += 64;
+                    }
                 }
 
                 return null;
@@ -177,4 +177,27 @@ test SlotMap {
     const last: @TypeOf(map).Id = .{ .gen = map.findSlot(127).?.gen, .index = 127 };
     map.remove(last);
     try std.testing.expectEqual(null, map.find(id));
+}
+
+test "iterator" {
+    var buf: [2]SlotMap(usize).Page = undefined;
+    var map = SlotMap(usize).init(&buf);
+
+    // Fill first page completely, then add 2 more items
+    for (0..66) |i| _ = try map.insert(i);
+
+    // Check iter
+    var it = map.iter();
+    for (0..66) |i| try std.testing.expectEqual(i, it.next().?.value.*);
+    try std.testing.expectEqual(null, it.next());
+
+    // Remove all from the first page (2 items left in the second page)
+    for (0..64) |i| map.remove(.{ .gen = map.findSlot(@intCast(i)).?.gen, .index = @intCast(i) });
+    try std.testing.expectEqual(2, map.len());
+
+    // Find both items
+    it = map.iter();
+    try std.testing.expectEqual(64, it.next().?.value.*);
+    try std.testing.expectEqual(65, it.next().?.value.*);
+    try std.testing.expectEqual(null, it.next());
 }
