@@ -64,7 +64,7 @@ pub const Queue = struct {
     }
 };
 
-pub const MemQueue = struct {
+pub const ShmQueue = struct {
     interface: Queue = .{
         .vtable = &.{
             .findJob = findJob,
@@ -75,8 +75,8 @@ pub const MemQueue = struct {
         },
     },
     time: *const fn () i64 = std.time.timestamp,
-    mutex: std.Thread.Mutex.Recursive = .init,
-    allocator: std.mem.Allocator,
+    mutex: util.ShmMutex,
+    shm: util.Shm, // [...slotmap pages]
     jobs: util.SlotMap(Node),
 
     const Node = struct {
@@ -116,23 +116,33 @@ pub const MemQueue = struct {
         }
     };
 
-    pub fn init(allocator: std.mem.Allocator) !MemQueue {
-        return .{
-            .allocator = allocator,
-            .jobs = try .initAlloc(allocator, 4),
+    pub fn init() !ShmQueue {
+        const Page = util.SlotMap(Node).Page;
+        // TODO: config
+        const N_PAGES = 2;
+        const size = std.mem.alignForward(usize, N_PAGES * @sizeOf(Page), std.heap.page_size_min);
+        const shm = try util.Shm.open("/tk_queue", size);
+
+        var self: ShmQueue = .{
+            .shm = shm,
+            .mutex = try util.ShmMutex.init(shm.name),
+            .jobs = .{ .pages = @as([*]Page, @ptrCast(@alignCast(shm.data.ptr)))[0..N_PAGES] },
         };
+
+        if (shm.created) {
+            self.jobs = .init(self.jobs.pages);
+        }
+
+        return self;
     }
 
-    pub fn deinit(self: *MemQueue) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
-
-        const allocator = self.allocator;
-        self.jobs.deinit(allocator);
+    pub fn deinit(self: *ShmQueue) void {
+        self.mutex.deinit();
+        self.shm.deinit();
     }
 
     fn submit(queue: *Queue, job: JobInfo) !?JobId {
-        const self: *MemQueue = @fieldParentPtr("interface", queue);
+        const self: *ShmQueue = @fieldParentPtr("interface", queue);
         self.mutex.lock();
         defer self.mutex.unlock();
 
@@ -153,7 +163,7 @@ pub const MemQueue = struct {
     }
 
     fn findJob(queue: *Queue, arena: std.mem.Allocator, id: JobId) !?JobInfo {
-        const self: *MemQueue = @fieldParentPtr("interface", queue);
+        const self: *ShmQueue = @fieldParentPtr("interface", queue);
         self.mutex.lock();
         defer self.mutex.unlock();
 
@@ -164,7 +174,7 @@ pub const MemQueue = struct {
     }
 
     fn listJobs(queue: *Queue, arena: std.mem.Allocator) ![]const JobInfo {
-        const self: *MemQueue = @fieldParentPtr("interface", queue);
+        const self: *ShmQueue = @fieldParentPtr("interface", queue);
         self.mutex.lock();
         defer self.mutex.unlock();
 
@@ -179,7 +189,7 @@ pub const MemQueue = struct {
     }
 
     fn startNext(queue: *Queue) !?JobId {
-        const self: *MemQueue = @fieldParentPtr("interface", queue);
+        const self: *ShmQueue = @fieldParentPtr("interface", queue);
         self.mutex.lock();
         defer self.mutex.unlock();
 
@@ -207,7 +217,7 @@ pub const MemQueue = struct {
     }
 
     fn removeJob(queue: *Queue, id: JobId) !void {
-        const self: *MemQueue = @fieldParentPtr("interface", queue);
+        const self: *ShmQueue = @fieldParentPtr("interface", queue);
         self.mutex.lock();
         defer self.mutex.unlock();
         self.jobs.remove(@bitCast(id));
@@ -222,7 +232,7 @@ fn expectJobs(q: *Queue, comptime expected: []const u8) !void {
 }
 
 test Queue {
-    var mem_queue = try MemQueue.init(testing.allocator);
+    var mem_queue = try ShmQueue.init();
     defer mem_queue.deinit();
 
     const queue = &mem_queue.interface;

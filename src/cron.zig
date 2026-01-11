@@ -2,7 +2,7 @@ const std = @import("std");
 const testing = @import("testing.zig");
 const Time = @import("time.zig").Time;
 const Queue = @import("queue.zig").Queue;
-const MemQueue = @import("queue.zig").MemQueue;
+const ShmQueue = @import("queue.zig").ShmQueue;
 const log = std.log.scoped(.cron);
 
 const JobId = enum(usize) { _ };
@@ -130,7 +130,7 @@ pub const Cron = struct {
 };
 
 test Cron {
-    var mem_queue = try MemQueue.init(testing.allocator);
+    var mem_queue = try ShmQueue.init();
     defer mem_queue.deinit();
 
     const queue = &mem_queue.interface;

@@ -3,8 +3,35 @@ const std = @import("std");
 const c = @cImport({
     @cInclude("sys/mman.h");
     @cInclude("fcntl.h");
-    @cInclude("unistd.h");
 });
+
+/// Cross-process mutex which works reliably on Linux/macOS even after crash
+pub const Mutex = struct {
+    fd: std.fs.File,
+
+    // TODO: This is Nth attempt, and it still doesn't feel right, files have
+    // their own issues and maybe ShmQueue should be lockless anyway?
+    pub fn init(name: [:0]const u8) !Mutex {
+        var buf: [256]u8 = undefined;
+        const tmp_path = try std.fmt.bufPrintZ(&buf, "/tmp/{s}.lock", .{std.mem.trimLeft(u8, name, "/")});
+
+        return .{
+            .fd = try std.fs.createFileAbsoluteZ(tmp_path, .{ .read = true }),
+        };
+    }
+
+    pub fn deinit(self: *Mutex) void {
+        self.fd.close();
+    }
+
+    pub fn lock(self: *Mutex) void {
+        self.fd.lock(.exclusive) catch @panic("TODO");
+    }
+
+    pub fn unlock(self: *Mutex) void {
+        self.fd.unlock();
+    }
+};
 
 pub const Shm = struct {
     name: [:0]const u8,
@@ -16,6 +43,8 @@ pub const Shm = struct {
     // mmapped area, and maybe also add lock, refcounting, and IDK what else...
     // so maybe let's stick with comptime for now
     pub fn open(comptime name: [:0]const u8, size: usize) !Shm {
+        std.debug.assert(size % std.heap.page_size_min == 0);
+
         var fd: std.fs.File = .{ .handle = c.shm_open(name, c.O_RDWR | c.O_CREAT | c.O_EXCL, @as(c.mode_t, 0o666)) };
         const created: bool = fd.handle != -1;
         if (!created) fd.handle = c.shm_open(name, c.O_RDWR, @as(c.mode_t, 0o666));
@@ -46,8 +75,12 @@ pub const Shm = struct {
 
     pub fn deinit(self: *Shm) void {
         std.posix.munmap(self.data);
-        if (self.created) _ = c.shm_unlink(self.name.ptr);
+        if (self.created) self.unlink();
         self.fd.close();
+    }
+
+    pub fn unlink(self: *Shm) void {
+        _ = c.shm_unlink(self.name.ptr);
     }
 };
 
