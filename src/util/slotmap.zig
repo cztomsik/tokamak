@@ -42,7 +42,7 @@ pub fn SlotMap(comptime T: type) type {
                                 .value = &page.slots[si].value,
                             };
                         }
-                    } else self.index += 64;
+                    }
                 }
 
                 return null;
@@ -50,14 +50,9 @@ pub fn SlotMap(comptime T: type) type {
         };
 
         pub fn init(pages: []Page) @This() {
-            for (pages) |*p| {
-                p.used = 0;
-                for (&p.slots) |*s| s.gen = 1;
-            }
-
-            return .{
-                .pages = pages,
-            };
+            var self: @This() = .{ .pages = pages };
+            self.reset();
+            return self;
         }
 
         pub fn initAlloc(allocator: std.mem.Allocator, n_pages: usize) !@This() {
@@ -68,6 +63,13 @@ pub fn SlotMap(comptime T: type) type {
 
         pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
             allocator.free(self.pages);
+        }
+
+        pub fn reset(self: *@This()) void {
+            for (self.pages) |*p| {
+                p.used = 0;
+                for (&p.slots) |*s| s.gen = 1;
+            }
         }
 
         pub fn insert(self: *@This(), value: T) !Id {
@@ -113,7 +115,7 @@ pub fn SlotMap(comptime T: type) type {
         pub fn remove(self: *@This(), id: Id) void {
             if (self.findSlot(id.index)) |slot| {
                 if (slot.gen == id.gen) {
-                    self.pages[id.index % 64].used &= ~@as(u64, 1) << @as(u6, @intCast(id.index % 64));
+                    self.pages[id.index / 64].used &= ~(@as(u64, 1) << @as(u6, @intCast(id.index % 64)));
                     slot.gen +%= 1; // overflow to zero means the slot is exhausted and can't be used anymore
                 }
             }
@@ -123,6 +125,12 @@ pub fn SlotMap(comptime T: type) type {
             return Iterator{
                 .map = self,
             };
+        }
+
+        pub fn len(self: *const @This()) usize {
+            var count: usize = 0;
+            for (self.pages) |p| count += @popCount(p.used);
+            return count;
         }
 
         fn findSlot(self: *@This(), index: u32) ?*Slot {
@@ -146,16 +154,24 @@ test SlotMap {
     var buf: [2]SlotMap(usize).Page = undefined;
     var map = SlotMap(usize).init(&buf);
 
-    const id = try map.insert(123);
-    try std.testing.expectEqual(123, map.find(id).?.*);
+    const id1 = try map.insert(123);
+    try std.testing.expectEqual(123, map.find(id1).?.*);
+    try std.testing.expectEqual(1, map.len());
 
-    map.remove(id);
-    try std.testing.expectEqual(null, map.find(id));
+    const id2 = try map.insert(456);
+    try std.testing.expectEqual(456, map.find(id2).?.*);
+    try std.testing.expectEqual(2, map.len());
+
+    map.remove(id2);
+    try std.testing.expectEqual(null, map.find(id2));
+    try std.testing.expectEqual(1, map.len());
+
+    map.reset();
+    try std.testing.expectEqual(0, map.len());
 
     for (0..128) |i| {
-        const id2 = try map.insert(i);
-        // Test fails here: attempt to use null
-        try std.testing.expectEqual(i, map.find(id2).?.*);
+        const id = try map.insert(i);
+        try std.testing.expectEqual(i, map.find(id).?.*);
     }
 
     var it = map.iter();
@@ -164,5 +180,34 @@ test SlotMap {
         try std.testing.expectEqual(j, entry.value.*);
     }
 
+    try std.testing.expectEqual(128, map.len());
     try std.testing.expectError(error.Overflow, map.insert(128));
+
+    // Check paging in remove()
+    const last: @TypeOf(map).Id = .{ .gen = map.findSlot(127).?.gen, .index = 127 };
+    map.remove(last);
+    try std.testing.expectEqual(null, map.find(last));
+}
+
+test "iterator" {
+    var buf: [2]SlotMap(usize).Page = undefined;
+    var map = SlotMap(usize).init(&buf);
+
+    // Fill first page completely, then add 2 more items
+    for (0..66) |i| _ = try map.insert(i);
+
+    // Check iter
+    var it = map.iter();
+    for (0..66) |i| try std.testing.expectEqual(i, it.next().?.value.*);
+    try std.testing.expectEqual(null, it.next());
+
+    // Remove all from the first page (2 items left in the second page)
+    for (0..64) |i| map.remove(.{ .gen = map.findSlot(@intCast(i)).?.gen, .index = @intCast(i) });
+    try std.testing.expectEqual(2, map.len());
+
+    // Find both items
+    it = map.iter();
+    try std.testing.expectEqual(64, it.next().?.value.*);
+    try std.testing.expectEqual(65, it.next().?.value.*);
+    try std.testing.expectEqual(null, it.next());
 }

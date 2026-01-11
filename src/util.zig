@@ -1,6 +1,8 @@
 const std = @import("std");
 
 pub const Buf = @import("util/buf.zig").Buf;
+pub const Shm = @import("util/shm.zig").Shm;
+pub const ShmMutex = @import("util/shm.zig").Mutex;
 pub const SlotMap = @import("util/slotmap.zig").SlotMap;
 pub const SmolStr = @import("util/smolstr.zig").SmolStr;
 pub const Smol128 = @import("util/smolstr.zig").Smol128;

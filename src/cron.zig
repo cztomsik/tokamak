@@ -2,7 +2,7 @@ const std = @import("std");
 const testing = @import("testing.zig");
 const Time = @import("time.zig").Time;
 const Queue = @import("queue.zig").Queue;
-const MemQueue = @import("queue.zig").MemQueue;
+const ShmQueue = @import("queue.zig").ShmQueue;
 const log = std.log.scoped(.cron);
 
 const JobId = enum(usize) { _ };
@@ -130,7 +130,7 @@ pub const Cron = struct {
 };
 
 test Cron {
-    var mem_queue = try MemQueue.init(testing.allocator);
+    var mem_queue = try ShmQueue.init();
     defer mem_queue.deinit();
 
     const queue = &mem_queue.interface;
@@ -147,36 +147,36 @@ test Cron {
 
     const id = try cron.schedule("* * * * *", "bar", "baz");
 
-    try testing.expectTable(try queue.listJobs(arena.allocator(), .{}),
-        \\| name | key | state   |
-        \\|------|-----|---------|
+    try testing.expectTable(try queue.listJobs(arena.allocator()),
+        \\| name | key |
+        \\|------|-----|
     );
 
     _ = try cron.tick(.unix(60));
 
-    try testing.expectTable(try queue.listJobs(arena.allocator(), .{}),
-        \\| name | key | state   |
-        \\|------|-----|---------|
-        \\| bar  | 60  | pending |
+    try testing.expectTable(try queue.listJobs(arena.allocator()),
+        \\| name | key |
+        \\|------|-----|
+        \\| bar  | 60  |
     );
 
     _ = try cron.tick(.unix(120));
 
-    try testing.expectTable(try queue.listJobs(arena.allocator(), .{}),
-        \\| name | key | state   |
-        \\|------|-----|---------|
-        \\| bar  | 60  | pending |
-        \\| bar  | 120 | pending |
+    try testing.expectTable(try queue.listJobs(arena.allocator()),
+        \\| name | key |
+        \\|------|-----|
+        \\| bar  | 60  |
+        \\| bar  | 120 |
     );
 
     cron.unschedule(id);
     _ = try cron.tick(.unix(180));
 
-    try testing.expectTable(try queue.listJobs(arena.allocator(), .{}),
-        \\| name | key | state   |
-        \\|------|-----|---------|
-        \\| bar  | 60  | pending |
-        \\| bar  | 120 | pending |
+    try testing.expectTable(try queue.listJobs(arena.allocator()),
+        \\| name | key |
+        \\|------|-----|
+        \\| bar  | 60  |
+        \\| bar  | 120 |
     );
 }
 
