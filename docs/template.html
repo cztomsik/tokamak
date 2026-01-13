@@ -161,6 +161,71 @@
     .feature p {
       @apply m-0 text-gray-500 dark:text-gray-400 text-sm;
     }
+
+    /* API docs styles */
+    .api-toc {
+      @apply bg-gray-100 dark:bg-gray-800 p-4 rounded-lg mb-8;
+    }
+
+    .api-toc h2 {
+      @apply mt-0 mb-2 border-0 text-lg;
+    }
+
+    #api-search {
+      @apply w-full p-2 mb-3 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded text-sm;
+    }
+
+    #api-search:focus {
+      @apply outline-none ring-2 ring-blue-500;
+    }
+
+    .api-toc ul {
+      @apply list-none p-0 m-0 columns-2 gap-4 max-h-64 overflow-y-auto;
+    }
+
+    .api-toc li {
+      @apply py-0.5 break-inside-avoid;
+    }
+
+    .api-toc a {
+      @apply text-blue-600 dark:text-blue-400 no-underline hover:underline;
+    }
+
+    .badge {
+      @apply inline-block text-xs px-1.5 py-0.5 rounded ml-1 text-white;
+    }
+
+    .badge.fn { @apply bg-teal-500; }
+    .badge.struct { @apply bg-red-400; }
+    .badge.enum { @apply bg-yellow-500 text-gray-900; }
+    .badge.union { @apply bg-purple-400; }
+    .badge.const { @apply bg-green-500; }
+
+    .api-item {
+      @apply my-3 p-3 bg-gray-50 dark:bg-gray-800 rounded border-l-4 border-gray-300 dark:border-gray-600;
+    }
+
+    .api-item.fn { @apply border-teal-500; }
+    .api-item.struct { @apply border-red-400; }
+    .api-item.enum { @apply border-yellow-500; }
+    .api-item.union { @apply border-purple-400; }
+    .api-item.const { @apply border-green-500; }
+
+    .api-item .signature {
+      @apply block font-mono text-sm whitespace-pre-wrap break-words;
+    }
+
+    .api-item .signature strong {
+      @apply text-blue-600 dark:text-blue-400;
+    }
+
+    .api-doc {
+      @apply mt-2 mb-0 text-gray-500 dark:text-gray-400 text-sm whitespace-pre-wrap;
+    }
+
+    nav .nav-link {
+      @apply block mt-4 font-semibold;
+    }
   </style>
 </head>
 <body>

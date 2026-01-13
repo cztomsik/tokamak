@@ -1,9 +1,10 @@
 import { readFileSync, writeFileSync, readdirSync, mkdirSync, cpSync, rmSync, existsSync } from 'fs';
-import { join, basename, dirname } from 'path';
+import { join, basename, dirname, relative } from 'path';
 import { marked } from 'marked';
 
 const DOCS_DIR = 'docs';
 const DIST_DIR = 'docs/dist';
+const SRC_DIR = 'src';
 const BASE_PATH = process.env.BASE_PATH || '';
 
 const SECTIONS = {
@@ -20,6 +21,201 @@ const SECTIONS = {
     order: ['hello', 'hello_app', 'hello_cli', 'hello_ai', 'blog', 'todos_orm_sqlite', 'webview_app', 'clown-commander']
   }
 };
+
+// --- API Docs Generation ---
+
+function findZigFiles(dir, files = []) {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const fullPath = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      findZigFiles(fullPath, files);
+    } else if (entry.name.endsWith('.zig')) {
+      files.push(fullPath);
+    }
+  }
+  return files;
+}
+
+function parseZigFile(filePath) {
+  const content = readFileSync(filePath, 'utf-8');
+  const lines = content.split('\n');
+  const items = [];
+  let docComment = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+
+    if (trimmed.startsWith('///')) {
+      docComment.push(trimmed.slice(3).trim());
+      continue;
+    }
+
+    if (trimmed.startsWith('pub ')) {
+      const item = parseZigDeclaration(trimmed, docComment);
+      if (item) items.push(item);
+    }
+
+    if (!trimmed.startsWith('///')) {
+      docComment = [];
+    }
+  }
+
+  return items;
+}
+
+function parseZigDeclaration(line, docComment) {
+  const fnMatch = line.match(/^pub fn\s+(\w+)\s*\(([^)]*)\)/);
+  if (fnMatch) {
+    const afterParen = line.slice(line.indexOf(')') + 1);
+    const retMatch = afterParen.match(/\s*([^{]+)/);
+    return {
+      kind: 'fn',
+      name: fnMatch[1],
+      params: fnMatch[2].trim(),
+      returns: retMatch ? retMatch[1].trim() : '',
+      doc: docComment.join('\n')
+    };
+  }
+
+  const structMatch = line.match(/^pub const\s+(\w+)\s*=\s*struct/);
+  if (structMatch) {
+    return { kind: 'struct', name: structMatch[1], doc: docComment.join('\n') };
+  }
+
+  const enumMatch = line.match(/^pub const\s+(\w+)\s*=\s*enum/);
+  if (enumMatch) {
+    return { kind: 'enum', name: enumMatch[1], doc: docComment.join('\n') };
+  }
+
+  const unionMatch = line.match(/^pub const\s+(\w+)\s*=\s*union/);
+  if (unionMatch) {
+    return { kind: 'union', name: unionMatch[1], doc: docComment.join('\n') };
+  }
+
+  const constMatch = line.match(/^pub const\s+(\w+)\s*=\s*(.+)/);
+  if (constMatch && !constMatch[2].startsWith('@import')) {
+    return {
+      kind: 'const',
+      name: constMatch[1],
+      value: constMatch[2].replace(/;$/, '').trim(),
+      doc: docComment.join('\n')
+    };
+  }
+
+  return null;
+}
+
+function escapeHtml(str) {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function makeAnchorId(filePath) {
+  return filePath.replace(/[^a-zA-Z0-9]/g, '-').replace(/-+/g, '-');
+}
+
+function buildApiDocs(template, nav) {
+  const files = findZigFiles(SRC_DIR).sort();
+  const fileData = files.map(file => ({
+    file,
+    items: parseZigFile(file)
+  })).filter(({ items }) => items.length > 0);
+
+  // Generate TOC
+  const tocHtml = fileData.map(({ file, items }) => {
+    const relativePath = relative(SRC_DIR, file);
+    const anchorId = makeAnchorId(relativePath);
+    const counts = {
+      fn: items.filter(i => i.kind === 'fn').length,
+      struct: items.filter(i => i.kind === 'struct').length,
+      enum: items.filter(i => i.kind === 'enum').length,
+      union: items.filter(i => i.kind === 'union').length,
+      const: items.filter(i => i.kind === 'const').length,
+    };
+    const badges = [];
+    if (counts.fn) badges.push(`<span class="badge fn">${counts.fn} fn</span>`);
+    if (counts.struct) badges.push(`<span class="badge struct">${counts.struct} struct</span>`);
+    if (counts.enum) badges.push(`<span class="badge enum">${counts.enum} enum</span>`);
+    if (counts.union) badges.push(`<span class="badge union">${counts.union} union</span>`);
+    if (counts.const) badges.push(`<span class="badge const">${counts.const} const</span>`);
+    return `<li><a href="#${anchorId}">${relativePath}</a> ${badges.join(' ')}</li>`;
+  }).join('\n');
+
+  // Generate sections
+  const sections = fileData.map(({ file, items }) => {
+    const relativePath = relative(SRC_DIR, file);
+    const anchorId = makeAnchorId(relativePath);
+    const itemsHtml = items.map(item => {
+      const docHtml = item.doc ? `<p class="api-doc">${escapeHtml(item.doc)}</p>` : '';
+
+      switch (item.kind) {
+        case 'fn':
+          return `<div class="api-item fn">
+            <code class="signature">pub fn <strong>${item.name}</strong>(${item.params})${item.returns ? ' ' + item.returns : ''}</code>
+            ${docHtml}
+          </div>`;
+        case 'struct':
+          return `<div class="api-item struct">
+            <code class="signature">pub const <strong>${item.name}</strong> = struct</code>
+            ${docHtml}
+          </div>`;
+        case 'enum':
+          return `<div class="api-item enum">
+            <code class="signature">pub const <strong>${item.name}</strong> = enum</code>
+            ${docHtml}
+          </div>`;
+        case 'union':
+          return `<div class="api-item union">
+            <code class="signature">pub const <strong>${item.name}</strong> = union</code>
+            ${docHtml}
+          </div>`;
+        case 'const':
+          return `<div class="api-item const">
+            <code class="signature">pub const <strong>${item.name}</strong> = ${item.value}</code>
+            ${docHtml}
+          </div>`;
+        default:
+          return '';
+      }
+    }).join('\n');
+
+    return `<section id="${anchorId}">
+      <h2>${relativePath}</h2>
+      ${itemsHtml}
+    </section>`;
+  }).join('\n');
+
+  const totalItems = fileData.reduce((sum, { items }) => sum + items.length, 0);
+
+  const content = `
+    <h1>API Reference</h1>
+    <p>Auto-generated from source. ${fileData.length} files, ${totalItems} public items.</p>
+    <div class="api-toc">
+      <h2>Table of Contents</h2>
+      <input type="text" id="api-search" placeholder="Filter files..." autocomplete="off">
+      <ul>${tocHtml}</ul>
+    </div>
+    <script>
+      document.getElementById('api-search').addEventListener('input', function(e) {
+        const query = e.target.value.toLowerCase();
+        document.querySelectorAll('.api-toc li').forEach(li => {
+          const text = li.textContent.toLowerCase();
+          li.style.display = (query && !text.includes(query)) ? 'none' : '';
+        });
+      });
+    </script>
+    ${sections}
+  `;
+
+  return template
+    .replace(/\{\{title\}\}/g, 'API Reference')
+    .replace(/\{\{nav\}\}/g, nav)
+    .replace(/\{\{content\}\}/g, content);
+}
 
 function parseFrontmatter(content) {
   const lines = content.split('\n');
@@ -239,6 +435,9 @@ function buildNav(pages) {
     html += '</ul>\n</details>\n';
   }
 
+  // Add API link
+  html += `<a href="${BASE_PATH}/api/" class="nav-link">API</a>\n`;
+
   html += '</nav>';
   return html;
 }
@@ -304,4 +503,11 @@ if (existsSync(join(DOCS_DIR, 'index.md'))) {
   console.log('Built: index');
 }
 
-console.log(`\nDone! Built ${pages.length + 1} pages.`);
+// Build API docs
+const apiHtml = buildApiDocs(template, nav);
+const apiDir = join(DIST_DIR, 'api');
+mkdirSync(apiDir, { recursive: true });
+writeFileSync(join(apiDir, 'index.html'), apiHtml);
+console.log('Built: api');
+
+console.log(`\nDone! Built ${pages.length + 2} pages.`);
