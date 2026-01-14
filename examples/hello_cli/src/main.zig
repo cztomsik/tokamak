@@ -4,7 +4,8 @@ const tk = @import("tokamak");
 // Shared
 const App = struct {
     http_client: tk.http.StdClient,
-    hn_client: tk.hackernews.Client,
+    hn_client: tk.ext.hackernews.Client,
+    gh_client: tk.ext.github.Client,
 };
 
 // CLI-only
@@ -24,11 +25,11 @@ const Cli = struct {
         return "Hello World!";
     }
 
-    fn hn_top(hn_client: *tk.hackernews.Client, arena: std.mem.Allocator, limit: ?u8) ![]const tk.hackernews.Story {
+    fn hn_top(hn_client: *tk.ext.hackernews.Client, arena: std.mem.Allocator, limit: ?u8) ![]const tk.ext.hackernews.Story {
         return hn_client.getTopStories(arena, limit orelse 10);
     }
 
-    fn gh_repos(gh_client: *tk.github.Client, arena: std.mem.Allocator, owner: []const u8) ![]const tk.github.Repository {
+    fn gh_repos(gh_client: *tk.ext.github.Client, arena: std.mem.Allocator, owner: []const u8) ![]const tk.ext.github.Repository {
         return gh_client.listRepos(arena, owner);
     }
 
