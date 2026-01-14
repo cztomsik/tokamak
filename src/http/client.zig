@@ -1,10 +1,6 @@
 const std = @import("std");
 const meta = @import("../meta.zig");
 
-pub const Config = struct {
-    base_url: ?[]const u8 = null,
-};
-
 pub const RequestOptions = struct {
     base_url: ?[]const u8 = null,
     method: std.http.Method = .GET,
@@ -56,16 +52,12 @@ pub const Response = struct {
 
 pub const Client = struct {
     make_request: *const fn (*Client, std.mem.Allocator, RequestOptions) Error!Response,
-    config: *const Config,
 
     // TODO
     const Error = anyerror;
 
     pub fn request(self: *Client, arena: std.mem.Allocator, options: RequestOptions) !Response {
-        var opts = options;
-        opts.base_url = opts.base_url orelse self.config.base_url;
-
-        return self.make_request(self, arena, opts);
+        return self.make_request(self, arena, options);
     }
 
     pub fn get(self: *Client, arena: std.mem.Allocator, url: []const u8) !Response {
@@ -88,15 +80,13 @@ pub const Client = struct {
 };
 
 pub const StdClient = struct {
-    interface: Client,
     std_client: std.http.Client,
+    interface: Client = .{
+        .make_request = &make_request,
+    },
 
-    pub fn init(allocator: std.mem.Allocator, config: ?*const Config) !@This() {
+    pub fn init(allocator: std.mem.Allocator) !@This() {
         return .{
-            .interface = .{
-                .make_request = &make_request,
-                .config = config orelse &.{},
-            },
             .std_client = .{ .allocator = allocator },
         };
     }
