@@ -1,6 +1,7 @@
 const std = @import("std");
 const meta = @import("meta.zig");
 
+/// Type-erased reference to a dependency.
 pub const Ref = struct {
     tid: meta.TypeId,
     ptr: *anyopaque,
@@ -9,6 +10,7 @@ pub const Ref = struct {
     //       trying to prevent using @typeName(T).ptr in comptime
     is_const: bool,
 
+    /// Creates a `Ref` from any pointer.
     pub fn ref(ptr: anytype) Ref {
         return .{
             .tid = meta.tid(@TypeOf(ptr.*)),
@@ -42,6 +44,7 @@ pub const Injector = struct {
         };
     }
 
+    /// Looks up a dependency by type, returning `null` if not found.
     pub fn find(self: *Injector, comptime T: type) ?T {
         if (comptime T == Injector) {
             // NOTE: This is for safety reasons. Previously, the shape was more

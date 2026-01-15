@@ -24,6 +24,11 @@ pub const Container = struct {
     bundle: *anyopaque,
     deinit_fn: *const fn (*Container) void,
 
+    /// Creates a new container from the given modules.
+    ///
+    /// At comptime, this builds the dependency graph, resolves initialization
+    /// order, and generates a specialized struct. At runtime, it allocates
+    /// the container and initializes all dependencies in the computed order.
     pub fn init(allocator: std.mem.Allocator, comptime mods: []const type) !*Container {
         // TODO: maybe we can now avoid this alloc?
         const self = try allocator.create(Container);
@@ -54,22 +59,33 @@ pub const Container = struct {
         return self;
     }
 
+    /// Destroy the container and all its dependencies (in reverse order).
     pub fn deinit(self: *Container) void {
         self.deinit_fn(self);
     }
 };
 
-const How = union(enum) {
+/// Specifies how a dependency should be initialized.
+///
+/// Used with `Bundle.provide()`, `Bundle.override()`, and `Bundle.mock()` to
+/// control dependency initialization.
+pub const How = union(enum) {
     /// If there is `T.init()`, it will be used either as a factory or as an
     /// initializer; otherwise, if the type is a struct, its fields will be
     /// filled using `injector.get(f.type)`. In other cases, a compile error
     /// will be raised.
     auto,
 
-    /// Use `T.init()` (both factory & inplace are supported)
+    /// Explicitly use `T.init()` method.
+    ///
+    /// Supports both factory style (`fn() T`) and initializer style (`fn(*T) void`).
+    /// Compile error if the type has no `init()` method.
     init,
 
-    /// Init every struct field using `inj.get(f.type)`.
+    /// Initialize by injecting all struct fields.
+    ///
+    /// Each field is resolved using `inj.get(f.type)`. Fields with default values
+    /// use the default if the dependency is not found.
     autowire,
 
     // internal
@@ -198,6 +214,7 @@ const Op = union(enum) {
     }
 };
 
+/// Compile-time dependency graph builder.
 pub const Bundle = struct {
     deps: Buf(Dep),
     compile_hooks: Buf(meta.ComptimeVal), // before the compilation
@@ -205,14 +222,15 @@ pub const Bundle = struct {
     n_inst: usize = 0,
     n_data: usize = 0,
 
-    /// Go through every `M.xxx` field and add it as a dependency (using a
-    /// provided default value or `.auto`).
+    /// Registers all fields of module M as dependencies.
     ///
-    /// If the field type is interface-like (has an `interface` field), it will
-    /// also auto-register a ref to the `&T.interface` field.
+    /// For each field:
+    /// - Fields with default values use `.value(default)`
+    /// - Fields without defaults use `.auto`
+    /// - Fields with an `interface` sub-field auto-register `&T.interface`
     ///
-    /// Finally, if there's a `pub fn M.configure(*Bundle)` defined, it will be
-    /// called (may recur). This is where you can define extra refs, register
+    /// If there's a `pub fn M.configure(*Bundle)` defined, it will be called
+    /// (and it may recur). This is where you can define extra refs, register
     /// init/deinit/compile hooks or even add more dependencies conditionally
     /// and/or be more explicit about how it will be initialized.
     pub fn addModule(self: *Bundle, comptime M: type) void {
@@ -242,8 +260,10 @@ pub const Bundle = struct {
         }
     }
 
-    /// Provide a dependency to the container. It can still be mocked or overridden,
-    /// but any other re-definition will result in a compile error.
+    /// Adds a single dependency with the specified initialization strategy.
+    /// Use this to add dependencies that are not module fields. The dependency
+    /// can still be overridden via `override()` or mocked via `mock()`, but any
+    /// other re-definition will result in a compile error.
     pub fn provide(self: *Bundle, comptime T: type, how: How) void {
         self.insertDep(.{
             .state = self.allocInstance(T),
@@ -261,12 +281,10 @@ pub const Bundle = struct {
         self.override(T, how);
     }
 
-    /// Override how a dependency should be initialized. It works cross-module
-    /// but it should be only used against your own dependencies, otherwise the
-    /// init-order can be hard to follow.
-    ///
-    /// NOTE: DO NOT use this just because you need to do something after the
-    ///       dep is initialized. use `addInitHook()` for that.
+    /// Overrides how an existing dependency should be initialized. Works across
+    /// module boundaries (last one wins). Use this sparingly, as it can make
+    /// initialization order harder to follow. For post-initialization logic,
+    /// prefer `addInitHook()` instead.
     pub fn override(self: *Bundle, comptime T: type, how: How) void {
         self.insertDep(.{
             .state = .override,
@@ -275,27 +293,30 @@ pub const Bundle = struct {
         });
     }
 
-    /// Expose a reference to `&T.field`. Use this if you need to inject ptr to some
-    /// sub-part of your struct.
+    /// Adds a reference to a struct field as a separate dependency. Use this if
+    /// you need to inject ptr to some sub-part of your struct.
     pub fn expose(self: *Bundle, comptime T: type, comptime field: []const u8) void {
         // TODO: would be great, if we could just write the ref, without any data overhead
         //       also, should this still be part of the regular unique/override chain?
         self.provide(*@FieldType(T, field), .{ .fref = .{ T, field } });
     }
 
-    /// Call this `fn(*Bundle)` later, but still in **comptime**, right before
-    /// the compilation is performed. This can be used, i.e., for walking the
+    /// Registers a function to be called during comptime, when all the modules
+    /// are added and configured but before any dependency resolution. Can be
+    /// used for validation and post-processing, i.e., for walking the
     /// `[]const Route` tree and checking if we have all the deps available.
     pub fn addCompileHook(self: *Bundle, comptime fun: anytype) void {
         self.compile_hooks.push(.wrap(fun));
     }
 
-    /// Call this function as soon as all its deps are ready.
+    /// Registers a function to be called during container initialization, as
+    /// soon as all its deps are ready.
     pub fn addInitHook(self: *Bundle, comptime fun: anytype) void {
         self.runtime_hooks.push(.{ .kind = .init, .fun = .wrap(fun) });
     }
 
-    /// Call this function right before any of its deps go away.
+    /// Registers a function to be called right before any of its deps are
+    /// cleaned up. Executes in reverse order of init hooks.
     pub fn addDeinitHook(self: *Bundle, comptime fun: anytype) void {
         self.runtime_hooks.push(.{ .kind = .deinit, .fun = .wrap(fun) });
     }
@@ -405,6 +426,7 @@ pub const Bundle = struct {
         return buf.finish();
     }
 
+    /// Finds an existing dependency by type. Matches by base type (T.*).
     pub fn findDep(self: *Bundle, comptime T: type) ?*Dep {
         // Whenever we look for uniqueness or for dep tracking, we want to use base types
         const expected = meta.Deref(T);
