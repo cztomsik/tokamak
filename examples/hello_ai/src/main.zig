@@ -1,4 +1,4 @@
-// llama-server -hf Qwen/Qwen3-8B-GGUF:Q8_0 --jinja --reasoning-format deepseek -ngl 99 -fa --temp 0.6 --top-k 20 --top-p 0.95 --min-p 0
+// llama-server -hf Qwen/Qwen3-8B-GGUF:Q8_0 --jinja --reasoning-format deepseek -ngl 99 -fa on --temp 0.6 --top-k 20 --top-p 0.95 --min-p 0
 // TODO: llama-server --jinja -hf unsloth/gemma-3-4b-it-GGUF:Q4_K_XL
 
 const std = @import("std");
@@ -6,7 +6,6 @@ const tk = @import("tokamak");
 
 const Config = struct {
     sendmail: tk.sendmail.Config = .{},
-    http_client: tk.http.ClientConfig = .{},
     ai_client: tk.ai.ClientConfig = .{
         .base_url = "http://localhost:8080/v1/",
     },
