@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "docs:build": "node build_docs.js"
+    "docs:build": "node docs/build_docs.js"
   },
   "dependencies": {
     "marked": "^15.0.0"

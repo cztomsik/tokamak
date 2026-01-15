@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync, readdirSync, mkdirSync, cpSync, rmSync, existsSync } from 'fs';
 import { join, basename, dirname, relative } from 'path';
 import { marked } from 'marked';
+import { parse } from './zig-parser.js';
 
 const DOCS_DIR = 'docs';
 const DIST_DIR = 'docs/dist';
@@ -11,10 +12,6 @@ const SECTIONS = {
   guide: {
     title: 'Guide',
     order: ['getting-started', 'server', 'routing', 'dependency-injection', 'middlewares', 'examples', 'terminal', 'time']
-  },
-  reference: {
-    title: 'Reference',
-    order: ['index', 'server', 'routing', 'dependency-injection', 'cli', 'tui', 'monitoring', 'time']
   },
   examples: {
     title: 'Examples',
@@ -37,81 +34,22 @@ function findZigFiles(dir, files = []) {
 }
 
 function parseZigFile(filePath) {
+  console.log('---', filePath)
   const content = readFileSync(filePath, 'utf-8');
-  const lines = content.split('\n');
+  const ast = parse(content);
   const items = [];
-  let docComment = [];
 
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const trimmed = line.trim();
-
-    if (trimmed.startsWith('///')) {
-      docComment.push(trimmed.slice(3).trim());
-      continue;
-    }
-
-    if (trimmed.startsWith('pub ')) {
-      const item = parseZigDeclaration(trimmed, docComment);
-      if (item) items.push(item);
-    }
-
-    if (!trimmed.startsWith('///')) {
-      docComment = [];
+  // Flatten nested structure, only include pub items
+  function flatten(nodes, prefix = '') {
+    for (const node of nodes) {
+      const name = prefix ? `${prefix}.${node.name}` : node.name;
+      items.push({ ...node, name });
+      if (node.children) flatten(node.children, name);
     }
   }
+  flatten(ast);
 
   return items;
-}
-
-function parseZigDeclaration(line, docComment) {
-  const fnMatch = line.match(/^pub fn\s+(\w+)\s*\(([^)]*)\)/);
-  if (fnMatch) {
-    const afterParen = line.slice(line.indexOf(')') + 1);
-    const retMatch = afterParen.match(/\s*([^{]+)/);
-    return {
-      kind: 'fn',
-      name: fnMatch[1],
-      params: fnMatch[2].trim(),
-      returns: retMatch ? retMatch[1].trim() : '',
-      doc: docComment.join('\n')
-    };
-  }
-
-  const structMatch = line.match(/^pub const\s+(\w+)\s*=\s*struct/);
-  if (structMatch) {
-    return { kind: 'struct', name: structMatch[1], doc: docComment.join('\n') };
-  }
-
-  const enumMatch = line.match(/^pub const\s+(\w+)\s*=\s*enum/);
-  if (enumMatch) {
-    return { kind: 'enum', name: enumMatch[1], doc: docComment.join('\n') };
-  }
-
-  const unionMatch = line.match(/^pub const\s+(\w+)\s*=\s*union/);
-  if (unionMatch) {
-    return { kind: 'union', name: unionMatch[1], doc: docComment.join('\n') };
-  }
-
-  const constMatch = line.match(/^pub const\s+(\w+)\s*=\s*(.+)/);
-  if (constMatch && !constMatch[2].startsWith('@import')) {
-    return {
-      kind: 'const',
-      name: constMatch[1],
-      value: constMatch[2].replace(/;$/, '').trim(),
-      doc: docComment.join('\n')
-    };
-  }
-
-  return null;
-}
-
-function escapeHtml(str) {
-  return str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
 }
 
 function makeAnchorId(filePath) {
@@ -134,14 +72,14 @@ function buildApiDocs(template, nav) {
       struct: items.filter(i => i.kind === 'struct').length,
       enum: items.filter(i => i.kind === 'enum').length,
       union: items.filter(i => i.kind === 'union').length,
-      const: items.filter(i => i.kind === 'const').length,
+      opaque: items.filter(i => i.kind === 'opaque').length,
     };
     const badges = [];
     if (counts.fn) badges.push(`<span class="badge fn">${counts.fn} fn</span>`);
     if (counts.struct) badges.push(`<span class="badge struct">${counts.struct} struct</span>`);
     if (counts.enum) badges.push(`<span class="badge enum">${counts.enum} enum</span>`);
     if (counts.union) badges.push(`<span class="badge union">${counts.union} union</span>`);
-    if (counts.const) badges.push(`<span class="badge const">${counts.const} const</span>`);
+    if (counts.opaque) badges.push(`<span class="badge opaque">${counts.opaque} opaque</span>`);
     return `<li><a href="#${anchorId}">${relativePath}</a> ${badges.join(' ')}</li>`;
   }).join('\n');
 
@@ -150,36 +88,17 @@ function buildApiDocs(template, nav) {
     const relativePath = relative(SRC_DIR, file);
     const anchorId = makeAnchorId(relativePath);
     const itemsHtml = items.map(item => {
-      const docHtml = item.doc ? `<p class="api-doc">${escapeHtml(item.doc)}</p>` : '';
-
       switch (item.kind) {
         case 'fn':
-          return `<div class="api-item fn">
-            <code class="signature">pub fn <strong>${item.name}</strong>(${item.params})${item.returns ? ' ' + item.returns : ''}</code>
-            ${docHtml}
-          </div>`;
-        case 'struct':
-          return `<div class="api-item struct">
-            <code class="signature">pub const <strong>${item.name}</strong> = struct</code>
-            ${docHtml}
-          </div>`;
-        case 'enum':
-          return `<div class="api-item enum">
-            <code class="signature">pub const <strong>${item.name}</strong> = enum</code>
-            ${docHtml}
-          </div>`;
-        case 'union':
-          return `<div class="api-item union">
-            <code class="signature">pub const <strong>${item.name}</strong> = union</code>
-            ${docHtml}
-          </div>`;
-        case 'const':
-          return `<div class="api-item const">
-            <code class="signature">pub const <strong>${item.name}</strong> = ${item.value}</code>
-            ${docHtml}
+          return `<div class="api-item ${item.kind}">
+          <div class="api-decl">pub fn <strong>${item.name}</strong>(${item.params}) ${item.ret}</div>
+          ${item.doc && `<div class="api-doc">${marked(item.doc)}</div>`}
           </div>`;
         default:
-          return '';
+          return `<div class="api-item ${item.kind}">
+          <div class="api-decl">pub const <strong>${item.name}</strong> = ${item.kind} { ${item.body} }</div>
+          ${item.doc && `<div class="api-doc">${marked(item.doc)}</div>`}
+          </div>`;
       }
     }).join('\n');
 
@@ -436,7 +355,7 @@ function buildNav(pages) {
   }
 
   // Add API link
-  html += `<a href="${BASE_PATH}/api/" class="nav-link">API</a>\n`;
+  html += `<a href="${BASE_PATH}/api/" class="nav-link">API Reference</a>\n`;
 
   html += '</nav>';
   return html;

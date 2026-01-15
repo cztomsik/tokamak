@@ -65,7 +65,7 @@
     }
 
     main {
-      @apply flex-1 max-w-3xl p-6 md:p-8;
+      @apply flex-1 max-w-4xl p-6 md:p-8;
     }
 
     h1, h2, h3, h4 { @apply mt-6 mb-2 leading-tight font-semibold; }
@@ -201,31 +201,16 @@
     .badge.union { @apply bg-purple-400; }
     .badge.const { @apply bg-green-500; }
 
-    .api-item {
-      @apply my-3 p-3 bg-gray-50 dark:bg-gray-800 rounded border-l-4 border-gray-300 dark:border-gray-600;
-    }
-
-    .api-item.fn { @apply border-teal-500; }
+    .api-item { @apply flex flex-col border-l-2 my-4; }
+    .api-item.fn { @apply border-blue-500; }
     .api-item.struct { @apply border-red-400; }
     .api-item.enum { @apply border-yellow-500; }
     .api-item.union { @apply border-purple-400; }
     .api-item.const { @apply border-green-500; }
-
-    .api-item .signature {
-      @apply block font-mono text-sm whitespace-pre-wrap break-words;
-    }
-
-    .api-item .signature strong {
-      @apply text-blue-600 dark:text-blue-400;
-    }
-
-    .api-doc {
-      @apply mt-2 mb-0 text-gray-500 dark:text-gray-400 text-sm whitespace-pre-wrap;
-    }
-
-    nav .nav-link {
-      @apply block mt-4 font-semibold;
-    }
+    .api-doc { @apply px-4 }
+    .api-doc * { @apply bg-transparent text-sm/5 text-gray-600 dark:text-gray-300 border-none list-disc }
+    .api-doc :is(h1, h2, h3, h4) { @apply p-0 my-0; }
+    .api-decl { @apply bg-gray-100 dark:bg-gray-800 w-full overflow-x-auto whitespace-pre text-sm font-mono px-4 py-2; }
   </style>
 </head>
 <body>
