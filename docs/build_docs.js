@@ -67,20 +67,7 @@ function buildApiDocs(template, nav) {
   const tocHtml = fileData.map(({ file, items }) => {
     const relativePath = relative(SRC_DIR, file);
     const anchorId = makeAnchorId(relativePath);
-    const counts = {
-      fn: items.filter(i => i.kind === 'fn').length,
-      struct: items.filter(i => i.kind === 'struct').length,
-      enum: items.filter(i => i.kind === 'enum').length,
-      union: items.filter(i => i.kind === 'union').length,
-      opaque: items.filter(i => i.kind === 'opaque').length,
-    };
-    const badges = [];
-    if (counts.fn) badges.push(`<span class="badge fn">${counts.fn} fn</span>`);
-    if (counts.struct) badges.push(`<span class="badge struct">${counts.struct} struct</span>`);
-    if (counts.enum) badges.push(`<span class="badge enum">${counts.enum} enum</span>`);
-    if (counts.union) badges.push(`<span class="badge union">${counts.union} union</span>`);
-    if (counts.opaque) badges.push(`<span class="badge opaque">${counts.opaque} opaque</span>`);
-    return `<li><a href="#${anchorId}">${relativePath}</a> ${badges.join(' ')}</li>`;
+    return `<li><a href="#${anchorId}">${relativePath}</a> <span class="badge bg-gray-400 dark:bg-gray-900">${items.length}</span></li>`;
   }).join('\n');
 
   // Generate sections
@@ -92,6 +79,11 @@ function buildApiDocs(template, nav) {
         case 'fn':
           return `<div class="api-item ${item.kind}">
           <div class="api-decl">pub fn <strong>${item.name}</strong>(${item.params}) ${item.ret}</div>
+          ${item.doc && `<div class="api-doc">${marked(item.doc)}</div>`}
+          </div>`;
+        case 'export':
+          return `<div class="api-item ${item.kind}">
+          <div class="api-decl">pub const <strong>${item.name}</strong> = ${item.value}</div>
           ${item.doc && `<div class="api-doc">${marked(item.doc)}</div>`}
           </div>`;
         default:

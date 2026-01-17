@@ -180,7 +180,7 @@
     }
 
     .api-toc ul {
-      @apply list-none p-0 m-0 columns-2 gap-4 max-h-64 overflow-y-auto;
+      @apply list-none p-0 m-0 columns-2 md:columns-3 gap-4 max-h-64 overflow-y-auto;
     }
 
     .api-toc li {
@@ -194,12 +194,6 @@
     .badge {
       @apply inline-block text-xs px-1.5 py-0.5 rounded ml-1 text-white;
     }
-
-    .badge.fn { @apply bg-teal-500; }
-    .badge.struct { @apply bg-red-400; }
-    .badge.enum { @apply bg-yellow-500 text-gray-900; }
-    .badge.union { @apply bg-purple-400; }
-    .badge.const { @apply bg-green-500; }
 
     .api-item { @apply flex flex-col border-l-2 my-4; }
     .api-item.fn { @apply border-blue-500; }
