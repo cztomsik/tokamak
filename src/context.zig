@@ -9,10 +9,15 @@ const Schema = @import("schema.zig").Schema;
 const parseValue = @import("parse.zig").parseValue;
 const log = std.log.scoped(.tokamak);
 
+/// Function signature for route handlers.
 pub const Handler = fn (*Context) anyerror!void;
 
+/// Function signature for custom error handlers.
 pub const ErrorHandler = fn (*Context, err: anyerror) anyerror!void;
 
+/// Request context for middleware and advanced handlers. Note that most route
+/// handlers should inject dependencies directly (e.g., `*tk.Request`,
+/// `*tk.Response`) instead.
 pub const Context = struct {
     server: *Server,
     allocator: std.mem.Allocator,
@@ -88,6 +93,8 @@ pub const Context = struct {
         self.res.header("set-cookie", buf.items);
     }
 
+    /// Send a response. Accepts strings, JSON-serializable values, errors, or
+    /// types with a custom `sendResponse` method (like `EventStream`).
     pub fn send(self: *Context, res: anytype) !void {
         self.responded = true;
 
@@ -143,6 +150,7 @@ pub const Context = struct {
         self.res.header("location", url);
     }
 
+    /// Continue to the next matching route. Used by middleware to pass control.
     pub fn next(self: *Context) !void {
         for (self.current.children) |route| {
             if (route.match(self.req)) |params| {
@@ -160,6 +168,7 @@ pub const Context = struct {
         }
     }
 
+    /// Continue with additional dependencies available for injection.
     pub fn nextScoped(self: *Context, ctx: anytype) !void {
         const prev = self.injector;
         defer self.injector = prev;
@@ -226,6 +235,7 @@ pub fn EventStream(comptime T: type) type {
     };
 }
 
+/// Options for `Context.setCookie()`.
 pub const CookieOptions = struct {
     domain: ?[]const u8 = null,
     max_age: ?u32 = null,
@@ -233,6 +243,7 @@ pub const CookieOptions = struct {
     secure: bool = false,
 };
 
+/// Map well-known errors to HTTP status codes. Returns 500 for unknown errors.
 pub fn getErrorStatus(e: anyerror) u16 {
     return switch (e) {
         error.BadRequest => 400,

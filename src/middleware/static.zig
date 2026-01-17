@@ -11,10 +11,14 @@ const E: std.StaticStringMap([]const u8) = if (builtin.mode == .Debug) .{} else 
     break :kvs &res;
 });
 
+/// Options for serving a static directory.
 const DirOptions = struct {
+    /// File to serve for directory requests. Set to null to disable.
     index: ?[]const u8 = "index.html",
 };
 
+/// Serve static files from a directory. In debug mode, files are read from disk.
+/// In release builds, files can be embedded if enabled via `tk.setup()` in build.zig.
 pub fn dir(comptime path: []const u8, comptime options: DirOptions) Route {
     const H = struct {
         pub fn handleDir(ctx: *Context) anyerror!void {
@@ -55,6 +59,7 @@ pub fn dir(comptime path: []const u8, comptime options: DirOptions) Route {
     };
 }
 
+/// Serve a single static file.
 pub fn file(comptime path: []const u8) Route {
     const H = struct {
         pub fn handleFile(ctx: *Context) anyerror!void {

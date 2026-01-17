@@ -7,6 +7,8 @@ const Context = @import("context.zig").Context;
 const Handler = @import("context.zig").Handler;
 const Schema = @import("schema.zig").Schema;
 
+/// Defines an HTTP route with method, path, handler, and optional children.
+/// Use helper methods like `get()`, `post()`, `group()` to build routes.
 pub const Route = struct {
     method: ?httpz.Method = null,
     prefix: ?[]const u8 = null,
@@ -275,10 +277,12 @@ fn routeHandler(comptime m: Route.Metadata, comptime handler: anytype) *const Ha
     return &H.handleRoute;
 }
 
+/// Path parameters extracted from a route match (e.g., `:id` segments).
 pub const Params = struct {
     matches: [16][]const u8 = undefined,
     len: usize = 0,
 
+    /// Match a pattern against a path, extracting parameters. Returns null if no match.
     pub fn match(pattern: []const u8, path: []const u8) ?Params {
         var res = Params{};
         var pattern_parts = std.mem.tokenizeScalar(u8, pattern, '/');

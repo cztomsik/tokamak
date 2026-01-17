@@ -4,8 +4,10 @@ const Injector = @import("injector.zig").Injector;
 const Context = @import("context.zig").Context;
 const Route = @import("route.zig").Route;
 
+/// Configuration for `Server.init()`. Most options are passed through to httpz.
 pub const InitOptions = struct {
     listen: ListenOptions = .{},
+    /// Parent injector for dependency resolution. Set automatically by `tk.app.run()`.
     injector: ?*Injector = null,
     workers: httpz.Config.Worker = .{},
     request: httpz.Config.Request = .{},
@@ -15,6 +17,7 @@ pub const InitOptions = struct {
     websocket: httpz.Config.Websocket = .{},
 };
 
+/// Address and port to listen on.
 pub const ListenOptions = struct {
     hostname: []const u8 = "127.0.0.1",
     port: u16 = 8080,

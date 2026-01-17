@@ -6,9 +6,11 @@ const getErrorStatus = @import("../context.zig").getErrorStatus;
 const Schema = @import("../schema.zig").Schema;
 
 const UiOptions = struct {
+    /// URL to the OpenAPI JSON schema (typically from `swagger.json()`).
     url: []const u8,
 };
 
+/// Serve Swagger UI. Loads the UI from CDN and points it to the schema URL.
 pub fn ui(comptime options: UiOptions) Route {
     const H = struct {
         fn handler(ctx: *Context) anyerror!void {
@@ -44,13 +46,17 @@ pub fn ui(comptime options: UiOptions) Route {
 }
 
 const SchemaOptions = struct {
+    /// API metadata for the OpenAPI schema.
     info: struct {
         title: []const u8,
         version: []const u8 = "1.0.0",
     },
+    /// Routes to document. Defaults to all server routes.
     routes: ?[]const Route = null,
 };
 
+/// Generate OpenAPI 3.0 JSON schema from routes. Extracts path parameters,
+/// request bodies, and response types automatically.
 pub fn json(comptime options: SchemaOptions) Route {
     const H = struct {
         fn handler(ctx: *Context) anyerror!void {
