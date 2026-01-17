@@ -8,11 +8,11 @@ const Injector = @import("injector.zig").Injector;
 const Ref = @import("injector.zig").Ref;
 
 pub const Engine = struct {
+    vtable: *const VTable,
+
     pub const VTable = struct {
         render: *const fn (*Engine, []const u8, std.mem.Allocator, vm.Value) anyerror![]const u8,
     };
-
-    vtable: *const VTable,
 
     pub fn render(self: *Engine, name: []const u8, arena: std.mem.Allocator, data: anytype) ![]const u8 {
         var ctx = vm.Context.init(arena);

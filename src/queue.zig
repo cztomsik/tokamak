@@ -21,6 +21,8 @@ pub const JobOptions = struct {
 };
 
 pub const Queue = struct {
+    vtable: *const VTable,
+
     pub const VTable = struct {
         findJob: *const fn (*Queue, std.mem.Allocator, JobId) anyerror!?JobInfo,
         listJobs: *const fn (*Queue, std.mem.Allocator) anyerror![]const JobInfo,
@@ -28,8 +30,6 @@ pub const Queue = struct {
         startNext: *const fn (*Queue) anyerror!?JobId,
         removeJob: *const fn (*Queue, JobId) anyerror!void,
     };
-
-    vtable: *const VTable,
 
     pub fn push(self: *Queue, name: []const u8, data: []const u8, options: JobOptions) !void {
         _ = try self.submit(name, data, options);

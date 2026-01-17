@@ -7,12 +7,12 @@ pub const Resource = struct {
 };
 
 pub const Loader = struct {
+    vtable: *const VTable,
+
     pub const VTable = struct {
         load: *const fn (*Loader, std.mem.Allocator, []const u8) anyerror!?Resource,
         resolve: *const fn (*Loader, std.mem.Allocator, []const u8) ?[]const u8,
     };
-
-    vtable: *const VTable,
 
     pub fn load(self: *Loader, arena: std.mem.Allocator, path: []const u8) !?Resource {
         return self.vtable.load(self, arena, path);
