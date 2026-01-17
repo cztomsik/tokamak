@@ -43,7 +43,7 @@ function parse(src) {
     return arr.length >= min && [i, n, arr]
   }
 
-  const warn = i => i < toks.length && toks[i][1] !== '}' && [i+1, console.log('unmatched', toks[i], JSON.stringify(src.substr(toks[i][0], 32)))]
+  const warn = i => i < toks.length && toks[i][1] !== '}' && [i+1, 1, console.log('unmatched', toks[i], JSON.stringify(src.substr(toks[i][0], 32)))]
   const id = t('id')
   
   const skip_fn = txt(seq(t('fn'), id, t('('), skip_until(t('}')), t('}')))
