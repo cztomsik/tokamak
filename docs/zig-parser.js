@@ -1,61 +1,73 @@
-// Minimal Zig parser for API docgen - extracts pub decls with doc comments (assuming the code is valid)
-// 100% hand-written, LLMs still suck at this.
-const RE = /\/\/\/ ?(.*)|\/\/! ?(.*)|\/\/ ?(.*)|("[^"]*")|('[^']*')|\b(catch|comptime|const|enum|error|fn|opaque|pub|struct|try|union|var)\b|(@"(?:[^"\\\n]|\\.)*"|@\w+|[a-zA-Z_]\w*)|(\d[\w.]*)|([(){}[\],;:=.?*!<>@&|^~+\-/%])|[ \t\r\n]+|./gy;
+// Minimal Zig parser for the purpose of generating API documentation
+// by Kamil Tomsik (cztomsik)
+const RE = /\/\/\/ ?(.*)|\/\/! ?(.*)|\/\/ ?(.*)|("(?:[^"\\]|\\.)*")|('(?:[^'\\]|\\.)*')|\b(catch|comptime|const|enum|error|fn|inline|opaque|pub|struct|test|try|union|var)\b|(@"(?:[^"\\\n]|\\.)*"|@\w+|[a-zA-Z_]\w*)|(\d[\w.]*)|([(){}[\],;:=.?*!<>@&|^~+\-/%])|[ \t\r\n]+|./gy
 const T = ['doc', 'cdoc', '//', 'str', 'ch', 1, 'id', 'num', 1]
 const C = ['struct', 'enum', 'union', 'opaque']
 
 function tokenize(s) {
-  const tt = [], td = [], ts = [], emit = (t, d, s) => (tt.push(t), td.push(d), ts.push(s))
-  for (let m = RE.lastIndex = 0; m = RE.exec(s);) {
+  const toks = []
+  for (let m, doc = '', d = RE.lastIndex = 0; m = RE.exec(s);) {
     const i = m.findIndex((v, j) => j && v != undefined)
-    if (i >= 1) {
-      const t = T[i - 1], x = m[i]
-      if (t === 'doc' && tt.at(-1) === 'doc') td[td.length - 1] += '\n' + x
-      else emit(t === 1 ?x :t, m[i], m.index)
-    }
+    if (i < 0 || i === 3) continue
+    const t = T[i - 1], k = t === 1 ?m[i] :t
+    if (t === 'doc') { doc += m[i] + '\n'; continue }
+    else (toks.push([m.index, k, m[i], d, doc]), doc = '')
+    if (k === '[' || k === '(' || k === '{') d++
+    if (k === ']' || k === ')' || k === '}') d--
   }
-  return [tt, td, ts]
+  return toks
 }
 
 function parse(src) {
-  const [tt, td, ts] = tokenize(src)
-  let i = 0, d = 0, A = [], S = [[-1, A]]
+  const toks = tokenize(src);
+  let r // shared & re-used
 
-  const adv = () => {
-    switch (tt[i++]) {
-      case '[': case '(': case '{': d++; break
-      case ']': case ')':
-      case '}': if (--d === S.at(-1)[0]) { A = S.pop()[1]; } break
+  const t = k => i => toks[i]?.[1] === k && [i + 1, toks[i][2]]
+  const any = i => i < toks.length && [i + 1, toks[i][1]]
+  const any_of = ks => i => ks.includes(toks[i]?.[1]) && [i + 1, toks[i][1]]
+  const not = p => i => !p(i) && [i + 1, toks[i][1]]
+  const or = (...ps) => i => ps.reduce((r, p) => r || p(i), null)
+  const opt = p => i => p(i) || [i, null]
+  const map = (p, f) => i => (r = p(i)) && [r[0], f(r[1], i)]
+  const txt = p => i => (r = p(i)) && [r[0], src.slice(toks[i][0], toks[r[0]]?.[0]).trim()]
+  const seq = (...ps) => (i, a = []) => ps.every((p) => (r = p(i)) && ((i = r[0]), a.push(r[1]))) && [i, a]
+  const skip_until = p => (i, d = toks[i][3]) => {
+    while (i < toks.length && !((r = p(i)) && toks[i]?.[3] === d)) i++
+    return [i, null]
+  }
+  const rep = (min, max, p, sep = null) => (i, arr = []) => {
+    while (arr.length < max && (r = p(i))) {
+      (i = r[0]), arr.push(r[1])
+      if (sep) if (r = sep(i)) i = r[0]; else break
     }
+    return arr.length >= min && [i, arr]
   }
 
-  const eat = (sp, cl) => {
-    i = sp
-    do { adv() } while (!cl.test(tt[i]))
-    return src.slice(ts[sp+1], ts[i])
-  }
+  const warn = i => i < toks.length && toks[i][1] !== '}' && [i+1, console.log('unmatched', toks[i], JSON.stringify(src.substr(toks[i][0], 32)))]
+  const id = t('id')
+  
+  const skip_fn = txt(seq(t('fn'), id, t('('), skip_until(t('}')), t('}')))
+  const fret = txt(rep(1, 99, not(t('{'))))
+  const fparams = txt(skip_until(t(')')))
+  const fbody = txt(skip_until(t('}')))
+  const pub_fn = seq(t('pub'), opt(t('inline')), t('fn'), id, t('('), fparams, t(')'), fret, t('{'), fbody, t('}'))
+  const api_fn = map(pub_fn, ([,,,name,,params,,ret], i) => ({ kind: 'fn', name, params, ret, doc: toks[i][4] }))
 
-  for (; i < tt.length; adv()) {
-    // console.log(d, i, tt[i], td[i])
-    switch (tt[i]) {
-      case 'const': case 'var': case 'fn':
-        if (tt[i-1] !== 'pub' || tt[i+1] !== 'id') break
-        const name = td[i+1]
-        const doc = tt[i-2] === 'doc' ?td[i-2] :''
+  const skip_decl = txt(seq(any_of(['const', 'var']), id, skip_until(t(';')), t(';')))
+  const skip_test = txt(seq(t('test'), opt(or(id, t('str'))), t('{'), skip_until(t('}')), t('}')))
+  const skip_comptime = txt(seq(t('comptime'), t('{'), skip_until(t('}')), t('}')))
+  const cparams = opt(txt(seq(t('('), skip_until(t(')')), t(')'))))
+  const cfield = txt(seq(id, opt(seq(t(':'), skip_until(t(',')))))) // TODO: or }?
+  const cfields = rep(0, 99, cfield, t(','))
+  const container = seq(any_of(C), cparams, t('{'), cfields, i => items(i), t('}'))
+  const pub_const = seq(t('pub'), t('const'), id, t('='), container, t(';'))
+  const api_type = map(pub_const, ([,,name,,[kind,params,,fields,children]], i) => ({ kind, params, name, fields, doc: toks[i][4], children }))
+  const api_export = seq(t('pub'), skip_decl) // TODO: { kind: "export" } + update build_docs
 
-        if (tt[i+2] === '=' && C.includes(tt[i+3])) {
-          const node = { name, doc, kind: tt[i+=3], children: [] }
-          if (tt[i+1] === '(') node.kind += '(' + eat(i+1, /\)/) + ')' // enum(i32), union(my.F(...).E) etc.
-          node.body = eat(i + 1, /pub|const|var|fn|}/).trim();
-          A.push(node); S.push([d, A]); A = node.children
-        }
-        
-        else if (tt[i+2] === '(') {
-          A.push({ name, doc, kind: 'fn', params: eat(i+2, /\)/), ret: eat(i, /\{/) })
-        }
-    }
-  }
-  return A
+  const item = or(api_fn, skip_fn, api_type, api_export, skip_decl, skip_test, skip_comptime, warn) // TODO: generics (pub fn(...) type)
+  const items = map(rep(0, 999, item), rs => rs.filter(r => r?.kind))
+
+  return (r = items(0)) && r[1]
 }
 
 export { parse, tokenize };

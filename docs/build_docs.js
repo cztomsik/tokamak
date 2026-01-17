@@ -96,7 +96,7 @@ function buildApiDocs(template, nav) {
           </div>`;
         default:
           return `<div class="api-item ${item.kind}">
-          <div class="api-decl">pub const <strong>${item.name}</strong> = ${item.kind} { ${item.body} }</div>
+          <div class="api-decl">pub const <strong>${item.name}</strong> = ${item.kind}${item.params ?? ''} {<div class="pl-8 empty:hidden">${item.fields.join(',\n')}</div>}</div>
           ${item.doc && `<div class="api-doc">${marked(item.doc)}</div>`}
           </div>`;
       }

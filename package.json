@@ -7,5 +7,11 @@
   },
   "dependencies": {
     "marked": "^15.0.0"
+  },
+  "prettier": {
+    "semi": false,
+    "singleQuote": true,
+    "arrowParens": "avoid",
+    "printWidth": 120
   }
 }
