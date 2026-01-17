@@ -20,10 +20,13 @@ fn checkRange(num: anytype, min: @TypeOf(num), max: @TypeOf(num)) void {
     }
 }
 
+/// Units for Time operations (includes time-of-day components).
 pub const TimeUnit = enum { second, minute, hour, day, month, year };
+
+/// Units for Date operations (calendar components only).
 pub const DateUnit = enum { day, month, year };
 
-// https://www.youtube.com/watch?v=0s9F4QWAl-E&t=2120
+/// Returns true if the given year is a leap year in the Gregorian calendar.
 pub fn isLeapYear(year: i32) bool {
     const d: i32 = if (@mod(year, 100) != 0) 4 else 16;
     return (year & (d - 1)) == 0;
@@ -38,6 +41,8 @@ fn daysInMonth(year: i32, month: u8) u8 {
     return 30 | (month ^ (month >> 3));
 }
 
+/// Calendar date (year, month, day) without time-of-day or timezone.
+/// Uses Rata Die algorithm internally for efficient date arithmetic.
 pub const Date = struct {
     year: i32,
     month: u8,
@@ -61,6 +66,7 @@ pub const Date = struct {
         );
     }
 
+    /// Create a date from year, month (1-12), and day (1-31).
     pub fn ymd(year: i32, month: u8, day: u8) Date {
         return .{
             .year = year,
@@ -129,6 +135,7 @@ pub const Date = struct {
         };
     }
 
+    /// Returns day of week (0 = Sunday, 1 = Monday, ..., 6 = Saturday).
     pub fn dayOfWeek(self: Date) u8 {
         const rata_day = date_to_rata(self);
         return @intCast(@mod(rata_day + 3, 7));
@@ -143,13 +150,17 @@ pub const Date = struct {
     }
 };
 
+/// UTC timestamp with second precision, stored as Unix epoch.
+/// Provides fluent API for time manipulation: `Time.now().setHour(10).add(.days, 1)`.
 pub const Time = struct {
     epoch: i64,
 
+    /// Create a Time from a Unix timestamp (seconds since 1970-01-01 00:00:00 UTC).
     pub fn unix(epoch: i64) Time {
         return .{ .epoch = epoch };
     }
 
+    /// Get the current time.
     pub fn now() Time {
         return unix(std.time.timestamp());
     }
