@@ -20,8 +20,11 @@ const yaml = @import("yaml.zig");
 const Injector = @import("injector.zig").Injector;
 const parseValue = @import("parse.zig").parseValue;
 
+/// Controls how command output is formatted (--json, --yaml, or auto-detect).
 pub const OutputFormat = enum { auto, yaml, json };
 
+/// Runtime context for CLI commands. Most handlers won't need this directly
+/// since dependencies and arguments are injected into the handler function.
 pub const Context = struct {
     arena: std.mem.Allocator,
     bin: []const u8,
@@ -38,6 +41,7 @@ pub const Context = struct {
         return parseValue(T, s, self.arena);
     }
 
+    /// Write a result to the output stream in the configured format.
     pub fn output(self: *Context, res: anytype) !void {
         const T = @TypeOf(res);
 
@@ -83,6 +87,7 @@ pub const Context = struct {
     }
 };
 
+/// A CLI command definition with name, description, and handler.
 pub const Command = struct {
     name: []const u8,
     description: []const u8,
@@ -91,6 +96,8 @@ pub const Command = struct {
 
     pub const usage: Command = cmd0("usage", "Show this help message", printUsage);
 
+    /// Create a command with explicit argument count. Dependencies are injected,
+    /// remaining parameters are parsed from command-line arguments.
     pub fn cmd(comptime name: []const u8, comptime description: []const u8, comptime fun: anytype, comptime n_args: usize) Command {
         const info = @typeInfo(@TypeOf(fun));
         if (info != .@"fn") @compileError("Command handler must be a function");
@@ -136,23 +143,28 @@ pub const Command = struct {
         };
     }
 
+    /// Create a command with no arguments (dependencies only).
     pub fn cmd0(comptime name: []const u8, comptime description: []const u8, comptime fun: anytype) Command {
         return cmd(name, description, fun, 0);
     }
 
+    /// Create a command with one argument.
     pub fn cmd1(comptime name: []const u8, comptime description: []const u8, comptime fun: anytype) Command {
         return cmd(name, description, fun, 1);
     }
 
+    /// Create a command with two arguments.
     pub fn cmd2(comptime name: []const u8, comptime description: []const u8, comptime fun: anytype) Command {
         return cmd(name, description, fun, 2);
     }
 
+    /// Create a command with three arguments.
     pub fn cmd3(comptime name: []const u8, comptime description: []const u8, comptime fun: anytype) Command {
         return cmd(name, description, fun, 3);
     }
 };
 
+/// Print usage information and available commands.
 pub fn printUsage(ctx: *Context, cmds: []const Command) !void {
     try ctx.out.print("Usage: {s} [--json|--yaml] <command> [args...]\n\n", .{ctx.bin});
 
@@ -175,6 +187,7 @@ pub fn printUsage(ctx: *Context, cmds: []const Command) !void {
     }
 }
 
+/// CLI entry point. Use with `tk.app.run(tk.cli.run, &.{YourModule})`.
 pub fn run(inj: *Injector, allocator: std.mem.Allocator, cmds: []const Command) !void {
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
