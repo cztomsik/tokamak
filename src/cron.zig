@@ -134,6 +134,7 @@ test Cron {
     defer mem_queue.deinit();
 
     const queue = &mem_queue.interface;
+    defer queue.clear() catch unreachable;
 
     var cron = Cron.init(testing.allocator, queue, .{});
     defer cron.deinit();

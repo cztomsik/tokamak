@@ -127,7 +127,7 @@ pub const ShmQueue = struct {
         // TODO: config
         const N_PAGES = 2;
         const size = std.mem.alignForward(usize, N_PAGES * @sizeOf(Page), std.heap.page_size_min);
-        const shm = try util.Shm.open("/tk_queue", size);
+        const shm = try util.Shm.open("/tk_queue2", size);
 
         var self: ShmQueue = .{
             .shm = shm,
