@@ -163,7 +163,7 @@ test {
     defer thread.join();
     defer server.stop();
 
-    var std_client = try StdClient.init(std.testing.allocator, &.{ .base_url = "http://localhost:8080/" });
+    var std_client = try StdClient.init(std.testing.allocator);
     defer std_client.deinit();
 
     const client = &std_client.interface;
@@ -171,7 +171,7 @@ test {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
 
-    const res1 = try client.request(arena.allocator(), .{ .url = "/ping" });
+    const res1 = try client.request(arena.allocator(), .{ .url = "http://localhost:8080/ping" });
     try std.testing.expectEqual(.ok, res1.status);
     try std.testing.expectEqualStrings("pong", res1.body);
 }

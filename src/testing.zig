@@ -243,10 +243,7 @@ pub const MockClient = struct {
         const self = try gpa.create(MockClient);
 
         self.* = .{
-            .interface = .{
-                .make_request = &make_request,
-                .config = &.{},
-            },
+            .interface = .{ .make_request = &make_request },
             .allocator = gpa,
             .fixtures = .{},
         };
