@@ -29,6 +29,7 @@ pub const Queue = struct {
         submit: *const fn (*Queue, JobInfo) anyerror!?JobId,
         startNext: *const fn (*Queue) anyerror!?JobId,
         removeJob: *const fn (*Queue, JobId) anyerror!void,
+        clear: *const fn (*Queue) anyerror!void,
     };
 
     pub fn push(self: *Queue, name: []const u8, data: []const u8, options: JobOptions) !void {
@@ -62,6 +63,10 @@ pub const Queue = struct {
     pub fn removeJob(self: *Queue, id: JobId) !void {
         return self.vtable.removeJob(self, id);
     }
+
+    pub fn clear(self: *Queue) !void {
+        return self.vtable.clear(self);
+    }
 };
 
 pub const ShmQueue = struct {
@@ -72,6 +77,7 @@ pub const ShmQueue = struct {
             .submit = submit,
             .startNext = startNext,
             .removeJob = removeJob,
+            .clear = clear,
         },
     },
     time: *const fn () i64 = std.time.timestamp,
@@ -221,6 +227,13 @@ pub const ShmQueue = struct {
         self.mutex.lock();
         defer self.mutex.unlock();
         self.jobs.remove(@bitCast(id));
+    }
+
+    fn clear(queue: *Queue) !void {
+        const self: *ShmQueue = @fieldParentPtr("interface", queue);
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        self.jobs.reset();
     }
 };
 
