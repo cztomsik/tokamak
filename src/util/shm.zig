@@ -85,10 +85,10 @@ pub const Shm = struct {
 };
 
 test {
-    var shm = try Shm.open("/test123", 3);
+    var shm = try Shm.open("/test123", std.heap.page_size_min);
     defer shm.deinit();
 
-    try std.testing.expectEqualSlices(u8, &.{ 0, 0, 0 }, shm.data);
+    try std.testing.expectEqualSlices(u8, &.{ 0, 0, 0 }, shm.data[0..3]);
 
     const pid = try std.posix.fork();
     if (pid == 0) {
