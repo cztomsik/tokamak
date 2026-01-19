@@ -457,7 +457,7 @@ pub const Bundle = struct {
             unreachable;
         } else {
             self.deps.push(dep);
-            @setEvalBranchQuota(10 * self.deps.len * self.deps.len);
+            @setEvalBranchQuota(20 * self.deps.len * self.deps.len);
         }
     }
 
