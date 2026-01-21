@@ -5,12 +5,12 @@ const c = @cImport({
     @cInclude("fcntl.h");
 });
 
-/// Cross-process mutex which works reliably on Linux/macOS even after crash
+/// Cross-process mutex which works reliably on Linux/macOS even after crash.
+/// Also thread-safe within a single process via std.Thread.Mutex.
 pub const Mutex = struct {
     fd: std.fs.File,
+    thread_mutex: std.Thread.Mutex = .{},
 
-    // TODO: This is Nth attempt, and it still doesn't feel right, files have
-    // their own issues and maybe ShmQueue should be lockless anyway?
     pub fn init(name: [:0]const u8) !Mutex {
         var buf: [256]u8 = undefined;
         const tmp_path = try std.fmt.bufPrintZ(&buf, "/tmp/{s}.lock", .{std.mem.trimLeft(u8, name, "/")});
@@ -25,24 +25,31 @@ pub const Mutex = struct {
     }
 
     pub fn lock(self: *Mutex) void {
-        self.fd.lock(.exclusive) catch @panic("TODO");
+        // Thread mutex first (same-process threads)
+        self.thread_mutex.lock();
+
+        // Then flock() for cross-process (this should never fail and there's little we can do so we panic)
+        self.fd.lock(.exclusive) catch {
+            self.thread_mutex.unlock();
+            @panic("flock() failed");
+        };
     }
 
     pub fn unlock(self: *Mutex) void {
         self.fd.unlock();
+        self.thread_mutex.unlock();
     }
 };
 
 pub const Shm = struct {
-    name: [:0]const u8,
     fd: std.fs.File,
     data: []align(std.heap.page_size_min) u8,
     created: bool,
 
-    // TODO: name could be runtime but then we should probably inline it in the
-    // mmapped area, and maybe also add lock, refcounting, and IDK what else...
-    // so maybe let's stick with comptime for now
-    pub fn open(comptime name: [:0]const u8, size: usize) !Shm {
+    /// Opens or creates a shared memory segment. The `size` must be page-aligned.
+    /// Returns with `created = true` if this call created the segment (caller
+    /// should initialize it), or `created = false` if it already existed.
+    pub fn open(name: [:0]const u8, size: usize) !Shm {
         std.debug.assert(size % std.heap.page_size_min == 0);
 
         var fd: std.fs.File = .{ .handle = c.shm_open(name, c.O_RDWR | c.O_CREAT | c.O_EXCL, @as(c.mode_t, 0o666)) };
@@ -66,27 +73,32 @@ pub const Shm = struct {
         }
 
         return .{
-            .name = name,
             .fd = fd,
             .data = try std.posix.mmap(null, size, std.posix.PROT.READ | std.posix.PROT.WRITE, .{ .TYPE = .SHARED }, fd.handle, 0),
             .created = created,
         };
     }
 
+    /// Unmaps and closes the shared memory segment.
+    ///
+    /// NOTE: This does NOT unlink the segment - it persists in the system until
+    /// explicitly unlinked via `Shm.unlink()` or until system reboot. This is
+    /// intentional: it allows other processes to continue using the segment and
+    /// preserves data across process restarts.
     pub fn deinit(self: *Shm) void {
         std.posix.munmap(self.data);
-        if (self.created) self.unlink();
         self.fd.close();
     }
 
-    pub fn unlink(self: *Shm) void {
-        _ = c.shm_unlink(self.name.ptr);
+    pub fn unlink(name: [:0]const u8) void {
+        _ = c.shm_unlink(name.ptr);
     }
 };
 
 test {
     var shm = try Shm.open("/test123", std.heap.page_size_min);
     defer shm.deinit();
+    defer Shm.unlink("/test123");
 
     try std.testing.expectEqualSlices(u8, &.{ 0, 0, 0 }, shm.data[0..3]);
 
