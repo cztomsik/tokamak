@@ -113,11 +113,14 @@ pub const Cron = struct {
         for (self.jobs.items) |*job| {
             if (job.next.epoch <= now.epoch) {
                 var buf: [20]u8 = undefined;
+                const key = try std.fmt.bufPrint(&buf, "{d}", .{job.next.epoch});
 
                 log.debug("scheduling {s} {s}", .{ job.name, job.data });
-                try self.queue.push(job.name, job.data, .{
-                    .key = try std.fmt.bufPrint(&buf, "{d}", .{job.next.epoch}),
-                    .schedule_at = job.next.epoch,
+                _ = try self.queue.enqueue(.{
+                    .name = job.name,
+                    .data = job.data,
+                    .key = key,
+                    .scheduled_at = job.next.epoch,
                 });
 
                 job.next = job.schedule.next(now);
@@ -130,10 +133,11 @@ pub const Cron = struct {
 };
 
 test Cron {
-    var mem_queue = try ShmQueue.init();
-    defer mem_queue.deinit();
+    var shm_queue: ShmQueue = undefined;
+    try shm_queue.init(.{ .name = "cron_q", .capacity = 10 });
+    defer shm_queue.deinit();
 
-    const queue = &mem_queue.interface;
+    const queue = &shm_queue.interface;
     defer queue.clear() catch unreachable;
 
     var cron = Cron.init(testing.allocator, queue, .{});
@@ -142,20 +146,20 @@ test Cron {
     testing.time.value = 0;
     cron.time = &testing.time.getTime;
 
-    // Only used for listing
+    // Only needed for listing
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
 
     const id = try cron.schedule("* * * * *", "bar", "baz");
 
-    try testing.expectTable(try queue.listJobs(arena.allocator()),
+    try testing.expectTable(try queue.list(arena.allocator()),
         \\| name | key |
         \\|------|-----|
     );
 
     _ = try cron.tick(.unix(60));
 
-    try testing.expectTable(try queue.listJobs(arena.allocator()),
+    try testing.expectTable(try queue.list(arena.allocator()),
         \\| name | key |
         \\|------|-----|
         \\| bar  | 60  |
@@ -163,7 +167,7 @@ test Cron {
 
     _ = try cron.tick(.unix(120));
 
-    try testing.expectTable(try queue.listJobs(arena.allocator()),
+    try testing.expectTable(try queue.list(arena.allocator()),
         \\| name | key |
         \\|------|-----|
         \\| bar  | 60  |
@@ -173,7 +177,7 @@ test Cron {
     cron.unschedule(id);
     _ = try cron.tick(.unix(180));
 
-    try testing.expectTable(try queue.listJobs(arena.allocator()),
+    try testing.expectTable(try queue.list(arena.allocator()),
         \\| name | key |
         \\|------|-----|
         \\| bar  | 60  |

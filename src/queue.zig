@@ -2,144 +2,170 @@ const std = @import("std");
 const util = @import("util.zig");
 const testing = @import("testing.zig");
 
-pub const JobId = u64; // enum(u64) { _ }; https://github.com/ziglang/zig/issues/18462#issuecomment-1937095524
+const Shm = util.Shm;
+const ShmMutex = util.ShmMutex;
+
+pub const JobId = u64;
 
 pub const JobInfo = struct {
     id: ?JobId = null,
     name: []const u8,
-    key: ?[]const u8,
+    /// Empty string means no key (no deduplication).
+    key: []const u8 = "",
     data: []const u8,
-    scheduled_at: ?i64,
-    started_at: ?i64,
+    scheduled_at: ?i64 = null,
 };
 
-pub const JobOptions = struct {
-    /// Optional key for deduplication.
-    key: ?[]const u8 = null,
-    /// Optional timestamp to schedule the job.
-    schedule_at: ?i64 = null,
+pub const Stats = struct {
+    enqueued: u64 = 0,
+    dequeued: u64 = 0,
 };
 
 pub const Queue = struct {
     vtable: *const VTable,
 
     pub const VTable = struct {
-        findJob: *const fn (*Queue, std.mem.Allocator, JobId) anyerror!?JobInfo,
-        listJobs: *const fn (*Queue, std.mem.Allocator) anyerror![]const JobInfo,
-        submit: *const fn (*Queue, JobInfo) anyerror!?JobId,
-        startNext: *const fn (*Queue) anyerror!?JobId,
-        removeJob: *const fn (*Queue, JobId) anyerror!void,
+        enqueue: *const fn (*Queue, JobInfo) anyerror!?JobId,
+        dequeue: *const fn (*Queue, std.mem.Allocator) anyerror!?JobInfo,
+        remove: *const fn (*Queue, JobId) anyerror!void,
         clear: *const fn (*Queue) anyerror!void,
+        len: *const fn (*Queue) anyerror!usize,
+        stats: *const fn (*Queue) anyerror!Stats,
+        list: *const fn (*Queue, std.mem.Allocator) anyerror![]JobInfo,
     };
 
-    pub fn push(self: *Queue, name: []const u8, data: []const u8, options: JobOptions) !void {
-        _ = try self.submit(name, data, options);
+    pub fn len(self: *Queue) !usize {
+        return self.vtable.len(self);
     }
 
-    pub fn submit(self: *Queue, name: []const u8, data: []const u8, options: JobOptions) !?JobId {
-        // NOTE: This is only transient struct and the backend MUST copy whatever it needs
-        return self.vtable.submit(self, .{
-            .id = null,
-            .name = name,
-            .key = options.key,
-            .data = data,
-            .scheduled_at = options.schedule_at,
-            .started_at = null,
-        });
+    pub fn enqueue(self: *Queue, job: JobInfo) !?JobId {
+        return self.vtable.enqueue(self, job);
     }
 
-    pub fn findJob(self: *Queue, arena: std.mem.Allocator, id: JobId) !?JobInfo {
-        return self.vtable.findJob(self, arena, id);
+    pub fn dequeue(self: *Queue, arena: std.mem.Allocator) !?JobInfo {
+        return self.vtable.dequeue(self, arena);
     }
 
-    pub fn listJobs(self: *Queue, arena: std.mem.Allocator) ![]const JobInfo {
-        return self.vtable.listJobs(self, arena);
-    }
-
-    pub fn startNext(self: *Queue) !?JobId {
-        return self.vtable.startNext(self);
-    }
-
-    pub fn removeJob(self: *Queue, id: JobId) !void {
-        return self.vtable.removeJob(self, id);
+    pub fn remove(self: *Queue, id: JobId) !void {
+        return self.vtable.remove(self, id);
     }
 
     pub fn clear(self: *Queue) !void {
         return self.vtable.clear(self);
     }
+
+    pub fn list(self: *Queue, arena: std.mem.Allocator) ![]JobInfo {
+        return self.vtable.list(self, arena);
+    }
+
+    pub fn stats(self: *Queue) !Stats {
+        return self.vtable.stats(self);
+    }
 };
 
-pub const ShmQueue = struct {
-    interface: Queue = .{
-        .vtable = &.{
-            .findJob = findJob,
-            .listJobs = listJobs,
-            .submit = submit,
-            .startNext = startNext,
-            .removeJob = removeJob,
-            .clear = clear,
-        },
-    },
-    time: *const fn () i64 = std.time.timestamp,
-    mutex: util.ShmMutex,
-    shm: util.Shm, // [...slotmap pages]
-    jobs: util.SlotMap(Node),
+pub const ShmQueueConfig = struct {
+    name: []const u8 = "tk_queue",
+    capacity: u32 = 100,
+};
 
-    const Node = struct {
+/// A lightweight, crash-safe, at-most-once*, bounded job queue. Jobs can be
+/// scheduled in the future and if they have a key, it will be used for avoiding
+/// duplicates. There is no persistence guarantee but the queue will remain
+/// consistent even if any process dies (or is killed) at any point. It is
+/// implemented using POSIX shared memory for storage (macos/linux only) and
+/// file locking for synchronization. No broker, no database, no worker thread.
+///
+/// *: At-most-once applies at the API boundary. If a process is killed before
+/// `dequeue()` returns, the item will be retrieved again by another caller,
+/// because it was never handed over for processing.
+///
+/// NOTE: Atomic operations are INTENTIONAL for crash-resilience, not for
+/// lock-free access. The mutex serializes live processes, but if a process
+/// crashes mid-operation, atomics with release/acquire semantics ensure other
+/// processes see either a fully-written slot or FREE but NEVER partial state.
+pub const ShmQueue = struct {
+    mutex: ShmMutex,
+    shm: Shm,
+    time: *const fn () i64,
+    header: *Header, // points to the SHM
+    slots: []Slot, // points to the SHM
+    interface: Queue,
+
+    const Header = extern struct {
+        magic: u32 = @bitCast("QUE".*),
+        version: u32 = VERSION,
+        next_id: std.atomic.Value(JobId) = .init(1),
+        capacity: u32,
+        stats: extern struct {
+            enqueued: std.atomic.Value(u64) = .init(0),
+            dequeued: std.atomic.Value(u64) = .init(0),
+        } = .{},
+        _: [24]u8 = undefined,
+    };
+
+    const Slot = struct {
+        id: std.atomic.Value(JobId),
+        scheduled_at: i64,
         name_end: u8,
         key_end: u8,
         data_end: u8,
-        scheduled_at: ?i64,
-        started_at: ?i64 = null,
-        buf: [64]u8 = undefined,
-
-        fn init(self: *Node, job: JobInfo) error{Overflow}!void {
-            const key_len = if (job.key) |k| k.len else 0;
-            const total_len = job.name.len + key_len + job.data.len;
-            if (total_len > 64) return error.Overflow;
-
-            self.* = .{
-                .name_end = @intCast(job.name.len),
-                .key_end = @intCast(job.name.len + key_len),
-                .data_end = @intCast(total_len),
-                .scheduled_at = job.scheduled_at,
-            };
-
-            @memcpy(self.buf[0..self.name_end], job.name);
-            if (job.key) |k| @memcpy(self.buf[self.name_end..self.key_end], k);
-            @memcpy(self.buf[self.key_end..self.data_end], job.data);
-        }
-
-        fn toJobInfo(self: *const Node, id: JobId, arena: std.mem.Allocator) !JobInfo {
-            return .{
-                .id = id,
-                .name = try arena.dupe(u8, self.buf[0..self.name_end]),
-                .key = if (self.name_end == self.key_end) null else try arena.dupe(u8, self.buf[self.name_end..self.key_end]),
-                .data = try arena.dupe(u8, self.buf[self.key_end..self.data_end]),
-                .scheduled_at = self.scheduled_at,
-                .started_at = self.started_at,
-            };
-        }
+        buf: [BUF_LEN]u8,
     };
 
-    pub fn init() !ShmQueue {
-        const Page = util.SlotMap(Node).Page;
-        // TODO: config
-        const N_PAGES = 2;
-        const size = std.mem.alignForward(usize, N_PAGES * @sizeOf(Page), std.heap.page_size_min);
-        const shm = try util.Shm.open("/tk_queue2", size);
+    comptime {
+        // Check sizes
+        std.debug.assert(@sizeOf(Header) == 64);
+        std.debug.assert(@sizeOf(Slot) == 256);
 
-        var self: ShmQueue = .{
-            .shm = shm,
-            .mutex = try util.ShmMutex.init(shm.name),
-            .jobs = .{ .pages = @as([*]Page, @ptrCast(@alignCast(shm.data.ptr)))[0..N_PAGES] },
+        // Ensure Slot array is properly aligned when placed after Header
+        std.debug.assert(@sizeOf(Header) % @alignOf(Slot) == 0);
+    }
+
+    const VERSION: u32 = 1;
+    const BUF_LEN = 237;
+    const FREE: JobId = 0;
+
+    /// Initialize the queue in place. The caller must ensure `self` is at a
+    /// stable memory location that won't be moved after this call.
+    pub fn init(self: *ShmQueue, config: ShmQueueConfig) !void {
+        self.time = std.time.timestamp;
+        self.interface = .{
+            .vtable = &.{
+                .len = len,
+                .enqueue = enqueue,
+                .dequeue = dequeue,
+                .remove = remove,
+                .clear = clear,
+                .list = list,
+                .stats = stats,
+            },
         };
 
-        if (shm.created) {
-            self.jobs = .init(self.jobs.pages);
+        var buf: [256]u8 = undefined;
+        const shm_name = try std.fmt.bufPrintZ(
+            &buf,
+            "{s}_{d}_{d}",
+            .{ config.name, VERSION, config.capacity },
+        );
+
+        self.mutex = try ShmMutex.init(shm_name);
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        self.shm = try Shm.open(shm_name, std.mem.alignForward(usize, @sizeOf(Header) + config.capacity * @sizeOf(Slot), std.heap.page_size_min));
+
+        self.header = @ptrCast(@alignCast(self.shm.data.ptr));
+        self.slots = @as([*]Slot, @ptrCast(@alignCast(self.shm.data.ptr[@sizeOf(Header)..])))[0..config.capacity];
+
+        if (self.shm.created) {
+            self.header.* = .{ .capacity = config.capacity };
+            // NOTE: slots are already FREE because Shm guarantees zeroed memory
+        } else {
+            std.debug.assert(self.header.version == VERSION);
+            std.debug.assert(self.header.capacity == config.capacity);
         }
 
-        return self;
+        std.log.debug("ShmQueue {s} (init={})", .{ shm_name, @intFromBool(self.shm.created) });
     }
 
     pub fn deinit(self: *ShmQueue) void {
@@ -147,93 +173,149 @@ pub const ShmQueue = struct {
         self.shm.deinit();
     }
 
-    fn submit(queue: *Queue, job: JobInfo) !?JobId {
+    fn len(queue: *Queue) !usize {
         const self: *ShmQueue = @fieldParentPtr("interface", queue);
         self.mutex.lock();
         defer self.mutex.unlock();
 
-        // Check for duplicate key via linear scan
-        if (job.key) |new_key| {
-            var it = self.jobs.iter();
-            while (it.next()) |entry| {
-                const node = entry.value;
-                if (node.name_end != node.key_end and std.mem.eql(u8, node.buf[node.name_end..node.key_end], new_key)) {
-                    return null;
-                }
+        var n: usize = 0;
+        for (self.slots) |*s| {
+            if (s.id.load(.acquire) != FREE) n += 1;
+        }
+        return n;
+    }
+
+    fn enqueue(queue: *Queue, job: JobInfo) !?JobId {
+        const self: *ShmQueue = @fieldParentPtr("interface", queue);
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        const key_len = job.key.len;
+        const total_len = job.name.len + key_len + job.data.len;
+        if (total_len > BUF_LEN) return error.Overflow;
+
+        // Optionally check for a duplicate key and skip
+        if (job.key.len > 0) {
+            for (self.slots) |*s| {
+                if (s.id.load(.acquire) != FREE and std.mem.eql(u8, job.key, s.buf[s.name_end..s.key_end])) return null;
             }
         }
 
-        const entry = try self.jobs.insertEntry();
-        try entry.value.init(job);
-        return @bitCast(entry.id);
-    }
+        // Find an empty slot
+        for (self.slots) |*s| {
+            if (s.id.load(.acquire) == FREE) {
+                // Init contents first and THEN set id ATOMICALLY
+                s.name_end = @intCast(job.name.len);
+                s.key_end = @intCast(s.name_end + key_len);
+                s.data_end = @intCast(total_len);
+                s.scheduled_at = job.scheduled_at orelse self.time();
+                @memcpy(s.buf[0..s.name_end], job.name);
+                @memcpy(s.buf[s.name_end..s.key_end], job.key);
+                @memcpy(s.buf[s.key_end..s.data_end], job.data);
 
-    fn findJob(queue: *Queue, arena: std.mem.Allocator, id: JobId) !?JobInfo {
-        const self: *ShmQueue = @fieldParentPtr("interface", queue);
-        self.mutex.lock();
-        defer self.mutex.unlock();
+                const id = self.header.next_id.fetchAdd(1, .seq_cst);
+                s.id.store(id, .release);
+                _ = self.header.stats.enqueued.fetchAdd(1, .release);
 
-        if (self.jobs.find(@bitCast(id))) |node| {
-            return try node.toJobInfo(id, arena);
-        }
-        return null;
-    }
-
-    fn listJobs(queue: *Queue, arena: std.mem.Allocator) ![]const JobInfo {
-        const self: *ShmQueue = @fieldParentPtr("interface", queue);
-        self.mutex.lock();
-        defer self.mutex.unlock();
-
-        const res = try arena.alloc(JobInfo, self.jobs.len());
-        var it = self.jobs.iter();
-        for (res) |*slot| {
-            const entry = it.next().?;
-            slot.* = try entry.value.toJobInfo(@bitCast(entry.id), arena);
+                return id;
+            }
         }
 
-        return res;
+        return error.Overflow;
     }
 
-    fn startNext(queue: *Queue) !?JobId {
+    fn dequeue(queue: *Queue, arena: std.mem.Allocator) !?JobInfo {
         const self: *ShmQueue = @fieldParentPtr("interface", queue);
         self.mutex.lock();
         defer self.mutex.unlock();
 
         const now = self.time();
-        var best_id: ?JobId = null;
-        var best_time: i64 = std.math.maxInt(i64);
+        var match: ?*Slot = null;
 
-        var it = self.jobs.iter();
-        while (it.next()) |entry| {
-            const node = entry.value;
-            const scheduled = node.scheduled_at orelse std.math.minInt(i64);
-            // Find earliest unstarted job that's ready
-            if (node.started_at == null and scheduled <= now and scheduled < best_time) {
-                best_time = scheduled;
-                best_id = @bitCast(entry.id);
-            }
+        for (self.slots) |*s| {
+            if (s.id.load(.acquire) == FREE or s.scheduled_at > now) continue;
+            if (match == null or s.scheduled_at < match.?.scheduled_at) match = s;
         }
 
-        if (best_id) |id| {
-            if (self.jobs.find(@bitCast(id))) |node| {
-                node.started_at = now;
-            }
+        if (match) |s| {
+            const data = try arena.alloc(u8, s.data_end);
+            @memcpy(data, s.buf[0..s.data_end]);
+
+            const copy: JobInfo = .{
+                .id = s.id.load(.acquire),
+                .scheduled_at = s.scheduled_at,
+                .name = data[0..s.name_end],
+                .key = data[s.name_end..s.key_end],
+                .data = data[s.key_end..s.data_end],
+            };
+
+            s.id.store(FREE, .release);
+            _ = self.header.stats.dequeued.fetchAdd(1, .release);
+
+            return copy;
         }
-        return best_id;
+
+        return null;
     }
 
-    fn removeJob(queue: *Queue, id: JobId) !void {
+    fn remove(queue: *Queue, id: JobId) !void {
         const self: *ShmQueue = @fieldParentPtr("interface", queue);
         self.mutex.lock();
         defer self.mutex.unlock();
-        self.jobs.remove(@bitCast(id));
+
+        for (self.slots) |*s| {
+            if (s.id.load(.acquire) == id) {
+                s.id.store(FREE, .release);
+                return;
+            }
+        }
     }
 
     fn clear(queue: *Queue) !void {
         const self: *ShmQueue = @fieldParentPtr("interface", queue);
         self.mutex.lock();
         defer self.mutex.unlock();
-        self.jobs.reset();
+
+        for (self.slots) |*s| {
+            s.id.store(FREE, .release);
+        }
+    }
+
+    fn list(queue: *Queue, arena: std.mem.Allocator) ![]JobInfo {
+        const self: *ShmQueue = @fieldParentPtr("interface", queue);
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        var jobs: std.ArrayList(JobInfo) = .{};
+
+        for (self.slots) |*s| {
+            const id = s.id.load(.acquire);
+            if (id == FREE) continue;
+
+            const data = try arena.alloc(u8, s.data_end);
+            @memcpy(data, s.buf[0..s.data_end]);
+
+            try jobs.append(arena, .{
+                .id = id,
+                .scheduled_at = s.scheduled_at,
+                .name = data[0..s.name_end],
+                .key = data[s.name_end..s.key_end],
+                .data = data[s.key_end..s.data_end],
+            });
+        }
+
+        return jobs.items;
+    }
+
+    fn stats(queue: *Queue) !Stats {
+        const self: *ShmQueue = @fieldParentPtr("interface", queue);
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        return .{
+            .enqueued = self.header.stats.enqueued.load(.acquire),
+            .dequeued = self.header.stats.dequeued.load(.acquire),
+        };
     }
 };
 
@@ -241,106 +323,107 @@ fn expectJobs(q: *Queue, comptime expected: []const u8) !void {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
 
-    try testing.expectTable(try q.listJobs(arena.allocator()), expected);
+    try testing.expectTable(try q.list(arena.allocator()), expected);
 }
 
 test Queue {
-    var mem_queue = try ShmQueue.init();
-    defer mem_queue.deinit();
+    var shm_queue: ShmQueue = undefined;
+    try shm_queue.init(.{ .name = "test" });
+    defer shm_queue.deinit();
 
-    const queue = &mem_queue.interface;
+    const queue = &shm_queue.interface;
+    defer queue.clear() catch unreachable;
 
     testing.time.value = 0;
-    mem_queue.time = &testing.time.get;
+    shm_queue.time = &testing.time.get;
+
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
 
     // Enqueue
-    const id1 = try queue.submit("job1", "123", .{}) orelse unreachable;
-    const id2 = try queue.submit("job2", "bar", .{ .key = "foo" }) orelse unreachable;
-    const id3 = try queue.submit("job3", "", .{ .schedule_at = 60 }) orelse unreachable;
-    try queue.push("job2", "xxx", .{ .key = "foo" });
+    const id1 = try queue.enqueue(.{ .name = "job1", .data = "123" }) orelse unreachable;
+    const id2 = try queue.enqueue(.{ .name = "job2", .data = "bar", .key = "foo" }) orelse unreachable;
+    const id3 = try queue.enqueue(.{ .name = "job3", .data = "", .scheduled_at = 60 }) orelse unreachable;
+    _ = try queue.enqueue(.{ .name = "job2", .data = "xxx", .key = "foo" });
 
     try expectJobs(queue,
-        \\| name | key | data | scheduled_at | started_at |
-        \\|------|-----|------|--------------|------------|
-        \\| job1 |     | 123  |              |            |
-        \\| job2 | foo | bar  |              |            |
-        \\| job3 |     |      | 60           |            |
+        \\| name | key | data | scheduled_at |
+        \\|------|-----|------|--------------|
+        \\| job1 |     | 123  | 0            |
+        \\| job2 | foo | bar  | 0            |
+        \\| job3 |     |      | 60           |
     );
 
     // Start first
-    const next1 = (try queue.startNext()).?;
-    try std.testing.expectEqual(id1, next1);
+    const next1 = (try queue.dequeue(arena.allocator())).?;
+    try std.testing.expectEqual(id1, next1.id);
 
     try expectJobs(queue,
-        \\| name | key | data | started_at |
-        \\|------|-----|------|------------|
-        \\| job1 |     | 123  | 0          |
-        \\| job2 | foo | bar  |            |
-        \\| job3 |     |      |            |
+        \\| name | key | data |
+        \\|------|-----|------|
+        \\| job2 | foo | bar  |
+        \\| job3 |     |      |
     );
 
     // Remove first
-    try queue.removeJob(id1);
+    try queue.remove(id1);
 
     try expectJobs(queue,
-        \\| name | key | data | started_at |
-        \\|------|-----|------|------------|
-        \\| job2 | foo | bar  |            |
-        \\| job3 |     |      |            |
+        \\| name | key | data |
+        \\|------|-----|------|
+        \\| job2 | foo | bar  |
+        \\| job3 |     |      |
     );
 
     // Start second
-    const next2 = (try queue.startNext()).?;
-    try std.testing.expectEqual(id2, next2);
+    const next2 = (try queue.dequeue(arena.allocator())).?;
+    try std.testing.expectEqual(id2, next2.id);
 
     try expectJobs(queue,
-        \\| name | key | data | started_at |
-        \\|------|-----|------|------------|
-        \\| job2 | foo | bar  | 0          |
-        \\| job3 |     |      |            |
+        \\| name | key | data |
+        \\|------|-----|------|
+        \\| job3 |     |      |
     );
 
     // Remove second
-    try queue.removeJob(id2);
+    try queue.remove(id2);
 
     try expectJobs(queue,
-        \\| name | key | data | started_at |
-        \\|------|-----|------|------------|
-        \\| job3 |     |      |            |
+        \\| name | key | data |
+        \\|------|-----|------|
+        \\| job3 |     |      |
     );
 
     // No more jobs for now
-    try std.testing.expectEqual(null, try queue.startNext());
+    try std.testing.expectEqual(null, try queue.dequeue(arena.allocator()));
 
     // Fast-forward to when third should be available
     testing.time.value += 120;
 
     // Start scheduled
-    const next3 = (try queue.startNext()).?;
-    try std.testing.expectEqual(id3, next3);
+    const next3 = (try queue.dequeue(arena.allocator())).?;
+    try std.testing.expectEqual(id3, next3.id);
 
     // No more jobs available
-    try std.testing.expectEqual(null, try queue.startNext());
+    try std.testing.expectEqual(null, try queue.dequeue(arena.allocator()));
 
     // Add more
-    try queue.push("test", "1", .{});
-    try queue.push("test", "2", .{});
-    try queue.push("other", "3", .{});
+    _ = try queue.enqueue(.{ .name = "test", .data = "1" });
+    _ = try queue.enqueue(.{ .name = "test", .data = "2" });
+    _ = try queue.enqueue(.{ .name = "other", .data = "3" });
 
     // Check listing
     try expectJobs(queue,
-        \\| name  | data | started_at |
-        \\|-------|------|------------|
-        \\| test  | 1    |            |
-        \\| test  | 2    |            |
-        \\| job3  |      | 120        |
-        \\| other | 3    |            |
+        \\| name  | data |
+        \\|-------|------|
+        \\| test  | 1    |
+        \\| test  | 2    |
+        \\| other | 3    |
     );
 
-    // Test findJob
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
-    const job3 = try queue.findJob(arena.allocator(), id3);
-    try testing.expectEqual(job3.?.id, id3);
-    try testing.expectEqual(try queue.findJob(arena.allocator(), 999999), null);
+    // Print stats
+    std.debug.print(
+        "queue.len = {}, queue.stats = {any}\n",
+        .{ try queue.len(), try queue.stats() },
+    );
 }
