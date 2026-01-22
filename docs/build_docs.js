@@ -245,6 +245,32 @@ function convertInfoBoxes(markdown) {
   });
 }
 
+function processIncludes(markdown) {
+  // Match code blocks containing @include directive
+  // Pattern: ```lang\n@include path#L10-L25\n```
+  return markdown.replace(/```(\w*)\n@include\s+([^\n#]+)(#L(\d+)-L(\d+))?\n```/g,
+    (_, lang, filePath, _range, startLine, endLine) => {
+      const fullPath = join(process.cwd(), filePath.trim());
+
+      if (!existsSync(fullPath)) {
+        console.warn(`Warning: Include file not found: ${filePath}`);
+        return `\`\`\`${lang}\n// File not found: ${filePath}\n\`\`\``;
+      }
+
+      let content = readFileSync(fullPath, 'utf-8');
+
+      // Handle line range if specified
+      if (startLine && endLine) {
+        const lines = content.split('\n');
+        const start = parseInt(startLine, 10) - 1; // 0-indexed
+        const end = parseInt(endLine, 10);
+        content = lines.slice(start, end).join('\n');
+      }
+
+      return `\`\`\`${lang}\n${content}\n\`\`\``;
+    });
+}
+
 function fixLinks(html, currentPath) {
   // Fix markdown links: /guide/foo -> BASE_PATH/guide/foo/
   // Fix relative links: ./foo.md -> ../foo/
@@ -317,7 +343,8 @@ function buildPage(filepath, template, nav) {
   const content = readFileSync(filepath, 'utf-8');
   const { meta, body } = parseFrontmatter(content);
 
-  const processed = convertInfoBoxes(body);
+  const withIncludes = processIncludes(body);
+  const processed = convertInfoBoxes(withIncludes);
   let html = marked(processed);
 
   const pathParts = filepath.split('/');
