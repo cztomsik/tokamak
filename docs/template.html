@@ -61,7 +61,7 @@
     }
 
     main {
-      @apply flex-1 max-w-4xl p-6 md:p-8;
+      @apply flex-1 max-w-4xl xl:max-w-6xl 2xl:max-w-7xl p-6 md:p-8;
       h1, h2, h3, h4 { @apply mt-6 mb-2 leading-tight font-semibold; }
       h1 { @apply text-3xl mt-0; }
       h2 { @apply text-2xl border-b border-gray-200 dark:border-gray-700 pb-1; }
@@ -69,7 +69,7 @@
       p { @apply my-4; }
       a { @apply text-blue-600 dark:text-blue-400; }
       code { @apply font-mono text-sm bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded; }
-      pre { @apply bg-gray-100 dark:bg-gray-800 p-4 rounded-md overflow-x-auto my-4; }
+      pre { @apply bg-gray-100 dark:bg-gray-800 p-4 rounded-md max-h-[60vh] overflow-auto my-4; }
       pre code { @apply bg-transparent p-0; }
       ul { @apply my-4 pl-6 list-disc; }
       ol { @apply my-4 pl-6 list-decimal; }
