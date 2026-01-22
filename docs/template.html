@@ -74,22 +74,13 @@
       ul { @apply my-4 pl-6 list-disc; }
       ol { @apply my-4 pl-6 list-decimal; }
       li { @apply my-1; }
-    }
-
-    .info-box {
-      @apply p-4 rounded-md my-4 border-l-4;
-    }
-
-    .info-box.tip {
-      @apply bg-tip-bg dark:bg-tip-bg-dark border-tip-border;
-    }
-
-    .info-box.warning {
-      @apply bg-warning-bg dark:bg-warning-bg-dark border-warning-border;
-    }
-
-    .info-box strong {
-      @apply block mb-2;
+      blockquote { @apply p-4 rounded-md my-4 border-l-4 bg-gray-100 dark:bg-gray-800 border-gray-300 dark:border-gray-600; }
+      blockquote.tip { @apply bg-tip-bg dark:bg-tip-bg-dark border-tip-border; }
+      blockquote.warning { @apply bg-warning-bg dark:bg-warning-bg-dark border-warning-border; }
+      blockquote p { @apply my-2; }
+      blockquote p:first-child { @apply mt-0; }
+      blockquote p:last-child { @apply mb-0; }
+      blockquote pre { @apply my-2; }
     }
 
     /* Home page styles */

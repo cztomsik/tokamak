@@ -67,9 +67,7 @@ fn getProfile(user: User) !Profile {
 }
 ```
 
-::: tip
-Middleware handlers must use `ctx.injector.get(T)` to access dependencies manually, as they don't support automatic DI syntax.
-:::
+> **Tip:** Middleware handlers must use `ctx.injector.get(T)` to access dependencies manually, as they don't support automatic DI syntax.
 
 ## Common Middleware Patterns
 

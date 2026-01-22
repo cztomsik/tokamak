@@ -237,11 +237,10 @@ function parseSimpleYaml(yaml) {
   return result;
 }
 
-function convertInfoBoxes(markdown) {
-  // Convert ::: warning Title\ncontent\n::: to HTML
-  return markdown.replace(/::: (\w+)(?: ([^\n]*))?\n([\s\S]*?):::/g, (_, type, title, content) => {
-    const titleHtml = title ? `<strong>${title}</strong> ` : '';
-    return `<div class="info-box ${type}">${titleHtml}${content.trim()}</div>`;
+function styleBlockquotes(html) {
+  // Add tip/warning classes to blockquotes based on content
+  return html.replace(/<blockquote>\s*<p><strong>(Tip|Warning):<\/strong>/g, (match, type) => {
+    return `<blockquote class="${type.toLowerCase()}"><p><strong>${type}:</strong>`;
   });
 }
 
@@ -344,10 +343,8 @@ function buildPage(filepath, template, nav) {
   const { meta, body } = parseFrontmatter(content);
 
   const withIncludes = processIncludes(body);
-  const processed = convertInfoBoxes(withIncludes);
-  let html = marked(processed);
-
-  const pathParts = filepath.split('/');
+  let html = marked(withIncludes);
+  html = styleBlockquotes(html);
   html = fixLinks(html, filepath);
 
   const title = meta.title || getTitleFromContent(body) || slugToTitle(basename(filepath, '.md'));

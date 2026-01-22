@@ -4,9 +4,9 @@ Welcome to Tokamak! This guide will help you build your first web application wi
 
 Tokamak is a server-side framework built around [http.zig](https://github.com/karlseguin/http.zig) and a simple but powerful dependency injection container. It's designed to make building web applications in Zig straightforward and enjoyable.
 
-::: warning Production Deployment
-Tokamak is designed to run behind a reverse proxy like Nginx or Cloudfront. The proxy should handle SSL termination, caching, and request sanitization.
-:::
+> **Warning:** Production Deployment
+>
+> Tokamak is designed to run behind a reverse proxy like Nginx or Cloudfront. The proxy should handle SSL termination, caching, and request sanitization.
 
 ## Installation
 

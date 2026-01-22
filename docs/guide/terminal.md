@@ -219,17 +219,17 @@ while (true) {
 
 ### Important Notes
 
-::: tip Always Flush
-The TUI context uses buffered output for performance. Always call `ctx.flush()` after output operations to see your changes immediately.
-:::
+> **Tip:** Always Flush
+>
+> The TUI context uses buffered output for performance. Always call `ctx.flush()` after output operations to see your changes immediately.
 
-::: tip Line Endings in Raw Mode
-In raw mode, use `\r\n` for line breaks instead of just `\n`. Or use `ctx.println()` which handles this for you.
-:::
+> **Tip:** Line Endings in Raw Mode
+>
+> In raw mode, use `\r\n` for line breaks instead of just `\n`. Or use `ctx.println()` which handles this for you.
 
-::: warning TTY Required
-TUI features only work when running in a real terminal. They won't work with piped input/output or when running as a background process.
-:::
+> **Warning:** TTY Required
+>
+> TUI features only work when running in a real terminal. They won't work with piped input/output or when running as a background process.
 
 ### Adding Color
 

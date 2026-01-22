@@ -35,9 +35,7 @@ fn getUserPost(id: []const u8, postId: []const u8) !Post {
 }
 ```
 
-::: tip
-Tokamak supports up to 16 path parameters per route.
-:::
+> **Tip:** Tokamak supports up to 16 path parameters per route.
 
 ## Wildcards
 

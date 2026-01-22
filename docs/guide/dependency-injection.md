@@ -55,9 +55,7 @@ fn hello(res: *tk.Response) !void {
 }
 ```
 
-::: tip
-Avoid tight coupling to `*tk.Response` when possible. Prefer returning values directly.
-:::
+> **Tip:** Avoid tight coupling to `*tk.Response` when possible. Prefer returning values directly.
 
 ## Custom Dependencies
 

@@ -53,14 +53,14 @@ const last_week = d.add(.day, -7);
 const last_month = d.add(.month, -1);
 ```
 
-::: tip Month-End Handling
-When adding months to a date that doesn't exist in the target month, the day is automatically clamped:
-
-```zig
-const jan31 = tk.time.Date.ymd(2024, 1, 31);
-const feb = jan31.add(.month, 1);  // 2024-02-29 (leap year)
-```
-:::
+> **Tip:** Month-End Handling
+>
+> When adding months to a date that doesn't exist in the target month, the day is automatically clamped:
+>
+> ```zig
+> const jan31 = tk.time.Date.ymd(2024, 1, 31);
+> const feb = jan31.add(.month, 1);  // 2024-02-29 (leap year)
+> ```
 
 ### Period Start and End
 
@@ -255,16 +255,16 @@ const feb_2023 = jan31_2023.add(.month, 1);  // 2023-02-28
 
 ## Important Notes
 
-::: warning UTC Only
-All times are in UTC. There is no timezone support. If you need timezone conversions, handle them manually:
+> **Warning:** UTC Only
+>
+> All times are in UTC. There is no timezone support. If you need timezone conversions, handle them manually:
+>
+> ```zig
+> const utc = tk.time.Time.now();
+> const offset = 5 * 3600;  // UTC+5
+> const local = utc.add(.seconds, offset);
+> ```
 
-```zig
-const utc = tk.time.Time.now();
-const offset = 5 * 3600;  // UTC+5
-const local = utc.add(.seconds, offset);
-```
-:::
-
-::: warning Second Precision
-Times have second precision only. For subsecond timing (benchmarks, profiling), use `std.time.nanoTimestamp()` instead.
-:::
+> **Warning:** Second Precision
+>
+> Times have second precision only. For subsecond timing (benchmarks, profiling), use `std.time.nanoTimestamp()` instead.
