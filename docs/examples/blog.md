@@ -6,6 +6,10 @@ A REST API example with Swagger UI documentation and static file serving.
 
 **Path:** `examples/blog/`
 
+```zig
+@include examples/blog/src/main.zig
+```
+
 ## Features Demonstrated
 
 - REST API with CRUD operations
@@ -20,18 +24,7 @@ A REST API example with Swagger UI documentation and static file serving.
 ### Main Application
 
 ```zig
-const App = struct {
-    blog_service: model.BlogService,
-    server: tk.Server,
-    routes: []const tk.Route = &.{
-        tk.logger(.{}, &.{
-            tk.static.dir("public", .{}),
-            .group("/api", &.{.router(api)}),
-            .get("/openapi.json", tk.swagger.json(.{ .info = .{ .title = "Example" } })),
-            .get("/swagger-ui", tk.swagger.ui(.{ .url = "openapi.json" })),
-        }),
-    },
-};
+@include examples/blog/src/main.zig#L6-L17
 ```
 
 ### Service Layer
@@ -39,16 +32,7 @@ const App = struct {
 The `BlogService` manages blog posts in memory:
 
 ```zig
-pub const BlogService = struct {
-    posts: std.AutoArrayHashMap(u32, Post),
-    next: std.atomic.Value(u32) = .init(1),
-
-    pub fn getPosts(self: *BlogService, allocator: std.mem.Allocator) ![]const Post
-    pub fn createPost(self: *BlogService, data: Post) !u32
-    pub fn getPost(self: *BlogService, allocator: std.mem.Allocator, id: u32) !Post
-    pub fn updatePost(self: *BlogService, id: u32, data: Post) !void
-    pub fn deletePost(self: *BlogService, id: u32) !void
-};
+@include examples/blog/src/model.zig#L9-L70
 ```
 
 ### API Layer
@@ -56,13 +40,7 @@ pub const BlogService = struct {
 The API layer (`api.zig`) defines route handlers that delegate to the service:
 
 ```zig
-pub fn @"GET /posts"(svc: *BlogService, allocator: std.mem.Allocator) ![]const Post {
-    return svc.getPosts(allocator);
-}
-
-pub fn @"POST /posts"(svc: *BlogService, data: Post) !u32 {
-    return svc.createPost(data);
-}
+@include examples/blog/src/api.zig#L9-L15
 ```
 
 Note the special syntax: function names starting with `@"GET /posts"` define both the HTTP method and path.
@@ -129,25 +107,17 @@ Then open:
 
 ## Key Patterns
 
-### Route Grouping
-```zig
-.group("/api", &.{.router(api)})
-```
-Groups all API routes under `/api` prefix.
+### Route Grouping, Middleware, and Router
 
-### Middleware Composition
-```zig
-tk.logger(.{}, &.{
-    // routes...
-})
-```
-Wraps routes with logging middleware.
+The main application shows all these patterns together:
 
-### Router from Functions
 ```zig
-.router(api)
+@include examples/blog/src/main.zig#L9-L16
 ```
-Automatically creates routes from all public functions in the `api` module using the `@"METHOD /path"` naming convention.
+
+- `.group("/api", ...)` groups all API routes under `/api` prefix
+- `tk.logger(.{}, ...)` wraps routes with logging middleware
+- `.router(api)` automatically creates routes from all public functions in the `api` module using the `@"METHOD /path"` naming convention
 
 ## Next Steps
 

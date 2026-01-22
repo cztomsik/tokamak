@@ -6,6 +6,10 @@ A comprehensive CLI application demonstrating various commands and third-party i
 
 **Path:** `examples/hello_cli/`
 
+```zig
+@include examples/hello_cli/src/main.zig
+```
+
 ## Features Demonstrated
 
 - CLI command framework (`tk.cli`)
@@ -74,19 +78,7 @@ zig build run -- pdf output.pdf "My Document"
 The CLI uses a shared `App` struct for services (HTTP client, API clients) and a `Cli` struct for command definitions:
 
 ```zig
-const App = struct {
-    http_client: tk.http.StdClient,
-    hn_client: tk.hackernews.Client,
-};
-
-const Cli = struct {
-    cmds: []const tk.cli.Command = &.{
-        .usage,
-        .cmd0("hello", "Print a greeting message", hello),
-        .cmd1("hn", "Show top Hacker News stories", hn_top),
-        // ...
-    },
-};
+@include examples/hello_cli/src/main.zig#L5-L26
 ```
 
 ## Command Handler Patterns

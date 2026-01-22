@@ -7,23 +7,7 @@ A more streamlined version of the hello example using the application framework 
 **Path:** `examples/hello_app/`
 
 ```zig
-const std = @import("std");
-const tk = @import("tokamak");
-
-const App = struct {
-    server: tk.Server,
-    routes: []const tk.Route = &.{
-        .get("/", hello),
-    },
-
-    fn hello() ![]const u8 {
-        return "Hello, world!";
-    }
-};
-
-pub fn main() !void {
-    try tk.app.run(tk.Server.start, &.{App});
-}
+@include examples/hello_app/src/main.zig
 ```
 
 ## Features Demonstrated

@@ -6,6 +6,10 @@ A complete REST API using SQLite database with ORM integration.
 
 **Path:** `examples/todos_orm_sqlite/`
 
+```zig
+@include examples/todos_orm_sqlite/src/main.zig
+```
+
 ## Features Demonstrated
 
 - Database integration with [fridge ORM](https://github.com/cztomsik/fridge)
@@ -19,12 +23,7 @@ A complete REST API using SQLite database with ORM integration.
 ## Model
 
 ```zig
-const Todo = struct {
-    pub const sql_table_name = "todos";
-    id: ?u32 = null,
-    title: []const u8,
-    is_done: bool = false,
-};
+@include examples/todos_orm_sqlite/src/main.zig#L6-L11
 ```
 
 ## Database Setup
@@ -32,28 +31,7 @@ const Todo = struct {
 The app uses lifecycle hooks to initialize the database:
 
 ```zig
-const App = struct {
-    db_pool: fr.Pool(fr.SQLite3),
-    db_opts: fr.SQLite3.Options = .{ .filename = ":memory:" },
-    db_pool_opts: fr.PoolOptions = .{ .max_count = 4 },
-
-    pub fn configure(bundle: *tk.Bundle) void {
-        bundle.addInitHook(initDb);
-    }
-
-    fn initDb(allocator: std.mem.Allocator, db_pool: *fr.Pool(fr.SQLite3)) !void {
-        var db = try db_pool.getSession(allocator);
-        defer db.deinit();
-
-        try db.exec(
-            \\ CREATE TABLE IF NOT EXISTS todos (
-            \\   id INTEGER PRIMARY KEY AUTOINCREMENT,
-            \\   title TEXT NOT NULL,
-            \\   is_done BOOLEAN NOT NULL
-            \\ );
-        , .{});
-    }
-};
+@include examples/todos_orm_sqlite/src/main.zig#L18-L61
 ```
 
 ## API Endpoints
@@ -115,49 +93,29 @@ curl -X DELETE http://localhost:8080/todo/1
 
 ### Create with Custom Status
 ```zig
-fn create(res: *tk.Response, db: *fr.Session, body: Todo) !Todo {
-    res.status = @intFromEnum(Status.created);
-    return try db.query(Todo)
-        .insert(body)
-        .returning("*")
-        .fetchOne(Todo) orelse error.InternalServerError;
-}
+@include examples/todos_orm_sqlite/src/main.zig#L75-L78
 ```
 
 ### Read with ORM
 ```zig
-fn readOne(db: *fr.Session, id: u32) !Todo {
-    return try db.query(Todo).find(id) orelse error.NotFound;
-}
-
-fn readAll(db: *fr.Session) ![]const Todo {
-    return try db.query(Todo).findAll();
-}
+@include examples/todos_orm_sqlite/src/main.zig#L67-L73
 ```
 
 ### Delete with Query Builder
 ```zig
-fn delete(db: *fr.Session, id: u32) !void {
-    try db.query(Todo).where("id", id).delete().exec();
-}
+@include examples/todos_orm_sqlite/src/main.zig#L88-L90
 ```
 
 ## Configuration
 
-### In-Memory Database (Default)
+Database and connection pool options are configured in the App struct:
+
 ```zig
-db_opts: fr.SQLite3.Options = .{ .filename = ":memory:" },
+@include examples/todos_orm_sqlite/src/main.zig#L19-L21
 ```
 
-### Persistent Database
-```zig
-db_opts: fr.SQLite3.Options = .{ .filename = "db.sqlite" },
-```
-
-### Connection Pool
-```zig
-db_pool_opts: fr.PoolOptions = .{ .max_count = 4 },
-```
+- Change `filename` to a path like `"db.sqlite"` for persistence
+- Adjust `max_count` for connection pool size
 
 ## Running
 
@@ -173,13 +131,7 @@ The server starts at http://localhost:8080/todo
 Database sessions are provided to handlers via middleware:
 
 ```zig
-.provide(fr.Pool(fr.SQLite3).getSession, &.{
-    .group("/todo", &.{
-        .get("/", readAll),
-        .post("/", create),
-        // ...
-    })
-})
+@include examples/todos_orm_sqlite/src/main.zig#L24-L37
 ```
 
 Handlers simply request `db: *fr.Session` and get an active session.

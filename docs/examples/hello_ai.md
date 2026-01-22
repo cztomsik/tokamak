@@ -6,6 +6,10 @@ Demonstrates AI agent integration with function calling capabilities.
 
 **Path:** `examples/hello_ai/`
 
+```zig
+@include examples/hello_ai/src/main.zig
+```
+
 ## Features Demonstrated
 
 - AI client configuration
@@ -31,13 +35,7 @@ llama-server --jinja -hf unsloth/gemma-3-4b-it-GGUF:Q4_K_XL
 ### Configuration
 
 ```zig
-const Config = struct {
-    sendmail: tk.sendmail.Config = .{},
-    http_client: tk.http.ClientConfig = .{},
-    ai_client: tk.ai.ClientConfig = .{
-        .base_url = "http://localhost:8080/v1/",
-    },
-};
+@include examples/hello_ai/src/main.zig#L7-L12
 ```
 
 ### Services
@@ -54,12 +52,7 @@ const Config = struct {
 Tools are registered in an init hook:
 
 ```zig
-fn initTools(tbox: *tk.ai.AgentToolbox) !void {
-    try tbox.addTool("add", "Add two numbers", MathService.add);
-    try tbox.addTool("mul", "Multiply two numbers", MathService.mul);
-    try tbox.addTool("checkMailbox", "List email messages", MailService.listMessages);
-    try tbox.addTool("sendMail", "Send email", tk.sendmail.Sendmail.sendMail);
-}
+@include examples/hello_ai/src/main.zig#L68-L73
 ```
 
 ## Example Tasks

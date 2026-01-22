@@ -7,26 +7,15 @@ The simplest example demonstrating a basic HTTP server with a single route.
 **Path:** `examples/hello/`
 
 ```zig
-const std = @import("std");
-const tk = @import("tokamak");
+@include examples/hello/src/main.zig
+```
 
-const routes: []const tk.Route = &.{
-    .get("/", hello),
-};
+## The Handler
 
-fn hello() ![]const u8 {
-    return "Hello, world!";
-}
+The handler function simply returns a string:
 
-pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-
-    var server = try tk.Server.init(gpa.allocator(), routes, .{});
-    defer server.deinit();
-
-    try server.start();
-}
+```zig
+@include examples/hello/src/main.zig#L8-L10
 ```
 
 ## Features Demonstrated

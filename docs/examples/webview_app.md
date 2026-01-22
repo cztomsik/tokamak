@@ -6,6 +6,10 @@ A desktop application combining a web-based UI with native functionality.
 
 **Path:** `examples/webview_app/`
 
+```zig
+@include examples/webview_app/src/main.zig
+```
+
 ## Features Demonstrated
 
 - Webview integration for desktop apps
@@ -26,71 +30,27 @@ The application combines:
 2. **Webview Window**: Embeds a browser that loads the local server
 
 ```zig
-const App = struct {
-    server: tk.Server,
-    server_opts: tk.ServerOptions = .{},
-    routes: []const tk.Route = &.{
-        .get("/*", tk.static.dir("public", .{})),
-        .get("/api/hello", hello),
-    },
-
-    fn hello() ![]const u8 {
-        return "Hello, world!";
-    }
-};
+@include examples/webview_app/src/main.zig#L5-L16
 ```
 
 ## How It Works
 
-### 1. Create DI Container
+The main function shows the complete flow:
+
 ```zig
-const ct = try tk.Container.init(gpa.allocator(), &.{App});
-defer ct.deinit();
-```
-
-### 2. Start Server in Background
-```zig
-const server = try ct.injector.get(*tk.Server);
-const port = server.http.config.port.?;
-
-const thread = try server.http.listenInNewThread();
-defer thread.join();
-```
-
-### 3. Create and Show Webview
-```zig
-const w = c.webview_create(if (builtin.mode == .Debug) 1 else 0, null);
-defer _ = c.webview_destroy(w);
-
-_ = c.webview_set_title(w, "Example");
-_ = c.webview_set_size(w, 800, 500, c.WEBVIEW_HINT_NONE);
-
-const url = try std.fmt.allocPrintSentinel(
-    gpa.allocator(),
-    "http://127.0.0.1:{}",
-    .{port},
-    0
-);
-defer gpa.allocator().free(url);
-
-_ = c.webview_navigate(w, url);
-_ = c.webview_run(w);  // Blocks until window is closed
-server.stop();
+@include examples/webview_app/src/main.zig#L18-L48
 ```
 
 ## Routes
 
-### Static Files
-```zig
-.get("/*", tk.static.dir("public", .{}))
-```
-Serves all files from the `public/` directory. The frontend HTML/JS/CSS goes here.
+Routes are defined in the App struct:
 
-### API Endpoint
 ```zig
-.get("/api/hello", hello)
+@include examples/webview_app/src/main.zig#L8-L11
 ```
-Backend API that the frontend can call.
+
+- `.get("/*", tk.static.dir("public", .{}))` serves all files from the `public/` directory
+- `.get("/api/hello", hello)` is a backend API that the frontend can call
 
 ## Frontend Integration
 
@@ -104,14 +64,13 @@ fetch('/api/hello')
 
 ## Development vs Production
 
-The webview can show dev tools in debug mode:
+The webview can show dev tools in debug mode (see line 36 in the source):
 
 ```zig
-const w = c.webview_create(
-    if (builtin.mode == .Debug) 1 else 0,  // 1 = show dev tools
-    null
-);
+@include examples/webview_app/src/main.zig#L36-L37
 ```
+
+The first argument to `webview_create` is `1` for dev tools enabled, `0` for disabled.
 
 ## Running
 
