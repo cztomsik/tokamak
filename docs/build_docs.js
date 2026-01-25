@@ -1,293 +1,335 @@
-import { readFileSync, writeFileSync, readdirSync, mkdirSync, cpSync, rmSync, existsSync } from 'fs';
-import { join, basename, dirname, relative } from 'path';
-import { marked } from 'marked';
-import { parse } from './zig-parser.js';
+import { readFileSync, writeFileSync, readdirSync, mkdirSync, cpSync, rmSync, existsSync } from 'fs'
+import { join, basename, relative } from 'path'
+import { marked } from 'marked'
+import { h } from 'preact'
+import renderToString from 'preact-render-to-string'
+import { parse } from './zig-parser.js'
+import htm from 'htm'
 
-const DOCS_DIR = 'docs';
-const DIST_DIR = 'docs/dist';
-const SRC_DIR = 'src';
-const BASE_PATH = process.env.BASE_PATH || '';
+const html = htm.bind(h)
 
-const SECTIONS = {
-  guide: {
-    title: 'Guide',
-    order: ['getting-started', 'server', 'routing', 'dependency-injection', 'middlewares', 'examples', 'terminal', 'time']
+// --- Global Context ---
+
+const cx = {
+  DOCS_DIR: 'docs',
+  DIST_DIR: 'docs/dist',
+  SRC_DIR: 'src',
+  BASE_PATH: process.env.BASE_PATH || '',
+  SECTIONS: {
+    guide: {
+      title: 'Guide',
+      order: [
+        'getting-started',
+        'server',
+        'routing',
+        'dependency-injection',
+        'middlewares',
+        'examples',
+        'terminal',
+        'time',
+      ],
+    },
+    examples: {
+      title: 'Examples',
+      order: ['hello', 'hello_app', 'hello_cli', 'hello_ai', 'blog', 'todos_orm_sqlite', 'webview_app', 'clown-commander'],
+    },
   },
-  examples: {
-    title: 'Examples',
-    order: ['hello', 'hello_app', 'hello_cli', 'hello_ai', 'blog', 'todos_orm_sqlite', 'webview_app', 'clown-commander']
-  }
-};
+  pages: [],
+}
 
-// --- API Docs Generation ---
+// --- Components ---
+
+const STYLES = `
+  @theme {
+    --color-tip-bg: #f0f7ff;
+    --color-tip-border: #3451b2;
+    --color-warning-bg: #fff8e6;
+    --color-warning-border: #e6a700;
+    --color-tip-bg-dark: #1a2433;
+    --color-warning-bg-dark: #2d2a1a;
+  }
+
+  @layer components {
+    main {
+      @apply flex-1 max-w-4xl xl:max-w-6xl 2xl:max-w-7xl p-6 md:p-8;
+      h1, h2, h3, h4 { @apply mt-6 mb-2 leading-tight font-semibold; }
+      h1 { @apply text-3xl mt-0; }
+      h2 { @apply text-2xl border-b border-gray-200 dark:border-gray-700 pb-1; }
+      h3 { @apply text-xl; }
+      p { @apply my-4; }
+      a { @apply text-blue-600 dark:text-blue-400; }
+      code { @apply font-mono text-sm bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded; }
+      pre { @apply bg-gray-100 dark:bg-gray-800 p-4 rounded-md max-h-[60vh] overflow-auto my-4; }
+      pre code { @apply bg-transparent p-0; }
+      ul { @apply my-4 pl-6 list-disc; }
+      ol { @apply my-4 pl-6 list-decimal; }
+      li { @apply my-1; }
+      blockquote { @apply p-4 rounded-md my-4 border-l-4 bg-gray-100 dark:bg-gray-800 border-gray-300 dark:border-gray-600; }
+      blockquote.tip { @apply bg-tip-bg dark:bg-tip-bg-dark border-tip-border; }
+      blockquote.warning { @apply bg-warning-bg dark:bg-warning-bg-dark border-warning-border; }
+      blockquote p { @apply my-2 first:mt-0 last:mb-0; }
+      blockquote pre { @apply my-2; }
+    }
+
+    /* Shared classes / daisy-style components */
+    .btn { @apply inline-block px-6 py-3 rounded-md no-underline font-medium; }
+    .btn.brand { @apply bg-blue-600 text-white hover:bg-blue-700; }
+    .btn.alt { @apply border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-gray-100 hover:border-gray-400; }
+    .badge { @apply inline-block text-xs px-1.5 py-0.5 rounded ml-1 text-white; }
+
+    /* API docs styles */
+    .api-item { @apply flex flex-col border-l-2 my-4; }
+    .api-item.fn { @apply border-blue-500; }
+    .api-item.struct { @apply border-red-400; }
+    .api-item.enum { @apply border-yellow-500; }
+    .api-item.union { @apply border-purple-400; }
+    .api-item.const { @apply border-green-500; }
+    .api-doc { @apply px-4 }
+    .api-doc * { @apply bg-transparent text-sm/5 text-gray-600 dark:text-gray-300 border-none list-disc }
+    .api-doc :is(h1, h2, h3, h4) { @apply p-0 my-0; }
+    .api-decl { @apply bg-gray-100 dark:bg-gray-800 w-full overflow-x-auto whitespace-pre text-sm font-mono px-4 py-2; scrollbar-width: none; }
+  }
+`
+
+const Layout = ({ title, children }) => {
+  return html`
+    <html lang="en">
+      <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>${title} - Tokamak</title>
+        <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+        <style type="text/tailwindcss">
+          ${STYLES}
+        </style>
+      </head>
+      <body class="font-sans leading-relaxed text-gray-900 bg-white dark:text-gray-200 dark:bg-gray-900">
+        <div class="flex min-h-screen flex-col md:flex-row">
+          <${Nav} />
+          <main>${children}</main>
+        </div>
+      </body>
+    </html>
+  `
+}
+
+const Nav = () => {
+  const linkClasses = 'text-gray-500 dark:text-gray-400 no-underline hover:text-blue-600 dark:hover:text-blue-400'
+
+  const sections = Object.entries(cx.SECTIONS).map(([section, config]) => {
+    const sectionPages = cx.pages.filter(p => p.section === section)
+    if (!sectionPages.length) return null
+
+    return html`
+      <details class="group mb-4" open>
+        <summary class="font-semibold cursor-pointer py-1 list-none [&::-webkit-details-marker]:hidden">
+          <span class="text-gray-500 group-open:hidden">▸ </span>
+          <span class="text-gray-500 hidden group-open:inline">▾ </span>
+          ${config.title}
+        </summary>
+        <ul class="mt-2 ml-4 flex flex-wrap gap-x-4 md:block">
+          ${sectionPages.map(page => {
+            const label = page.title === 'Index' ? config.title : page.title
+            return html`<li><a href="${cx.BASE_PATH}/${section}/${page.slug}/" class="${linkClasses}">${label}</a></li>`
+          })}
+        </ul>
+      </details>
+    `
+  })
+
+  return html`
+    <nav
+      class="w-full md:w-64 p-6 border-b md:border-b-0 md:border-r border-gray-200 dark:border-gray-700 md:sticky md:top-0 md:h-screen overflow-y-auto shrink-0"
+    >
+      <a href="${cx.BASE_PATH}/" class="font-bold text-xl text-gray-900 dark:text-gray-100 no-underline block mb-6"
+        >Tokamak</a
+      >
+      ${sections}
+      <a href="${cx.BASE_PATH}/api/" class="${linkClasses}">API Reference</a>
+    </nav>
+  `
+}
+
+const Page = ({ contentHtml }) => {
+  return html`<div dangerouslySetInnerHTML=${{ __html: contentHtml }} />`
+}
+
+const ApiItem = ({ item }) => {
+  const docHtml = item.doc ? marked(item.doc) : null
+
+  switch (item.kind) {
+    case 'fn':
+      return html`
+        <div class="api-item fn">
+          <div class="api-decl">pub fn <strong>${item.name}</strong>(${item.params}) ${item.ret}</div>
+          ${docHtml && html`<div class="api-doc" dangerouslySetInnerHTML=${{ __html: docHtml }} />`}
+        </div>
+      `
+    case 'export':
+      return html`
+        <div class="api-item const">
+          <div class="api-decl">pub const <strong>${item.name}</strong> = ${item.value}</div>
+          ${docHtml && html`<div class="api-doc" dangerouslySetInnerHTML=${{ __html: docHtml }} />`}
+        </div>
+      `
+    default:
+      return html`
+        <div class="api-item ${item.kind}">
+          <div class="api-decl">
+            pub const <strong>${item.name}</strong> = ${item.kind}${item.params ?? ''} {
+            <div class="pl-8 empty:hidden">${item.fields.join(',\n')}</div>
+            }
+          </div>
+          ${docHtml && html`<div class="api-doc" dangerouslySetInnerHTML=${{ __html: docHtml }} />`}
+        </div>
+      `
+  }
+}
+
+const ApiTocItem = ({ file, items }) => {
+  const relativePath = relative(cx.SRC_DIR, file)
+  const anchorId = makeAnchorId(relativePath)
+
+  return html`
+    <li class="py-0.5 break-inside-avoid">
+      <a href="#${anchorId}" class="text-blue-600 dark:text-blue-400 no-underline hover:underline">${relativePath}</a>
+      <span class="badge bg-gray-400 dark:bg-gray-900">${items.length}</span>
+    </li>
+  `
+}
+
+const ApiToc = ({ fileData }) => {
+  const searchScript = `
+    document.getElementById('api-search').addEventListener('input', function(e) {
+      const query = e.target.value.toLowerCase();
+      document.querySelectorAll('#api-toc li').forEach(li => {
+        const text = li.textContent.toLowerCase();
+        li.style.display = (query && !text.includes(query)) ? 'none' : '';
+      });
+    });
+  `
+
+  return html`
+    <div class="bg-gray-100 dark:bg-gray-800 p-4 rounded-lg mb-8">
+      <h2 class="mt-0 mb-2 border-0 text-lg">Table of Contents</h2>
+      <input
+        type="text"
+        id="api-search"
+        placeholder="Filter files..."
+        autocomplete="off"
+        class="w-full p-2 mb-3 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+      />
+      <ul id="api-toc" class="list-none p-0 m-0 columns-2 md:columns-3 gap-4 max-h-64 overflow-y-auto">
+        ${fileData.map(({ file, items }) => html`<${ApiTocItem} file=${file} items=${items} />`)}
+      </ul>
+    </div>
+    <script dangerouslySetInnerHTML=${{ __html: searchScript }} />
+  `
+}
+
+const ApiDocs = ({ fileData }) => {
+  const totalItems = fileData.reduce((sum, { items }) => sum + items.length, 0)
+
+  return html`
+    <h1>API Reference</h1>
+    <p>Auto-generated from source. ${fileData.length} files, ${totalItems} public items.</p>
+    <${ApiToc} fileData=${fileData} />
+    ${fileData.map(({ file, items }) => {
+      const relativePath = relative(cx.SRC_DIR, file)
+      const anchorId = makeAnchorId(relativePath)
+      return html`
+        <section id="${anchorId}">
+          <h2>${relativePath}</h2>
+          ${items.map(item => html`<${ApiItem} item=${item} />`)}
+        </section>
+      `
+    })}
+  `
+}
+
+// --- Utility Functions ---
 
 function findZigFiles(dir, files = []) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    const fullPath = join(dir, entry.name);
+    const fullPath = join(dir, entry.name)
     if (entry.isDirectory()) {
-      findZigFiles(fullPath, files);
+      findZigFiles(fullPath, files)
     } else if (entry.name.endsWith('.zig')) {
-      files.push(fullPath);
+      files.push(fullPath)
     }
   }
-  return files;
+  return files
 }
 
 function parseZigFile(filePath) {
   console.log('---', filePath)
-  const content = readFileSync(filePath, 'utf-8');
-  const ast = parse(content);
-  const items = [];
+  const content = readFileSync(filePath, 'utf-8')
+  const ast = parse(content)
+  const items = []
 
-  // Flatten nested structure, only include pub items
   function flatten(nodes, prefix = '') {
     for (const node of nodes) {
-      const name = prefix ? `${prefix}.${node.name}` : node.name;
-      items.push({ ...node, name });
-      if (node.children) flatten(node.children, name);
+      const name = prefix ? `${prefix}.${node.name}` : node.name
+      items.push({ ...node, name })
+      if (node.children) flatten(node.children, name)
     }
   }
-  flatten(ast);
+  flatten(ast)
 
-  return items;
+  return items
 }
 
 function makeAnchorId(filePath) {
-  return filePath.replace(/[^a-zA-Z0-9]/g, '-').replace(/-+/g, '-');
-}
-
-function buildApiDocs(template, nav) {
-  const files = findZigFiles(SRC_DIR).sort();
-  const fileData = files.map(file => ({
-    file,
-    items: parseZigFile(file)
-  })).filter(({ items }) => items.length > 0);
-
-  // Generate TOC
-  const tocHtml = fileData.map(({ file, items }) => {
-    const relativePath = relative(SRC_DIR, file);
-    const anchorId = makeAnchorId(relativePath);
-    return `<li><a href="#${anchorId}">${relativePath}</a> <span class="badge bg-gray-400 dark:bg-gray-900">${items.length}</span></li>`;
-  }).join('\n');
-
-  // Generate sections
-  const sections = fileData.map(({ file, items }) => {
-    const relativePath = relative(SRC_DIR, file);
-    const anchorId = makeAnchorId(relativePath);
-    const itemsHtml = items.map(item => {
-      switch (item.kind) {
-        case 'fn':
-          return `<div class="api-item ${item.kind}">
-          <div class="api-decl">pub fn <strong>${item.name}</strong>(${item.params}) ${item.ret}</div>
-          ${item.doc && `<div class="api-doc">${marked(item.doc)}</div>`}
-          </div>`;
-        case 'export':
-          return `<div class="api-item ${item.kind}">
-          <div class="api-decl">pub const <strong>${item.name}</strong> = ${item.value}</div>
-          ${item.doc && `<div class="api-doc">${marked(item.doc)}</div>`}
-          </div>`;
-        default:
-          return `<div class="api-item ${item.kind}">
-          <div class="api-decl">pub const <strong>${item.name}</strong> = ${item.kind}${item.params ?? ''} {<div class="pl-8 empty:hidden">${item.fields.join(',\n')}</div>}</div>
-          ${item.doc && `<div class="api-doc">${marked(item.doc)}</div>`}
-          </div>`;
-      }
-    }).join('\n');
-
-    return `<section id="${anchorId}">
-      <h2>${relativePath}</h2>
-      ${itemsHtml}
-    </section>`;
-  }).join('\n');
-
-  const totalItems = fileData.reduce((sum, { items }) => sum + items.length, 0);
-
-  const content = `
-    <h1>API Reference</h1>
-    <p>Auto-generated from source. ${fileData.length} files, ${totalItems} public items.</p>
-    <div class="api-toc">
-      <h2>Table of Contents</h2>
-      <input type="text" id="api-search" placeholder="Filter files..." autocomplete="off">
-      <ul>${tocHtml}</ul>
-    </div>
-    <script>
-      document.getElementById('api-search').addEventListener('input', function(e) {
-        const query = e.target.value.toLowerCase();
-        document.querySelectorAll('.api-toc li').forEach(li => {
-          const text = li.textContent.toLowerCase();
-          li.style.display = (query && !text.includes(query)) ? 'none' : '';
-        });
-      });
-    </script>
-    ${sections}
-  `;
-
-  return template
-    .replace(/\{\{title\}\}/g, 'API Reference')
-    .replace(/\{\{nav\}\}/g, nav)
-    .replace(/\{\{content\}\}/g, content);
-}
-
-function parseFrontmatter(content) {
-  const lines = content.split('\n');
-  if (lines[0] !== '---') return { meta: {}, body: content };
-
-  let endIndex = -1;
-  for (let i = 1; i < lines.length; i++) {
-    if (lines[i] === '---') {
-      endIndex = i;
-      break;
-    }
-  }
-
-  if (endIndex === -1) return { meta: {}, body: content };
-
-  // Simple YAML parsing for our needs
-  const yamlStr = lines.slice(1, endIndex).join('\n');
-  const meta = parseSimpleYaml(yamlStr);
-  const body = lines.slice(endIndex + 1).join('\n').trim();
-  return { meta, body };
-}
-
-function parseSimpleYaml(yaml) {
-  const result = {};
-  const lines = yaml.split('\n');
-  let i = 0;
-
-  function parseValue(baseIndent) {
-    const items = [];
-    const obj = {};
-    let isArray = false;
-
-    while (i < lines.length) {
-      const line = lines[i];
-      if (!line.trim()) { i++; continue; }
-
-      const indent = line.search(/\S/);
-      if (indent <= baseIndent && baseIndent >= 0) break;
-
-      const content = line.trim();
-      i++;
-
-      if (content.startsWith('- ')) {
-        isArray = true;
-        const itemContent = content.slice(2);
-        if (itemContent.includes(':')) {
-          const colonIdx = itemContent.indexOf(':');
-          const key = itemContent.slice(0, colonIdx).trim();
-          const value = itemContent.slice(colonIdx + 1).trim();
-          const item = { [key]: value.replace(/^["']|["']$/g, '') };
-
-          // Check for more properties at deeper indent
-          while (i < lines.length) {
-            const nextLine = lines[i];
-            if (!nextLine.trim()) { i++; continue; }
-            const nextIndent = nextLine.search(/\S/);
-            if (nextIndent <= indent) break;
-            const nextContent = nextLine.trim();
-            if (nextContent.includes(':')) {
-              const nColonIdx = nextContent.indexOf(':');
-              const nKey = nextContent.slice(0, nColonIdx).trim();
-              const nValue = nextContent.slice(nColonIdx + 1).trim();
-              item[nKey] = nValue.replace(/^["']|["']$/g, '');
-            }
-            i++;
-          }
-          items.push(item);
-        } else {
-          items.push(itemContent);
-        }
-      } else if (content.includes(':')) {
-        const colonIdx = content.indexOf(':');
-        const key = content.slice(0, colonIdx).trim();
-        const value = content.slice(colonIdx + 1).trim();
-
-        if (value) {
-          obj[key] = value.replace(/^["']|["']$/g, '');
-        } else {
-          obj[key] = parseValue(indent);
-        }
-      }
-    }
-
-    return isArray ? items : obj;
-  }
-
-  while (i < lines.length) {
-    const line = lines[i];
-    if (!line.trim()) { i++; continue; }
-
-    const content = line.trim();
-    const indent = line.search(/\S/);
-    i++;
-
-    if (content.includes(':')) {
-      const colonIdx = content.indexOf(':');
-      const key = content.slice(0, colonIdx).trim();
-      const value = content.slice(colonIdx + 1).trim();
-
-      if (value) {
-        result[key] = value.replace(/^["']|["']$/g, '');
-      } else {
-        result[key] = parseValue(indent);
-      }
-    }
-  }
-
-  return result;
+  return filePath.replace(/[^a-zA-Z0-9]/g, '-').replace(/-+/g, '-')
 }
 
 function styleBlockquotes(html) {
-  // Add tip/warning classes to blockquotes based on content
   return html.replace(/<blockquote>\s*<p><strong>(Tip|Warning):<\/strong>/g, (match, type) => {
-    return `<blockquote class="${type.toLowerCase()}"><p><strong>${type}:</strong>`;
-  });
+    return `<blockquote class="${type.toLowerCase()}"><p><strong>${type}:</strong>`
+  })
 }
 
 function processIncludes(markdown) {
-  // Match code blocks containing @include directive
-  // Pattern: ```lang\n@include path#L10-L25\n```
-  return markdown.replace(/```(\w*)\n@include\s+([^\n#]+)(#L(\d+)-L(\d+))?\n```/g,
+  return markdown.replace(
+    /```(\w*)\n@include\s+([^\n#]+)(#L(\d+)-L(\d+))?\n```/g,
     (_, lang, filePath, _range, startLine, endLine) => {
-      const fullPath = join(process.cwd(), filePath.trim());
+      const fullPath = join(process.cwd(), filePath.trim())
 
       if (!existsSync(fullPath)) {
-        console.warn(`Warning: Include file not found: ${filePath}`);
-        return `\`\`\`${lang}\n// File not found: ${filePath}\n\`\`\``;
+        console.warn(`Warning: Include file not found: ${filePath}`)
+        return `\`\`\`${lang}\n// File not found: ${filePath}\n\`\`\``
       }
 
-      let content = readFileSync(fullPath, 'utf-8');
+      let content = readFileSync(fullPath, 'utf-8')
 
-      // Handle line range if specified
       if (startLine && endLine) {
-        const lines = content.split('\n');
-        const start = parseInt(startLine, 10) - 1; // 0-indexed
-        const end = parseInt(endLine, 10);
-        content = lines.slice(start, end).join('\n');
+        const lines = content.split('\n')
+        const start = parseInt(startLine, 10) - 1
+        const end = parseInt(endLine, 10)
+        content = lines.slice(start, end).join('\n')
       }
 
-      return `\`\`\`${lang}\n${content}\n\`\`\``;
-    });
+      return `\`\`\`${lang}\n${content}\n\`\`\``
+    }
+  )
 }
 
-function fixLinks(html, currentPath) {
-  // Fix markdown links: /guide/foo -> BASE_PATH/guide/foo/
-  // Fix relative links: ./foo.md -> ../foo/
+function fixLinks(html) {
   return html
     .replace(/href="\/([^"]+)"/g, (_, path) => {
-      if (path.endsWith('/') || path.includes('.') || path.startsWith('http')) return `href="${BASE_PATH}/${path}"`;
-      return `href="${BASE_PATH}/${path}/"`;
+      if (path.endsWith('/') || path.includes('.') || path.startsWith('http')) return `href="${cx.BASE_PATH}/${path}"`
+      return `href="${cx.BASE_PATH}/${path}/"`
     })
     .replace(/href="\.\/([^"]+)\.md"/g, (_, name) => `href="../${name}/"`)
     .replace(/href="([^"]+)\.md"/g, (_, path) => {
-      if (path.startsWith('http') || path.startsWith('/')) return `href="${path}"`;
-      return `href="${path}/"`;
-    });
+      if (path.startsWith('http') || path.startsWith('/')) return `href="${path}"`
+      return `href="${path}/"`
+    })
 }
 
 function getTitleFromContent(content) {
-  const match = content.match(/^#\s+(.+)$/m);
-  return match ? match[1] : null;
+  const match = content.match(/^#\s+(.+)$/m)
+  return match ? match[1] : null
 }
 
 function slugToTitle(slug) {
@@ -295,154 +337,100 @@ function slugToTitle(slug) {
     .split('-')
     .map(word => word.charAt(0).toUpperCase() + word.slice(1))
     .join(' ')
-    .replace('_', ' ');
+    .replace('_', ' ')
 }
 
-function buildHomePage(filepath, template, nav) {
-  const content = readFileSync(filepath, 'utf-8');
-  const { meta } = parseFrontmatter(content);
+// --- Render Helpers ---
 
-  const hero = meta.hero || {};
-  const features = meta.features || [];
-
-  let heroHtml = '';
-  if (hero.name) {
-    const actions = (hero.actions || [])
-      .map(a => {
-        const href = a.link.startsWith('/') ? `${BASE_PATH}${a.link}` : a.link;
-        return `<a href="${href}" class="btn ${a.theme || ''}">${a.text}</a>`;
-      })
-      .join('\n');
-
-    heroHtml = `
-      <div class="hero">
-        <h1>${hero.name}</h1>
-        <p class="tagline">${hero.text || ''}</p>
-        <p class="subtitle">${hero.tagline || ''}</p>
-        <div class="actions">${actions}</div>
-      </div>
-    `;
-  }
-
-  let featuresHtml = '';
-  if (features.length) {
-    const items = features
-      .map(f => `<div class="feature"><h3>${f.title}</h3><p>${f.details}</p></div>`)
-      .join('\n');
-    featuresHtml = `<div class="features">${items}</div>`;
-  }
-
-  return template
-    .replace(/\{\{title\}\}/g, hero.name || 'Tokamak')
-    .replace(/\{\{nav\}\}/g, nav)
-    .replace(/\{\{content\}\}/g, heroHtml + featuresHtml);
+function renderPage(title, content) {
+  const pageHtml = renderToString(html`<${Layout} title=${title}>${content}<//>`)
+  return '<!DOCTYPE html>\n' + pageHtml
 }
 
-function buildPage(filepath, template, nav) {
-  const content = readFileSync(filepath, 'utf-8');
-  const { meta, body } = parseFrontmatter(content);
-
-  const withIncludes = processIncludes(body);
-  let html = marked(withIncludes);
-  html = styleBlockquotes(html);
-  html = fixLinks(html, filepath);
-
-  const title = meta.title || getTitleFromContent(body) || slugToTitle(basename(filepath, '.md'));
-
-  return template
-    .replace(/\{\{title\}\}/g, title)
-    .replace(/\{\{nav\}\}/g, nav)
-    .replace(/\{\{content\}\}/g, html);
-}
-
-function buildNav(pages) {
-  let html = `<nav>\n<a href="${BASE_PATH}/" class="logo">Tokamak</a>\n`;
-
-  for (const [section, config] of Object.entries(SECTIONS)) {
-    const sectionPages = pages.filter(p => p.section === section);
-    if (!sectionPages.length) continue;
-
-    html += `<details open><summary>${config.title}</summary>\n<ul>\n`;
-    for (const page of sectionPages) {
-      const label = page.title === 'Index' ? config.title : page.title;
-      html += `<li><a href="${BASE_PATH}/${section}/${page.slug}/">${label}</a></li>\n`;
-    }
-    html += '</ul>\n</details>\n';
-  }
-
-  // Add API link
-  html += `<a href="${BASE_PATH}/api/" class="nav-link">API Reference</a>\n`;
-
-  html += '</nav>';
-  return html;
-}
+// --- Build Process ---
 
 // Clean dist
-if (existsSync(DIST_DIR)) {
-  rmSync(DIST_DIR, { recursive: true });
+if (existsSync(cx.DIST_DIR)) {
+  rmSync(cx.DIST_DIR, { recursive: true })
 }
-mkdirSync(DIST_DIR);
+mkdirSync(cx.DIST_DIR)
 
 // Copy public assets
-if (existsSync(join(DOCS_DIR, 'public'))) {
-  cpSync(join(DOCS_DIR, 'public'), DIST_DIR, { recursive: true });
+if (existsSync(join(cx.DOCS_DIR, 'public'))) {
+  cpSync(join(cx.DOCS_DIR, 'public'), cx.DIST_DIR, { recursive: true })
 }
 
-// Load template
-const template = readFileSync(join(DOCS_DIR, 'template.html'), 'utf-8');
-
 // Collect all pages
-const pages = [];
-
-for (const [section, config] of Object.entries(SECTIONS)) {
-  const sectionDir = join(DOCS_DIR, section);
-  if (!existsSync(sectionDir)) continue;
+for (const [section, config] of Object.entries(cx.SECTIONS)) {
+  const sectionDir = join(cx.DOCS_DIR, section)
+  if (!existsSync(sectionDir)) continue
 
   for (const file of readdirSync(sectionDir)) {
-    if (!file.endsWith('.md')) continue;
+    if (!file.endsWith('.md')) continue
 
-    const slug = basename(file, '.md');
-    const filepath = join(sectionDir, file);
-    const content = readFileSync(filepath, 'utf-8');
-    const title = getTitleFromContent(content) || slugToTitle(slug);
+    const slug = basename(file, '.md')
+    const filepath = join(sectionDir, file)
+    const content = readFileSync(filepath, 'utf-8')
+    const title = getTitleFromContent(content) || slugToTitle(slug)
 
-    pages.push({
+    cx.pages.push({
       section,
       slug,
       filepath,
       title,
-      order: config.order.indexOf(slug)
-    });
+      order: config.order.indexOf(slug),
+    })
   }
 }
 
 // Sort pages by section order
-pages.sort((a, b) => a.order - b.order);
-
-// Build navigation
-const nav = buildNav(pages);
+cx.pages.sort((a, b) => a.order - b.order)
 
 // Build section pages
-for (const page of pages) {
-  const html = buildPage(page.filepath, template, nav);
-  const outDir = join(DIST_DIR, page.section, page.slug);
-  mkdirSync(outDir, { recursive: true });
-  writeFileSync(join(outDir, 'index.html'), html);
-  console.log(`Built: ${page.section}/${page.slug}`);
+for (const page of cx.pages) {
+  const content = readFileSync(page.filepath, 'utf-8')
+
+  const withIncludes = processIncludes(content)
+  let contentHtml = marked(withIncludes)
+  contentHtml = styleBlockquotes(contentHtml)
+  contentHtml = fixLinks(contentHtml, page.filepath)
+
+  const title = getTitleFromContent(content) || slugToTitle(basename(page.filepath, '.md'))
+
+  const finalHtml = renderPage(title, html`<${Page} contentHtml=${contentHtml} />`)
+
+  const outDir = join(cx.DIST_DIR, page.section, page.slug)
+  mkdirSync(outDir, { recursive: true })
+  writeFileSync(join(outDir, 'index.html'), finalHtml)
+  console.log(`Built: ${page.section}/${page.slug}`)
 }
 
 // Build home page
-if (existsSync(join(DOCS_DIR, 'index.md'))) {
-  const html = buildHomePage(join(DOCS_DIR, 'index.md'), template, nav);
-  writeFileSync(join(DIST_DIR, 'index.html'), html);
-  console.log('Built: index');
+if (existsSync(join(cx.DOCS_DIR, 'index.md'))) {
+  const content = readFileSync(join(cx.DOCS_DIR, 'index.md'), 'utf-8')
+  let contentHtml = marked(content)
+  contentHtml = fixLinks(contentHtml, 'index.md')
+
+  const finalHtml = renderPage('Tokamak', html`<${Page} contentHtml=${contentHtml} />`)
+
+  writeFileSync(join(cx.DIST_DIR, 'index.html'), finalHtml)
+  console.log('Built: index')
 }
 
 // Build API docs
-const apiHtml = buildApiDocs(template, nav);
-const apiDir = join(DIST_DIR, 'api');
-mkdirSync(apiDir, { recursive: true });
-writeFileSync(join(apiDir, 'index.html'), apiHtml);
-console.log('Built: api');
+const files = findZigFiles(cx.SRC_DIR).sort()
+const fileData = files
+  .map(file => ({
+    file,
+    items: parseZigFile(file),
+  }))
+  .filter(({ items }) => items.length > 0)
 
-console.log(`\nDone! Built ${pages.length + 2} pages.`);
+const apiHtml = renderPage('API Reference', html`<${ApiDocs} fileData=${fileData} />`)
+
+const apiDir = join(cx.DIST_DIR, 'api')
+mkdirSync(apiDir, { recursive: true })
+writeFileSync(join(apiDir, 'index.html'), apiHtml)
+console.log('Built: api')
+
+console.log(`\nDone! Built ${cx.pages.length + 2} pages.`)

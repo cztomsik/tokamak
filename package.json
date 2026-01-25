@@ -6,7 +6,10 @@
     "docs:build": "node docs/build_docs.js"
   },
   "dependencies": {
-    "marked": "^15.0.0"
+    "htm": "^3.1.1",
+    "marked": "^15.0.0",
+    "preact": "^10.24.3",
+    "preact-render-to-string": "^6.5.11"
   },
   "prettier": {
     "semi": false,
