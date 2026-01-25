@@ -106,9 +106,3 @@ The application will launch in your terminal with a dual-panel file browser.
 - The active panel's selected item is marked with `>`
 - Use `..` to navigate to parent directory
 - The app starts in your current working directory
-
-## Next Steps
-
-- See [hello_cli](./hello_cli.md) for CLI command patterns
-- Check out the [TUI reference](/reference/tui) for more TUI capabilities
-- Explore keyboard event handling for custom controls

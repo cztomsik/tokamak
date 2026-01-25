@@ -321,10 +321,3 @@ pub fn main() !void {
     try ctx.flush();
 }
 ```
-
-## What's Next?
-
-For detailed API reference and advanced features:
-
-- **[CLI Reference](/reference/cli)** - Command definitions, context API, output formats
-- **[TUI Reference](/reference/tui)** - Keyboard input, terminal control, raw mode details
