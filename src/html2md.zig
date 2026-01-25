@@ -146,10 +146,20 @@ pub const Html2Md = struct {
     }
 
     fn br(self: *Html2Md, n: u2) void {
-        self.pending = if (self.in_line > 0) .sp else .{ .br = switch (self.pending) {
-            .nop, .sp => n,
-            .br => @max(n, self.pending.br),
-        } };
+        // TODO: report Zig miscompilation?
+        // self.pending = if (self.in_line > 0) .sp else .{ .br = switch (self.pending) {
+        //     .nop, .sp => n,
+        //     .br => @max(n, self.pending.br),
+        // } };
+        if (self.in_line > 0) {
+            self.pending = .sp;
+        } else {
+            const br_val: u2 = switch (self.pending) {
+                .nop, .sp => n,
+                .br => |old| @max(n, old),
+            };
+            self.pending = .{ .br = br_val };
+        }
     }
 };
 
