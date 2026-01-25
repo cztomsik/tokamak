@@ -1,10 +1,11 @@
-import { readFileSync, writeFileSync, readdirSync, mkdirSync, cpSync, rmSync, existsSync } from 'fs'
+import { readFileSync, writeFileSync, mkdirSync, cpSync, rmSync, existsSync, globSync } from 'fs'
 import { join, basename, relative } from 'path'
 import { marked } from 'marked'
 import { h } from 'preact'
 import renderToString from 'preact-render-to-string'
 import { parse } from './zig-parser.js'
 import htm from 'htm'
+import _ from 'lodash'
 
 const html = htm.bind(h)
 
@@ -249,25 +250,13 @@ const ApiDocs = ({ fileData }) => {
 
 // --- Utility Functions ---
 
-function findZigFiles(dir, files = []) {
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    const fullPath = join(dir, entry.name)
-    if (entry.isDirectory()) {
-      findZigFiles(fullPath, files)
-    } else if (entry.name.endsWith('.zig')) {
-      files.push(fullPath)
-    }
-  }
-  return files
-}
-
-function parseZigFile(filePath) {
+const parseZigFile = filePath => {
   console.log('---', filePath)
   const content = readFileSync(filePath, 'utf-8')
   const ast = parse(content)
   const items = []
 
-  function flatten(nodes, prefix = '') {
+  const flatten = (nodes, prefix = '') => {
     for (const node of nodes) {
       const name = prefix ? `${prefix}.${node.name}` : node.name
       items.push({ ...node, name })
@@ -279,18 +268,15 @@ function parseZigFile(filePath) {
   return items
 }
 
-function makeAnchorId(filePath) {
-  return filePath.replace(/[^a-zA-Z0-9]/g, '-').replace(/-+/g, '-')
-}
+const makeAnchorId = _.kebabCase
 
-function styleBlockquotes(html) {
-  return html.replace(/<blockquote>\s*<p><strong>(Tip|Warning):<\/strong>/g, (match, type) => {
-    return `<blockquote class="${type.toLowerCase()}"><p><strong>${type}:</strong>`
-  })
-}
+const styleBlockquotes = html =>
+  html.replace(/<blockquote>\s*<p><strong>(Tip|Warning):<\/strong>/g, (_, type) =>
+    `<blockquote class="${type.toLowerCase()}"><p><strong>${type}:</strong>`
+  )
 
-function processIncludes(markdown) {
-  return markdown.replace(
+const processIncludes = markdown =>
+  markdown.replace(
     /```(\w*)\n@include\s+([^\n#]+)(#L(\d+)-L(\d+))?\n```/g,
     (_, lang, filePath, _range, startLine, endLine) => {
       const fullPath = join(process.cwd(), filePath.trim())
@@ -312,10 +298,9 @@ function processIncludes(markdown) {
       return `\`\`\`${lang}\n${content}\n\`\`\``
     }
   )
-}
 
-function fixLinks(html) {
-  return html
+const fixLinks = html =>
+  html
     .replace(/href="\/([^"]+)"/g, (_, path) => {
       if (path.endsWith('/') || path.includes('.') || path.startsWith('http')) return `href="${cx.BASE_PATH}/${path}"`
       return `href="${cx.BASE_PATH}/${path}/"`
@@ -325,112 +310,98 @@ function fixLinks(html) {
       if (path.startsWith('http') || path.startsWith('/')) return `href="${path}"`
       return `href="${path}/"`
     })
-}
 
-function getTitleFromContent(content) {
-  const match = content.match(/^#\s+(.+)$/m)
-  return match ? match[1] : null
-}
+const getTitleFromContent = content => content.match(/^#\s+(.+)$/m)?.[1] ?? null
 
-function slugToTitle(slug) {
-  return slug
-    .split('-')
-    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(' ')
-    .replace('_', ' ')
-}
+const slugToTitle = slug => _.startCase(slug.replace(/_/g, ' '))
 
 // --- Render Helpers ---
 
-function renderPage(title, content) {
-  const pageHtml = renderToString(html`<${Layout} title=${title}>${content}<//>`)
-  return '<!DOCTYPE html>\n' + pageHtml
-}
+const renderPage = (title, content) => '<!DOCTYPE html>\n' + renderToString(html`<${Layout} title=${title}>${content}<//>`)
 
 // --- Build Process ---
 
-// Clean dist
-if (existsSync(cx.DIST_DIR)) {
-  rmSync(cx.DIST_DIR, { recursive: true })
-}
-mkdirSync(cx.DIST_DIR)
-
-// Copy public assets
-if (existsSync(join(cx.DOCS_DIR, 'public'))) {
-  cpSync(join(cx.DOCS_DIR, 'public'), cx.DIST_DIR, { recursive: true })
-}
-
-// Collect all pages
-for (const [section, config] of Object.entries(cx.SECTIONS)) {
-  const sectionDir = join(cx.DOCS_DIR, section)
-  if (!existsSync(sectionDir)) continue
-
-  for (const file of readdirSync(sectionDir)) {
-    if (!file.endsWith('.md')) continue
-
-    const slug = basename(file, '.md')
-    const filepath = join(sectionDir, file)
-    const content = readFileSync(filepath, 'utf-8')
-    const title = getTitleFromContent(content) || slugToTitle(slug)
-
-    cx.pages.push({
-      section,
-      slug,
-      filepath,
-      title,
-      order: config.order.indexOf(slug),
-    })
+const build = () => {
+  // Clean dist
+  if (existsSync(cx.DIST_DIR)) {
+    rmSync(cx.DIST_DIR, { recursive: true })
   }
+  mkdirSync(cx.DIST_DIR)
+
+  // Copy public assets
+  if (existsSync(join(cx.DOCS_DIR, 'public'))) {
+    cpSync(join(cx.DOCS_DIR, 'public'), cx.DIST_DIR, { recursive: true })
+  }
+
+  // Collect all pages
+  cx.pages = _.sortBy(
+    globSync(`${cx.DOCS_DIR}/{${Object.keys(cx.SECTIONS).join(',')}}/*.md`).map(filepath => {
+      const section = basename(join(filepath, '..'))
+      const slug = basename(filepath, '.md')
+      const content = readFileSync(filepath, 'utf-8')
+
+      return {
+        section,
+        slug,
+        filepath,
+        title: getTitleFromContent(content) || slugToTitle(slug),
+        order: cx.SECTIONS[section].order.indexOf(slug),
+      }
+    }),
+    'order'
+  )
+
+  // Build section pages
+  for (const page of cx.pages) {
+    const content = readFileSync(page.filepath, 'utf-8')
+
+    const withIncludes = processIncludes(content)
+    let contentHtml = marked(withIncludes)
+    contentHtml = styleBlockquotes(contentHtml)
+    contentHtml = fixLinks(contentHtml, page.filepath)
+
+    const title = getTitleFromContent(content) || slugToTitle(basename(page.filepath, '.md'))
+
+    const finalHtml = renderPage(title, html`<${Page} contentHtml=${contentHtml} />`)
+
+    const outDir = join(cx.DIST_DIR, page.section, page.slug)
+    mkdirSync(outDir, { recursive: true })
+    writeFileSync(join(outDir, 'index.html'), finalHtml)
+    console.log(`Built: ${page.section}/${page.slug}`)
+  }
+
+  // Build home page
+  if (existsSync(join(cx.DOCS_DIR, 'index.md'))) {
+    const content = readFileSync(join(cx.DOCS_DIR, 'index.md'), 'utf-8')
+    let contentHtml = marked(content)
+    contentHtml = fixLinks(contentHtml, 'index.md')
+
+    const finalHtml = renderPage('Tokamak', html`<${Page} contentHtml=${contentHtml} />`)
+
+    writeFileSync(join(cx.DIST_DIR, 'index.html'), finalHtml)
+    console.log('Built: index')
+  }
+
+  // Build API docs
+  const files = globSync('**/*.zig', { cwd: cx.SRC_DIR }).map(f => join(cx.SRC_DIR, f)).sort()
+  const fileData = files
+    .map(file => ({
+      file,
+      items: parseZigFile(file),
+    }))
+    .filter(({ items }) => items.length > 0)
+
+  const apiHtml = renderPage('API Reference', html`<${ApiDocs} fileData=${fileData} />`)
+
+  const apiDir = join(cx.DIST_DIR, 'api')
+  mkdirSync(apiDir, { recursive: true })
+  writeFileSync(join(apiDir, 'index.html'), apiHtml)
+  console.log('Built: api')
+
+  console.log(`\nDone! Built ${cx.pages.length + 2} pages.`)
 }
 
-// Sort pages by section order
-cx.pages.sort((a, b) => a.order - b.order)
-
-// Build section pages
-for (const page of cx.pages) {
-  const content = readFileSync(page.filepath, 'utf-8')
-
-  const withIncludes = processIncludes(content)
-  let contentHtml = marked(withIncludes)
-  contentHtml = styleBlockquotes(contentHtml)
-  contentHtml = fixLinks(contentHtml, page.filepath)
-
-  const title = getTitleFromContent(content) || slugToTitle(basename(page.filepath, '.md'))
-
-  const finalHtml = renderPage(title, html`<${Page} contentHtml=${contentHtml} />`)
-
-  const outDir = join(cx.DIST_DIR, page.section, page.slug)
-  mkdirSync(outDir, { recursive: true })
-  writeFileSync(join(outDir, 'index.html'), finalHtml)
-  console.log(`Built: ${page.section}/${page.slug}`)
+// Run when executed directly
+if (process.argv[1].endsWith('build_docs.js')) {
+  build()
 }
-
-// Build home page
-if (existsSync(join(cx.DOCS_DIR, 'index.md'))) {
-  const content = readFileSync(join(cx.DOCS_DIR, 'index.md'), 'utf-8')
-  let contentHtml = marked(content)
-  contentHtml = fixLinks(contentHtml, 'index.md')
-
-  const finalHtml = renderPage('Tokamak', html`<${Page} contentHtml=${contentHtml} />`)
-
-  writeFileSync(join(cx.DIST_DIR, 'index.html'), finalHtml)
-  console.log('Built: index')
-}
-
-// Build API docs
-const files = findZigFiles(cx.SRC_DIR).sort()
-const fileData = files
-  .map(file => ({
-    file,
-    items: parseZigFile(file),
-  }))
-  .filter(({ items }) => items.length > 0)
-
-const apiHtml = renderPage('API Reference', html`<${ApiDocs} fileData=${fileData} />`)
-
-const apiDir = join(cx.DIST_DIR, 'api')
-mkdirSync(apiDir, { recursive: true })
-writeFileSync(join(apiDir, 'index.html'), apiHtml)
-console.log('Built: api')
-
-console.log(`\nDone! Built ${cx.pages.length + 2} pages.`)

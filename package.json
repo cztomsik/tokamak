@@ -7,6 +7,7 @@
   },
   "dependencies": {
     "htm": "^3.1.1",
+    "lodash": "^4.17.23",
     "marked": "^15.0.0",
     "preact": "^10.24.3",
     "preact-render-to-string": "^6.5.11"
