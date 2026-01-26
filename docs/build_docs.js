@@ -122,7 +122,7 @@ const Nav = () => {
         <ul class="mt-2 ml-4 flex flex-wrap gap-x-4 md:block">
           ${sectionPages.map(page => {
             const label = page.title === 'Index' ? config.title : page.title
-            return html`<li><a href="${cx.BASE_PATH}/${section}/${page.slug}/" class="${linkClasses}">${label}</a></li>`
+            return html`<li><a href="${cx.BASE_PATH}/${section}/${page.slug}.html" class="${linkClasses}">${label}</a></li>`
           })}
         </ul>
       </details>
@@ -135,7 +135,7 @@ const Nav = () => {
     >
       <a href="${cx.BASE_PATH}/" class="font-bold text-xl text-gray-900 dark:text-gray-100 no-underline block mb-6">Tokamak</a>
       ${sections}
-      <a href="${cx.BASE_PATH}/api/" class="${linkClasses}">API Reference</a>
+      <a href="${cx.BASE_PATH}/api.html" class="${linkClasses}">API Reference</a>
     </nav>
   `
 }
@@ -282,17 +282,12 @@ const processIncludes = markdown =>
   })
 
 const renderLink = ({ href, title, text }) => {
-  if (href.startsWith('./') && href.endsWith('.md')) {
-    href = '../' + href.slice(2).replace(/\.md$/, '/')
-  } else if (href.endsWith('.md')) {
-    href = href.replace(/\.md$/, '/')
+  if (href.endsWith('.md')) {
+    href = href.replace(/\.md$/, '.html')
   }
 
   if (href.startsWith('/')) {
     href = cx.BASE_PATH + href
-    if (!href.endsWith('/') && !href.includes('.')) {
-      href += '/'
-    }
   }
 
   return `<a href="${href}"${title ? ` title="${title}"` : ''}>${text}</a>`
@@ -320,9 +315,9 @@ const marked = new Marked({
 
 const buildPage = (title, content, outPath) => {
   const res = '<!DOCTYPE html>\n' + renderToString(html`<${Layout} title=${title}>${content}<//>`)
-  const dir = join(cx.DIST_DIR, outPath)
-  mkdirSync(dir, { recursive: true })
-  writeFileSync(join(dir, 'index.html'), res)
+  const filePath = outPath ? join(cx.DIST_DIR, outPath + '.html') : join(cx.DIST_DIR, 'index.html')
+  mkdirSync(join(filePath, '..'), { recursive: true })
+  writeFileSync(filePath, res)
   console.log(`Built: ${outPath || 'index'}`)
 }
 

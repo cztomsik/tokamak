@@ -122,4 +122,4 @@ The main application shows all these patterns together:
 ## Next Steps
 
 - See [todos_orm_sqlite](./todos_orm_sqlite.md) for database persistence
-- Check out the [Middlewares guide](/guide/middlewares) for more middleware options
+- Check out the [Middlewares guide](../guide/middlewares.md) for more middleware options

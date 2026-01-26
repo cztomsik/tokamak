@@ -140,4 +140,4 @@ Handlers simply request `db: *fr.Session` and get an active session.
 
 - See the [fridge ORM documentation](https://github.com/cztomsik/fridge) for more query capabilities
 - Check out [blog](./blog.md) for service layer patterns
-- Read the [Dependency Injection guide](/guide/dependency-injection) for more on DI patterns
+- Read the [Dependency Injection guide](../guide/dependency-injection.md) for more on DI patterns

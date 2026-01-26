@@ -67,9 +67,9 @@ That's it! Build and run your application, then visit `http://localhost:8080` to
 
 Now that you have a running server, let's explore what Tokamak can do:
 
-- **[Server Setup](/guide/server)** - Learn about configuration, static files, and server options
-- **[Routing](/guide/routing)** - Handle different paths, URL parameters, and HTTP methods
-- **[Dependency Injection](/guide/dependency-injection)** - Share services and configuration across your handlers
-- **[Middlewares](/guide/middlewares)** - Add logging, authentication, and other cross-cutting concerns
+- **[Server Setup](./server.md)** - Learn about configuration, static files, and server options
+- **[Routing](./routing.md)** - Handle different paths, URL parameters, and HTTP methods
+- **[Dependency Injection](./dependency-injection.md)** - Share services and configuration across your handlers
+- **[Middlewares](./middlewares.md)** - Add logging, authentication, and other cross-cutting concerns
 
 Ready to dive deeper? Let's start with the Server guide!
