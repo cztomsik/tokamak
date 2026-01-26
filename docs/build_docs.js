@@ -270,11 +270,6 @@ const parseZigFile = filePath => {
 
 const makeAnchorId = _.kebabCase
 
-const styleBlockquotes = html =>
-  html.replace(/<blockquote>\s*<p><strong>(Tip|Warning):<\/strong>/g, (_, type) =>
-    `<blockquote class="${type.toLowerCase()}"><p><strong>${type}:</strong>`
-  )
-
 const processIncludes = markdown =>
   markdown.replace(
     /```(\w*)\n@include\s+([^\n#]+)(#L(\d+)-L(\d+))?\n```/g,
@@ -316,6 +311,13 @@ const renderLink = ({ href, title, text }) => {
   return `<a href="${href}"${title ? ` title="${title}"` : ''}>${text}</a>`
 }
 
+const renderBlockquote = function ({ tokens }) {
+  const body = this.parser.parse(tokens)
+  const match = body.match(/^<p><strong>(Tip|Warning):<\/strong>/)
+  const className = match ? ` class="${match[1].toLowerCase()}"` : ''
+  return `<blockquote${className}>\n${body}</blockquote>\n`
+}
+
 const getTitleFromContent = content => content.match(/^#\s+(.+)$/m)?.[1] ?? null
 
 const slugToTitle = slug => _.startCase(slug.replace(/_/g, ' '))
@@ -323,8 +325,8 @@ const slugToTitle = slug => _.startCase(slug.replace(/_/g, ' '))
 // --- Marked Instance ---
 
 const marked = new Marked({
-  hooks: { preprocess: processIncludes, postprocess: styleBlockquotes },
-  renderer: { link: renderLink }
+  hooks: { preprocess: processIncludes },
+  renderer: { link: renderLink, blockquote: renderBlockquote }
 })
 
 // --- Render Helpers ---
