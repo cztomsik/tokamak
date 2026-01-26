@@ -125,6 +125,10 @@ pub const How = union(enum) {
     }
 };
 
+// NOTE: we could use pointer since we are in comptime and the buf is
+// fixed-capacity but I was getting some ptr compile errors then
+const DepId = enum(u8) { empty = 255, _ };
+
 const Dep = struct {
     type: type,
     provider: How,
@@ -133,6 +137,7 @@ const Dep = struct {
         override,
     },
     mask: u64 = 0, // bitset of what we need
+    next: DepId = .empty, // chain for hash collisions
 
     fn desc(self: Dep) []const u8 {
         return @typeName(self.type) ++ " " ++ @tagName(self.provider);
@@ -217,10 +222,18 @@ const Op = union(enum) {
 /// Compile-time dependency graph builder.
 pub const Bundle = struct {
     deps: Buf(Dep),
+    index: [256]DepId = [_]DepId{.empty} ** 256,
     compile_hooks: Buf(meta.ComptimeVal), // before the compilation
     runtime_hooks: Buf(Hook), // when the deps are ready / before they are gone
     n_inst: usize = 0,
     n_data: usize = 0,
+
+    fn typeHash(comptime T: type) u8 {
+        const name = @typeName(meta.Deref(T));
+        var h: usize = 0;
+        for (name) |c| h = h *% 31 +% c;
+        return @truncate(h);
+    }
 
     /// Registers all fields of module M as dependencies.
     ///
@@ -430,8 +443,12 @@ pub const Bundle = struct {
     pub fn findDep(self: *Bundle, comptime T: type) ?*Dep {
         // Whenever we look for uniqueness or for dep tracking, we want to use base types
         const expected = meta.Deref(T);
-        for (self.deps.items()) |*dep| {
+        var idx = self.index[typeHash(T)];
+
+        while (idx != .empty) {
+            const dep = &self.deps.buf[@intFromEnum(idx)];
             if (meta.Deref(dep.type) == expected) return dep;
+            idx = dep.next;
         } else return null;
     }
 
@@ -455,10 +472,25 @@ pub const Bundle = struct {
             }
 
             unreachable;
-        } else {
-            self.deps.push(dep);
-            @setEvalBranchQuota(20 * self.deps.len * self.deps.len);
         }
+
+        // TODO: I'm not sure if we can really do anything about this, because
+        // if any module has configure() that still counts towards the global
+        // limit so maybe a better idea would be to set this in compile()
+        // something like mods.len * 10_000 or IDK, but at least this impl
+        // should scale better with higher deps.len because the previous impl
+        // was N^2, increasing with every new dep (+ the .configure() cost)
+        // - or maybe we could just set 1M or something call it a day
+        @setEvalBranchQuota(self.deps.len * 256);
+
+        // New dep - prepend to chain at this hash bucket
+        const h = typeHash(dep.type);
+        const new_idx: u8 = @intCast(self.deps.len);
+
+        var new_dep = dep;
+        new_dep.next = self.index[h];
+        self.deps.push(new_dep);
+        self.index[h] = @enumFromInt(new_idx);
     }
 
     fn allocInstance(self: *Bundle, comptime T: type) @FieldType(Dep, "state") {
