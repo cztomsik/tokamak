@@ -1,6 +1,6 @@
 import { readFileSync, writeFileSync, mkdirSync, cpSync, rmSync, existsSync, globSync } from 'fs'
 import { join, basename, relative } from 'path'
-import { marked } from 'marked'
+import { Marked } from 'marked'
 import { h } from 'preact'
 import renderToString from 'preact-render-to-string'
 import { parse } from './zig-parser.js'
@@ -156,7 +156,7 @@ const Page = ({ contentHtml }) => {
 }
 
 const ApiItem = ({ item }) => {
-  const docHtml = item.doc ? marked(item.doc) : null
+  const docHtml = item.doc ? marked.parse(item.doc) : null
 
   switch (item.kind) {
     case 'fn':
@@ -299,21 +299,33 @@ const processIncludes = markdown =>
     }
   )
 
-const fixLinks = html =>
-  html
-    .replace(/href="\/([^"]+)"/g, (_, path) => {
-      if (path.endsWith('/') || path.includes('.') || path.startsWith('http')) return `href="${cx.BASE_PATH}/${path}"`
-      return `href="${cx.BASE_PATH}/${path}/"`
-    })
-    .replace(/href="\.\/([^"]+)\.md"/g, (_, name) => `href="../${name}/"`)
-    .replace(/href="([^"]+)\.md"/g, (_, path) => {
-      if (path.startsWith('http') || path.startsWith('/')) return `href="${path}"`
-      return `href="${path}/"`
-    })
+const renderLink = ({ href, title, text }) => {
+  if (href.startsWith('./') && href.endsWith('.md')) {
+    href = '../' + href.slice(2).replace(/\.md$/, '/')
+  } else if (href.endsWith('.md')) {
+    href = href.replace(/\.md$/, '/')
+  }
+
+  if (href.startsWith('/')) {
+    href = cx.BASE_PATH + href
+    if (!href.endsWith('/') && !href.includes('.')) {
+      href += '/'
+    }
+  }
+
+  return `<a href="${href}"${title ? ` title="${title}"` : ''}>${text}</a>`
+}
 
 const getTitleFromContent = content => content.match(/^#\s+(.+)$/m)?.[1] ?? null
 
 const slugToTitle = slug => _.startCase(slug.replace(/_/g, ' '))
+
+// --- Marked Instance ---
+
+const marked = new Marked({
+  hooks: { preprocess: processIncludes, postprocess: styleBlockquotes },
+  renderer: { link: renderLink }
+})
 
 // --- Render Helpers ---
 
@@ -355,14 +367,9 @@ const build = () => {
   for (const page of cx.pages) {
     const content = readFileSync(page.filepath, 'utf-8')
 
-    const withIncludes = processIncludes(content)
-    let contentHtml = marked(withIncludes)
-    contentHtml = styleBlockquotes(contentHtml)
-    contentHtml = fixLinks(contentHtml, page.filepath)
+    const contentHtml = marked.parse(content)
 
-    const title = getTitleFromContent(content) || slugToTitle(basename(page.filepath, '.md'))
-
-    const finalHtml = renderPage(title, html`<${Page} contentHtml=${contentHtml} />`)
+    const finalHtml = renderPage(page.title, html`<${Page} contentHtml=${contentHtml} />`)
 
     const outDir = join(cx.DIST_DIR, page.section, page.slug)
     mkdirSync(outDir, { recursive: true })
@@ -373,8 +380,7 @@ const build = () => {
   // Build home page
   if (existsSync(join(cx.DOCS_DIR, 'index.md'))) {
     const content = readFileSync(join(cx.DOCS_DIR, 'index.md'), 'utf-8')
-    let contentHtml = marked(content)
-    contentHtml = fixLinks(contentHtml, 'index.md')
+    const contentHtml = marked.parse(content)
 
     const finalHtml = renderPage('Tokamak', html`<${Page} contentHtml=${contentHtml} />`)
 
