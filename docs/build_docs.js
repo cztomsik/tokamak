@@ -105,9 +105,15 @@ const Layout = ({ title, children }) => {
   `
 }
 
-const Nav = () => {
-  const linkClasses = 'text-gray-500 dark:text-gray-400 no-underline hover:text-blue-600 dark:hover:text-blue-400'
+const Link = ({ href, children }) => {
+  const color = cx.path === href.replace(/^\//, '').replace(/\.html$/, '')
+    ? 'text-blue-600 dark:text-blue-400 font-semibold'
+    : 'text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400'
 
+  return html`<a href="${cx.BASE_PATH}${href}" class="no-underline ${color}">${children}</a>`
+}
+
+const Nav = () => {
   const sections = Object.entries(cx.SECTIONS).map(([section, config]) => {
     const sectionPages = cx.pages.filter(p => p.section === section)
     if (!sectionPages.length) return null
@@ -122,7 +128,8 @@ const Nav = () => {
         <ul class="mt-2 ml-4 flex flex-wrap gap-x-4 md:block">
           ${sectionPages.map(page => {
             const label = page.title === 'Index' ? config.title : page.title
-            return html`<li><a href="${cx.BASE_PATH}/${section}/${page.slug}.html" class="${linkClasses}">${label}</a></li>`
+            const pagePath = `${section}/${page.slug}`
+            return html`<li><${Link} href="/${pagePath}.html">${label}<//></li>`
           })}
         </ul>
       </details>
@@ -135,7 +142,7 @@ const Nav = () => {
     >
       <a href="${cx.BASE_PATH}/" class="font-bold text-xl text-gray-900 dark:text-gray-100 no-underline block mb-6">Tokamak</a>
       ${sections}
-      <a href="${cx.BASE_PATH}/api.html" class="${linkClasses}">API Reference</a>
+      <${Link} href="/api.html">API Reference<//>
     </nav>
   `
 }
@@ -313,12 +320,13 @@ const marked = new Marked({
 
 // --- Build Process ---
 
-const buildPage = (title, content, outPath) => {
+const buildPage = (path, title, content) => {
+  cx.path = path
   const res = '<!DOCTYPE html>\n' + renderToString(html`<${Layout} title=${title}>${content}<//>`)
-  const filePath = outPath ? join(cx.DIST_DIR, outPath + '.html') : join(cx.DIST_DIR, 'index.html')
+  const filePath = path ? join(cx.DIST_DIR, path + '.html') : join(cx.DIST_DIR, 'index.html')
   mkdirSync(join(filePath, '..'), { recursive: true })
   writeFileSync(filePath, res)
-  console.log(`Built: ${outPath || 'index'}`)
+  console.log(`Built: ${path || 'index'}`)
 }
 
 const build = () => {
@@ -354,13 +362,13 @@ const build = () => {
   // Build section pages
   for (const page of cx.pages) {
     const content = readFileSync(page.filepath, 'utf-8')
-    buildPage(page.title, html`<${Page} markdown=${content} />`, `${page.section}/${page.slug}`)
+    buildPage(`${page.section}/${page.slug}`, page.title, html`<${Page} markdown=${content} />`)
   }
 
   // Build home page
   if (existsSync(join(cx.DOCS_DIR, 'index.md'))) {
     const content = readFileSync(join(cx.DOCS_DIR, 'index.md'), 'utf-8')
-    buildPage('Tokamak', html`<${Page} markdown=${content} />`, '')
+    buildPage('', 'Tokamak', html`<${Page} markdown=${content} />`)
   }
 
   // Build API docs
@@ -374,7 +382,7 @@ const build = () => {
     }))
     .filter(({ items }) => items.length > 0)
 
-  buildPage('API Reference', html`<${ApiDocs} fileData=${fileData} />`, 'api')
+  buildPage('api', 'API Reference', html`<${ApiDocs} fileData=${fileData} />`)
 
   console.log(`\nDone! Built ${cx.pages.length + 2} pages.`)
 }
