@@ -19,16 +19,7 @@ const cx = {
   SECTIONS: {
     guide: {
       title: 'Guide',
-      order: [
-        'getting-started',
-        'server',
-        'routing',
-        'dependency-injection',
-        'middlewares',
-        'examples',
-        'terminal',
-        'time',
-      ],
+      order: ['getting-started', 'server', 'routing', 'dependency-injection', 'middlewares', 'examples', 'terminal', 'time'],
     },
     examples: {
       title: 'Examples',
@@ -142,16 +133,15 @@ const Nav = () => {
     <nav
       class="w-full md:w-64 p-6 border-b md:border-b-0 md:border-r border-gray-200 dark:border-gray-700 md:sticky md:top-0 md:h-screen overflow-y-auto shrink-0"
     >
-      <a href="${cx.BASE_PATH}/" class="font-bold text-xl text-gray-900 dark:text-gray-100 no-underline block mb-6"
-        >Tokamak</a
-      >
+      <a href="${cx.BASE_PATH}/" class="font-bold text-xl text-gray-900 dark:text-gray-100 no-underline block mb-6">Tokamak</a>
       ${sections}
       <a href="${cx.BASE_PATH}/api/" class="${linkClasses}">API Reference</a>
     </nav>
   `
 }
 
-const Page = ({ contentHtml }) => {
+const Page = ({ markdown }) => {
+  const contentHtml = marked.parse(markdown)
   return html`<div dangerouslySetInnerHTML=${{ __html: contentHtml }} />`
 }
 
@@ -271,28 +261,25 @@ const parseZigFile = filePath => {
 const makeAnchorId = _.kebabCase
 
 const processIncludes = markdown =>
-  markdown.replace(
-    /```(\w*)\n@include\s+([^\n#]+)(#L(\d+)-L(\d+))?\n```/g,
-    (_, lang, filePath, _range, startLine, endLine) => {
-      const fullPath = join(process.cwd(), filePath.trim())
+  markdown.replace(/```(\w*)\n@include\s+([^\n#]+)(#L(\d+)-L(\d+))?\n```/g, (_, lang, filePath, _range, startLine, endLine) => {
+    const fullPath = join(process.cwd(), filePath.trim())
 
-      if (!existsSync(fullPath)) {
-        console.warn(`Warning: Include file not found: ${filePath}`)
-        return `\`\`\`${lang}\n// File not found: ${filePath}\n\`\`\``
-      }
-
-      let content = readFileSync(fullPath, 'utf-8')
-
-      if (startLine && endLine) {
-        const lines = content.split('\n')
-        const start = parseInt(startLine, 10) - 1
-        const end = parseInt(endLine, 10)
-        content = lines.slice(start, end).join('\n')
-      }
-
-      return `\`\`\`${lang}\n${content}\n\`\`\``
+    if (!existsSync(fullPath)) {
+      console.warn(`Warning: Include file not found: ${filePath}`)
+      return `\`\`\`${lang}\n// File not found: ${filePath}\n\`\`\``
     }
-  )
+
+    let content = readFileSync(fullPath, 'utf-8')
+
+    if (startLine && endLine) {
+      const lines = content.split('\n')
+      const start = parseInt(startLine, 10) - 1
+      const end = parseInt(endLine, 10)
+      content = lines.slice(start, end).join('\n')
+    }
+
+    return `\`\`\`${lang}\n${content}\n\`\`\``
+  })
 
 const renderLink = ({ href, title, text }) => {
   if (href.startsWith('./') && href.endsWith('.md')) {
@@ -326,14 +313,18 @@ const slugToTitle = slug => _.startCase(slug.replace(/_/g, ' '))
 
 const marked = new Marked({
   hooks: { preprocess: processIncludes },
-  renderer: { link: renderLink, blockquote: renderBlockquote }
+  renderer: { link: renderLink, blockquote: renderBlockquote },
 })
 
-// --- Render Helpers ---
-
-const renderPage = (title, content) => '<!DOCTYPE html>\n' + renderToString(html`<${Layout} title=${title}>${content}<//>`)
-
 // --- Build Process ---
+
+const buildPage = (title, content, outPath) => {
+  const res = '<!DOCTYPE html>\n' + renderToString(html`<${Layout} title=${title}>${content}<//>`)
+  const dir = join(cx.DIST_DIR, outPath)
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, 'index.html'), res)
+  console.log(`Built: ${outPath || 'index'}`)
+}
 
 const build = () => {
   // Clean dist
@@ -368,30 +359,19 @@ const build = () => {
   // Build section pages
   for (const page of cx.pages) {
     const content = readFileSync(page.filepath, 'utf-8')
-
-    const contentHtml = marked.parse(content)
-
-    const finalHtml = renderPage(page.title, html`<${Page} contentHtml=${contentHtml} />`)
-
-    const outDir = join(cx.DIST_DIR, page.section, page.slug)
-    mkdirSync(outDir, { recursive: true })
-    writeFileSync(join(outDir, 'index.html'), finalHtml)
-    console.log(`Built: ${page.section}/${page.slug}`)
+    buildPage(page.title, html`<${Page} markdown=${content} />`, `${page.section}/${page.slug}`)
   }
 
   // Build home page
   if (existsSync(join(cx.DOCS_DIR, 'index.md'))) {
     const content = readFileSync(join(cx.DOCS_DIR, 'index.md'), 'utf-8')
-    const contentHtml = marked.parse(content)
-
-    const finalHtml = renderPage('Tokamak', html`<${Page} contentHtml=${contentHtml} />`)
-
-    writeFileSync(join(cx.DIST_DIR, 'index.html'), finalHtml)
-    console.log('Built: index')
+    buildPage('Tokamak', html`<${Page} markdown=${content} />`, '')
   }
 
   // Build API docs
-  const files = globSync('**/*.zig', { cwd: cx.SRC_DIR }).map(f => join(cx.SRC_DIR, f)).sort()
+  const files = globSync('**/*.zig', { cwd: cx.SRC_DIR })
+    .map(f => join(cx.SRC_DIR, f))
+    .sort()
   const fileData = files
     .map(file => ({
       file,
@@ -399,12 +379,7 @@ const build = () => {
     }))
     .filter(({ items }) => items.length > 0)
 
-  const apiHtml = renderPage('API Reference', html`<${ApiDocs} fileData=${fileData} />`)
-
-  const apiDir = join(cx.DIST_DIR, 'api')
-  mkdirSync(apiDir, { recursive: true })
-  writeFileSync(join(apiDir, 'index.html'), apiHtml)
-  console.log('Built: api')
+  buildPage('API Reference', html`<${ApiDocs} fileData=${fileData} />`, 'api')
 
   console.log(`\nDone! Built ${cx.pages.length + 2} pages.`)
 }
