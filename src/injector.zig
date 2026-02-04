@@ -13,7 +13,7 @@ pub const Ref = struct {
     /// Creates a `Ref` from any pointer.
     pub fn ref(ptr: anytype) Ref {
         return .{
-            .tid = meta.tid(@TypeOf(ptr.*)),
+            .tid = meta.tid(@typeInfo(@TypeOf(ptr)).pointer.child), // NOTE: @TypeOf(ptr.*) does not work when T is opaque
             .ptr = @ptrCast(@alignCast(@constCast(ptr))),
             .is_const = @typeInfo(@TypeOf(ptr)).pointer.is_const,
         };
