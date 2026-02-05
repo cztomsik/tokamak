@@ -197,7 +197,7 @@ pub const ShmQueue = struct {
         // Optionally check for a duplicate key and skip
         if (job.key.len > 0) {
             for (self.slots) |*s| {
-                if (s.id.load(.acquire) != FREE and std.mem.eql(u8, job.key, s.buf[s.name_end..s.key_end])) return null;
+                if (s.id.load(.acquire) != FREE and std.mem.eql(u8, job.name, s.buf[0..s.name_end]) and std.mem.eql(u8, job.key, s.buf[s.name_end..s.key_end])) return null;
             }
         }
 
@@ -345,6 +345,8 @@ test Queue {
     const id2 = try queue.enqueue(.{ .name = "job2", .data = "bar", .key = "foo" }) orelse unreachable;
     const id3 = try queue.enqueue(.{ .name = "job3", .data = "", .scheduled_at = 60 }) orelse unreachable;
     _ = try queue.enqueue(.{ .name = "job2", .data = "xxx", .key = "foo" });
+    // Same key but different NAME
+    const id4 = try queue.enqueue(.{ .name = "job4", .data = "baz", .key = "foo" }) orelse unreachable;
 
     try expectJobs(queue,
         \\| name | key | data | scheduled_at |
@@ -352,6 +354,7 @@ test Queue {
         \\| job1 |     | 123  | 0            |
         \\| job2 | foo | bar  | 0            |
         \\| job3 |     |      | 60           |
+        \\| job4 | foo | baz  | 0            |
     );
 
     // Start first
@@ -363,6 +366,7 @@ test Queue {
         \\|------|-----|------|
         \\| job2 | foo | bar  |
         \\| job3 |     |      |
+        \\| job4 | foo | baz  |
     );
 
     // Remove first
@@ -373,6 +377,7 @@ test Queue {
         \\|------|-----|------|
         \\| job2 | foo | bar  |
         \\| job3 |     |      |
+        \\| job4 | foo | baz  |
     );
 
     // Start second
@@ -383,10 +388,12 @@ test Queue {
         \\| name | key | data |
         \\|------|-----|------|
         \\| job3 |     |      |
+        \\| job4 | foo | baz  |
     );
 
-    // Remove second
-    try queue.remove(id2);
+    // Start fourth (same key as job2 but different name)
+    const next3 = (try queue.dequeue(arena.allocator())).?;
+    try std.testing.expectEqual(id4, next3.id);
 
     try expectJobs(queue,
         \\| name | key | data |
@@ -401,8 +408,8 @@ test Queue {
     testing.time.value += 120;
 
     // Start scheduled
-    const next3 = (try queue.dequeue(arena.allocator())).?;
-    try std.testing.expectEqual(id3, next3.id);
+    const next4 = (try queue.dequeue(arena.allocator())).?;
+    try std.testing.expectEqual(id3, next4.id);
 
     // No more jobs available
     try std.testing.expectEqual(null, try queue.dequeue(arena.allocator()));
