@@ -43,7 +43,7 @@ test Grep {
     var reader = std.io.Reader.fixed("line one\nfn hello\nline three\n");
     var grep = Grep.init(&reader, &re);
 
-    try std.testing.expectEqualStrings("fn hello", (try grep.next()).?);
+    try std.testing.expectEqualStrings("fn hello\n", (try grep.next()).?);
     try std.testing.expectEqual(null, try grep.next());
 
     // No trailing newline but it should still be found
