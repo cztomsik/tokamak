@@ -15,19 +15,44 @@ pub const Grep = struct {
         };
     }
 
-    pub fn next(self: *Grep) ?[]const u8 {
-        while (self.nextLine()) |line| {
+    pub fn next(self: *Grep) !?[]const u8 {
+        while (try self.nextLine()) |line| {
             if (self.regex.match(line)) return line;
         } else return null;
     }
 
-    fn nextLine(self: *Grep) ?[]const u8 {
-        const line = self.reader.takeDelimiterExclusive('\n') catch return null;
-        const trimmed = std.mem.trimRight(u8, line, "\r");
+    fn nextLine(self: *Grep) !?[]const u8 {
+        const line = self.reader.takeDelimiterInclusive('\n') catch |e| switch (e) {
+            error.EndOfStream => {
+                const rem = self.reader.buffered();
+                if (rem.len == 0) return null;
+                self.reader.toss(rem.len);
+                return rem;
+            },
+            else => return e,
+        };
         self.line += 1;
-        return trimmed;
+        return line;
     }
 };
+
+test Grep {
+    var re = try Regex.compile(std.testing.allocator, "fn");
+    defer re.deinit(std.testing.allocator);
+
+    var reader = std.io.Reader.fixed("line one\nfn hello\nline three\n");
+    var grep = Grep.init(&reader, &re);
+
+    try std.testing.expectEqualStrings("fn hello", (try grep.next()).?);
+    try std.testing.expectEqual(null, try grep.next());
+
+    // No trailing newline but it should still be found
+    var reader2 = std.io.Reader.fixed("line one\nfn hello");
+    var grep2 = Grep.init(&reader2, &re);
+
+    try std.testing.expectEqualStrings("fn hello", (try grep2.next()).?);
+    try std.testing.expectEqual(null, try grep2.next());
+}
 
 const MAX_OPS = 127; // TODO: we can lift this later
 

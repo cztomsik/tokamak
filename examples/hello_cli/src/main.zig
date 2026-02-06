@@ -98,8 +98,8 @@ const Cli = struct {
         var in = file.reader(&buf);
         var grepper = tk.regex.Grep.init(&in.interface, &regex);
 
-        while (grepper.next()) |line| {
-            std.debug.print("{d}: {s}\n", .{ grepper.line, line });
+        while (try grepper.next()) |line| {
+            std.debug.print("{d}: {s}", .{ grepper.line, line });
         }
     }
 };
