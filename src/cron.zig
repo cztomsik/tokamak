@@ -116,7 +116,7 @@ pub const Cron = struct {
                 const key = try std.fmt.bufPrint(&buf, "{d}", .{job.next.epoch});
 
                 log.debug("scheduling {s} {s}", .{ job.name, job.data });
-                _ = try self.queue.enqueue(.{
+                _ = try self.queue.submit(.{
                     .name = job.name,
                     .data = job.data,
                     .key = key,
