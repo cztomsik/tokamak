@@ -146,19 +146,11 @@ pub const Html2Md = struct {
     }
 
     fn br(self: *Html2Md, n: u2) void {
-        // TODO: report Zig miscompilation?
-        // self.pending = if (self.in_line > 0) .sp else .{ .br = switch (self.pending) {
-        //     .nop, .sp => n,
-        //     .br => @max(n, self.pending.br),
-        // } };
         if (self.in_line > 0) {
             self.pending = .sp;
         } else {
-            const br_val: u2 = switch (self.pending) {
-                .nop, .sp => n,
-                .br => |old| @max(n, old),
-            };
-            self.pending = .{ .br = br_val };
+            const n_max = @max(n, if (self.pending == .br) self.pending.br else 0);
+            self.pending = .{ .br = n_max };
         }
     }
 };
@@ -236,6 +228,9 @@ test "lists" {
 
     // Siblings
     // try expectMd("<ul><li>list1</li></ul><ul><li>list2</li></ul>", "- list1\n\n- list2");
+
+    // Missing ul/ol (invalid HTML but we should still at least keep each item on its own line)
+    try expectMd("TODO:<li>one</li><li>two</li>", "TODO:\n- one\n- two");
 }
 
 test "tables" {
