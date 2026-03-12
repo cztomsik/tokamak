@@ -16,12 +16,15 @@ pub fn html2md(allocator: std.mem.Allocator, node: *dom.Node, options: Options) 
     return aw.toOwnedSlice();
 }
 
+/// Streaming HTML-to-Markdown formatter. Implements the DOM visitor and writes
+/// to the provided writer.
 pub const Html2Md = struct {
     options: Options,
     out: *std.io.Writer,
-    in_line: u32 = 0, // <h1>, <tr>
-    empty: bool = true,
-    pending: union(enum) { nop, sp, br: u2 } = .nop,
+    in_line: u32 = 0, // Replace line breaks with spaces if we are in <h1>, <tr>, ...
+    indent: u32 = 0, // Nesting depth of <ul> and/or <ol>
+    empty: bool = true, // True until we've pushed any content (skip leading whitespace)
+    pending: union(enum) { nop, sp, br: u2 } = .nop, // Whitespace to be written before next content
 
     pub fn init(out: *std.io.Writer, options: Options) !Html2Md {
         return .{
@@ -34,6 +37,7 @@ pub const Html2Md = struct {
         try node.visit(self);
     }
 
+    /// Handle element open
     pub fn open(self: *Html2Md, element: *dom.Element) !void {
         const p = dom.LocalName.parse;
 
@@ -42,7 +46,11 @@ pub const Html2Md = struct {
             p("em"), p("i") => self.push(self.options.em_delim),
             p("strong"), p("b") => self.push(self.options.strong_delim),
             p("div") => self.br(1),
-            p("p"), p("ul"), p("ol"), p("table") => self.br(2),
+            p("ul"), p("ol") => {
+                self.br(if (self.indent > 0) 1 else 2);
+                self.indent += 1;
+            },
+            p("p"), p("table") => self.br(2),
             p("h1"), p("h2"), p("h3"), p("h4"), p("h5"), p("h6") => {
                 self.br(2);
                 self.in_line += 1;
@@ -76,6 +84,7 @@ pub const Html2Md = struct {
         };
     }
 
+    /// Handle element close
     pub fn close(self: *Html2Md, element: *dom.Element) !void {
         const p = dom.LocalName.parse;
 
@@ -83,14 +92,17 @@ pub const Html2Md = struct {
             p("em"), p("i") => self.push(self.options.em_delim),
             p("strong"), p("b") => self.push(self.options.strong_delim),
             p("div") => self.br(1),
-            p("p"), p("ul"), p("ol"), p("table") => self.br(2),
+            p("ul"), p("ol") => {
+                self.indent -|= 1;
+                self.br(if (self.indent > 0) 1 else 2);
+            },
+            p("p"), p("table") => self.br(2),
             p("h1"), p("h2"), p("h3"), p("h4"), p("h5"), p("h6") => {
                 self.in_line -|= 1;
                 self.br(2);
             },
             p("li") => {
                 self.br(1);
-                // self.indent -|= 1;
             },
             p("tr") => {
                 self.in_line -|= 1;
@@ -104,6 +116,7 @@ pub const Html2Md = struct {
         };
     }
 
+    /// Handle text node
     pub fn text(self: *Html2Md, tn: *dom.Text) !void {
         // Nothing to do
         if (tn.data.len() == 0) return;
@@ -125,26 +138,39 @@ pub const Html2Md = struct {
         if (chunk[chunk.len - 1] != orig[orig.len - 1]) self.sp();
     }
 
+    /// Write content but flush any pending white-space first
     pub fn push(self: *Html2Md, chunk: []const u8) !void {
+        try self.flushPending();
+        try self.out.writeAll(chunk);
+        if (chunk.len > 0) self.empty = false;
+    }
+
+    fn flushPending(self: *Html2Md) !void {
         if (!self.empty and self.pending != .nop) {
-            try self.out.writeAll(switch (self.pending) {
-                .sp => " ",
-                .br => |n| if (n == 1) "\n" else "\n\n",
+            switch (self.pending) {
                 .nop => unreachable,
-            });
+                .sp => try self.out.writeAll(" "),
+                .br => |n| {
+                    try self.out.writeAll(if (n == 1) "\n" else "\n\n");
+
+                    if (self.indent > 1) {
+                        for (0..(self.indent -| 1) * 2) |_| try self.out.writeByte(' ');
+                    }
+                },
+            }
         }
 
-        try self.out.writeAll(chunk);
-        self.empty = self.empty and chunk.len == 0;
         self.pending = .nop;
     }
 
+    /// Request a pending space (unless there is a line-break already)
     fn sp(self: *Html2Md) void {
         if (self.pending == .nop) {
             self.pending = .sp;
         }
     }
 
+    /// Request a pending line break (unless there any line breaks already, or we are in <th>, etc.)
     fn br(self: *Html2Md, n: u2) void {
         if (self.in_line > 0) {
             self.pending = .sp;
@@ -223,8 +249,8 @@ test "lists" {
     try expectMd("<ol><li>first</li><li>second</li><li>third</li></ol>", "1. first\n2. second\n3. third");
 
     // Nesting
-    // try expectMd("<ul><li>parent<ul><li>child</li></ul></li></ul>", "- parent\n  - child");
-    // try expectMd("<ol><li>parent<ol><li>child</li></ol></li></ol>", "1. parent\n  1. child");
+    try expectMd("<ul><li>parent<ul><li>child</li></ul></li></ul>", "- parent\n  - child");
+    try expectMd("<ol><li>parent<ol><li>child</li></ol></li></ol>", "1. parent\n  1. child");
 
     // Siblings
     // try expectMd("<ul><li>list1</li></ul><ul><li>list2</li></ul>", "- list1\n\n- list2");
