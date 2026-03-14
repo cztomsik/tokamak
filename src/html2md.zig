@@ -21,9 +21,9 @@ pub fn html2md(allocator: std.mem.Allocator, node: *dom.Node, options: Options) 
 pub const Html2Md = struct {
     options: Options,
     out: *std.io.Writer,
-    in_line: u32 = 0, // Replace line breaks with spaces if we are in <h1>, <tr>, ...
-    indent: u32 = 0, // Nesting depth of <ul> and/or <ol>
-    empty: bool = true, // True until we've pushed any content (skip leading whitespace)
+    in_line: u8 = 0, // Replace line breaks with spaces if we are in <h1>, <tr>, ...
+    indent: u8 = 0, // Nesting depth of <ul> and/or <ol>
+    empty: bool = true, // True until we've pushed any content (skip leading whitespace) OR when we've just started new <li>
     pending: union(enum) { nop, sp, br: u2 } = .nop, // Whitespace to be written before next content
 
     pub fn init(out: *std.io.Writer, options: Options) !Html2Md {
@@ -48,37 +48,40 @@ pub const Html2Md = struct {
             p("div") => self.br(1),
             p("ul"), p("ol") => {
                 self.br(if (self.indent > 0) 1 else 2);
-                self.indent += 1;
+                self.indent +|= 1;
             },
             p("p"), p("table") => self.br(2),
             p("h1"), p("h2"), p("h3"), p("h4"), p("h5"), p("h6") => {
                 self.br(2);
-                self.in_line += 1;
+                self.in_line +|= 1;
                 try self.push("###### "['6' - element.local_name.name()[1] ..]);
             },
             p("th"), p("td") => self.sp(),
             p("tr") => {
                 self.br(1);
-                self.in_line += 1;
+                self.in_line +|= 1;
                 try self.push("|");
             },
             p("li") => {
                 self.br(1);
 
-                if (element.parentElement()) |parent| {
-                    if (parent.local_name == p("ol")) {
-                        // TODO: Add el.index, it will be useful for nth-child, even/odd
-                        var n: usize = 1;
-                        var prev = element.previousElementSibling();
-                        while (prev) |prevEl| : (prev = prevEl.previousElementSibling()) n += 1;
+                const is_ordered = if (element.parentElement()) |parent| parent.local_name == p("ol") else false;
 
-                        try self.push("");
-                        try self.out.print("{d}. ", .{n});
-                        return;
-                    }
+                if (is_ordered) {
+                    // TODO: Add el.index, it will be useful for nth-child, even/odd
+                    var n: usize = 1;
+                    var prev = element.previousElementSibling();
+                    while (prev) |prevEl| : (prev = prevEl.previousElementSibling()) n += 1;
+
+                    // TODO: self.print()?
+                    try self.flushPending();
+                    try self.out.print("{d}. ", .{n});
+                } else {
+                    try self.push("- ");
                 }
 
-                try self.push("- ");
+                // Reset "emptiness" (skip any leading white-space)
+                self.empty = true;
             },
             else => {},
         };
@@ -247,6 +250,14 @@ test "lists" {
     try expectMd("<ol><li>item</li></ol>", "1. item");
     try expectMd("<ol><li>first</li><li>second</li></ol>", "1. first\n2. second");
     try expectMd("<ol><li>first</li><li>second</li><li>third</li></ol>", "1. first\n2. second\n3. third");
+
+    // heading inside list items
+    try expectMd("<ol><li><h3>first</h3></li><li><h3>second</h3></li></ol>", "1. ### first\n\n2. ### second");
+    try expectMd("<ul><li><h3>first</h3></li><li><h3>second</h3></li></ul>", "- ### first\n\n- ### second");
+
+    // <div> inside list items
+    try expectMd("<ol><li><div>first</div></li><li><div>second</div></li></ol>", "1. first\n2. second");
+    try expectMd("<ul><li><div>first</div></li><li><div>second</div></li></ul>", "- first\n- second");
 
     // Nesting
     try expectMd("<ul><li>parent<ul><li>child</li></ul></li></ul>", "- parent\n  - child");
