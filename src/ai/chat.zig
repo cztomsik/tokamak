@@ -39,7 +39,7 @@ pub const Request = struct {
     response_format: ?struct {
         type: []const u8,
     } = null,
-    max_tokens: u32 = 256,
+    max_completion_tokens: u32 = 256,
     temperature: ?f32 = null,
     top_p: ?f32 = null,
 };
