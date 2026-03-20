@@ -8,7 +8,7 @@
 // - [x] introduce comptime hooks (postprocessing, validation, scanning, ...)
 // - [x] decide if we want fallback/lazy (we don't)
 // - [x] interfaces (intrusive)
-// - [x] split to several meaningul commits (meta, impl, examples, readme, ...)
+// - [x] split to several meaningful commits (meta, impl, examples, readme, ...)
 // - [x] include this list in the PR description & merge it
 
 const builtin = @import("builtin");
@@ -351,7 +351,7 @@ pub const Bundle = struct {
     }
 
     fn resolveOne(self: *Bundle, dep: *Dep) void {
-        // TODO: Re-consider this, it's likely a mistake but it's also common to have shared Mocks module with more than we need.
+        // TODO: Reconsider this, it's likely a mistake but it's also common to have shared Mocks module with more than we need.
         // if (dep.state == .override) {
         //     @compileError("Unused override for " ++ @typeName(dep.type));
         // }

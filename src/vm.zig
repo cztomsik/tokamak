@@ -203,7 +203,7 @@ pub const Context = struct {
     }
 
     pub fn get(self: *Context, name: []const u8) Value {
-        // No iterning needed here
+        // No interning needed here
         if (self.env.get(name)) |val| return val;
         return .undefined;
     }

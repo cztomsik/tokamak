@@ -2,7 +2,7 @@ const Route = @import("../route.zig").Route;
 const Context = @import("../context.zig").Context;
 
 /// Adds CORS headers and handles preflight requests. Note that headers cannot
-/// be removed so this should always wrapped in a group.
+/// be removed so this should always be wrapped in a group.
 pub fn cors() Route {
     const H = struct {
         fn handleCors(ctx: *Context) anyerror!void {

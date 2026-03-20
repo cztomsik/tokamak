@@ -98,7 +98,7 @@ pub const Context = struct {
                     // TODO: We need to do something about idents (pass them down?) and
                     //       it's also likely that some of these should be VM ops
 
-                    // TODO: We also neeed to do something about the lifetime, maybe we could really just
+                    // TODO: We also need to do something about the lifetime, maybe we could really just
                     //       constraint the max len and keep all the idents inline?
                     buf[pos] = .{ .load = switch (cons.op) {
                         .plus => "+",

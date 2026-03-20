@@ -323,7 +323,7 @@ const Cfg = struct {
 const cfg = try tk.config.read(Cfg, .{ .path = "config.json" });
 ```
 
-There's also experimental `tk.config.write(T, opts)` function, which will write
+There's also an experimental `tk.config.write(T, opts)` function that will write
 the configuration back to the file.
 
 ## Process Monitoring

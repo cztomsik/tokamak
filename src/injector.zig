@@ -87,7 +87,7 @@ pub const Injector = struct {
     }
 
     /// Call a function with dependencies. The `extra_args` tuple is used to
-    /// pass additional arguments to the function. Function with anytype can
+    /// pass additional arguments to the function. A function with anytype can
     /// be called as long as the concrete value is provided in the `extra_args`.
     pub fn callArgs(self: *Injector, comptime fun: anytype, extra_args: anytype) anyerror!meta.Result(fun) {
         if (comptime @typeInfo(@TypeOf(extra_args)) != .@"struct") {

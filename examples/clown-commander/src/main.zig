@@ -1,4 +1,4 @@
-// TODO: This was mostly generated using claude-code so it's not really idiomatic yet
+// TODO: This was mostly generated using claude-code so it is not yet idiomatic
 
 const std = @import("std");
 const tk = @import("tokamak");

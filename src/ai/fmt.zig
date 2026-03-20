@@ -44,7 +44,7 @@ fn writeValue(value: anytype, writer: anytype) !void {
     }
 
     return switch (@typeInfo(T)) {
-        .void => writer.print("success", .{}), // TODO: is this enough encouraging?
+        .void => writer.print("success", .{}), // TODO: is this encouraging enough?
         .error_set => writer.print("error: {s}", .{@errorName(value)}),
         .error_union => if (value) |r| writeValue(r, writer) else |e| writeValue(e, writer),
         else => std.json.fmt(value, .{ .whitespace = .indent_2 }).format(writer),

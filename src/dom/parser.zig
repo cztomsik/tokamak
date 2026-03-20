@@ -94,7 +94,7 @@ pub const HtmlParser = struct {
                     const name = LocalName.parse(tag);
 
                     // Pop everything up to the closest element in the stack (if any)
-                    // NOTE: whatever is in the stack, it is guranteed to be attached already (parent_node != null)
+                    // NOTE: whatever is in the stack, it is guaranteed to be attached already (parent_node != null)
                     //       furthermore, we only push elements, so we can rely on that too
                     var next = top;
                     while (next != root) : (next = next.parent_node.?) {

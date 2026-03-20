@@ -1,7 +1,7 @@
 const std = @import("std");
 
 // This is useful mostly for parsing - it's a simple, slice-backed container
-// that is not supposed to grow beyong its max size. It does not do any bounds
+// that is not supposed to grow beyond its max size. It does not do any bounds
 // checking, except maybe the peek/pop() which returns optional.
 //
 // The general pattern is that you do two passes over the input, first time you

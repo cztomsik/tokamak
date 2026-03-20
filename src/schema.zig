@@ -18,7 +18,7 @@ pub const Schema = union(enum) {
     string,
     object: []const Property,
     array: *const Schema,
-    oneOf: []const Schema, // inentional camelCase (ident)
+    oneOf: []const Schema, // intentional camelCase (ident)
     tuple: []const Schema,
 
     pub fn forType(comptime T: type) Schema {

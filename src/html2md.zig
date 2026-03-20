@@ -266,7 +266,7 @@ test "lists" {
     // Siblings
     // try expectMd("<ul><li>list1</li></ul><ul><li>list2</li></ul>", "- list1\n\n- list2");
 
-    // Missing ul/ol (invalid HTML but we should still at least keep each item on its own line)
+    // Missing ul/ol (invalid HTML but we should still keep each item on its own line)
     try expectMd("TODO:<li>one</li><li>two</li>", "TODO:\n- one\n- two");
 }
 

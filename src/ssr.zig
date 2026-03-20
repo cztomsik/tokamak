@@ -465,7 +465,7 @@ pub const RenderContext = struct {
     }
 
     // TODO: I'm still not sure if this is the way...
-    //       Maybe we could do something something like .declLit() VDOM/JSX?
+    //       Maybe we could do something like .declLit() VDOM/JSX?
     pub fn open(self: *RenderContext, tag: []const u8, attrs: []const [2][]const u8) !void {
         try self.writer.writeByte('<');
         try self.writer.writeAll(tag);

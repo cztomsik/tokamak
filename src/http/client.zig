@@ -95,7 +95,7 @@ pub const StdClient = struct {
         self.std_client.deinit();
     }
 
-    // TODO: This is minimal PoC for Zig 0.15.1 - it works, but... IDK
+    // TODO: This is a minimal PoC for Zig 0.15.1 - it works, but... IDK
     fn make_request(client: *Client, arena: std.mem.Allocator, options: RequestOptions) !Response {
         const self: *@This() = @fieldParentPtr("interface", client);
 
