@@ -248,9 +248,13 @@ pub const ShmQueue = struct {
                 continue;
             }
 
-            // Re-schedule timed-out jobs
+            // Free timed-out jobs - there was probably a reason for the timeout
+            // and re-scheduling straight away isn't going to help much. We
+            // could also back off but that's more appropriate if there was an
+            // actual error and/or if we KNOW that we need to wait.
             if (s.state == .running and now - s.scheduled_at >= self.job_timeout) {
-                s.state = .pending;
+                s.id.store(FREE, .release);
+                continue;
             }
 
             // Keep looking for the earliest pending job
@@ -454,10 +458,7 @@ test Queue {
     // Fast-forward past processing timeout
     testing.time.value += 61;
 
-    // Job is reclaimed and available again
-    const next6 = (try queue.claim(arena.allocator())).?;
-    try std.testing.expectEqual(id5, next6.id);
-    try std.testing.expect(try queue.finish(id5));
+    // Timed-out job is freed, not reclaimed
     try std.testing.expectEqual(null, try queue.claim(arena.allocator()));
 
     // Add more
