@@ -68,6 +68,23 @@ pub const String = extern union {
         };
     }
 
+    pub fn format(self: *const String, writer: anytype) !void {
+        try writer.writeAll(self.str());
+    }
+
+    pub fn parse(s: []const u8) !String {
+        return initShort(s) orelse initLong(s);
+    }
+
+    pub fn jsonParse(allocator: std.mem.Allocator, source: anytype, options: std.json.ParseOptions) !String {
+        const s = try std.json.innerParse([]const u8, allocator, source, options);
+        return initShort(s) orelse initLong(s);
+    }
+
+    pub fn jsonStringify(self: *const String, w: anytype) !void {
+        try w.write(self.str());
+    }
+
     pub fn eq(a: String, b: String) bool {
         if (a.kind() == .short and b.kind() == .short) {
             return a.short.eq(b.short);
@@ -102,6 +119,23 @@ pub const ShortString = extern struct {
 
     pub fn str(self: *const ShortString) []const u8 {
         return self.buf[0..self.len()];
+    }
+
+    pub fn format(self: *const ShortString, writer: anytype) !void {
+        try writer.writeAll(self.str());
+    }
+
+    pub fn parse(s: []const u8) !ShortString {
+        return init(s) orelse error.Overflow;
+    }
+
+    pub fn jsonParse(allocator: std.mem.Allocator, source: anytype, options: std.json.ParseOptions) !ShortString {
+        const s = try std.json.innerParse([]const u8, allocator, source, options);
+        return init(s) orelse error.Overflow;
+    }
+
+    pub fn jsonStringify(self: *const ShortString, w: anytype) !void {
+        try w.write(self.str());
     }
 
     pub fn eq(a: ShortString, b: ShortString) bool {
@@ -155,4 +189,22 @@ test "dupe" {
 test "eq" {
     try std.testing.expect(String.eq(.initComptime("a"), .initComptime("a")));
     try std.testing.expect(!String.eq(.initComptime("a"), .initComptime("b")));
+}
+
+test "format" {
+    const short: String = .initComptime("foo");
+    try std.testing.expectFmt("foo", "{f}", .{short});
+    try std.testing.expectFmt("foo", "{f}", .{short.short});
+
+    const long: String = .initComptime("a longer string here");
+    try std.testing.expectFmt("a longer string here", "{f}", .{long});
+}
+
+test "json" {
+    const s: String = .initComptime("foo");
+    try std.testing.expectFmt("\"foo\"", "{f}", .{std.json.fmt(s, .{})});
+
+    const p = try std.json.parseFromSlice(String, std.testing.allocator, "\"foo\"", .{});
+    defer p.deinit();
+    try std.testing.expectEqual(s, p.value);
 }

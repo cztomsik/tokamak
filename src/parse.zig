@@ -1,5 +1,7 @@
 const std = @import("std");
 const meta = @import("meta.zig");
+const String = @import("string.zig").String;
+const ShortString = @import("string.zig").ShortString;
 
 /// Parse a string value into the requested type.
 /// Supports: optional, bool, int, enum, string, and slices (comma-separated).
@@ -45,6 +47,8 @@ test {
     try expectParse(f32, "3.14", 3.14);
     try expectParse(enum { foo, bar }, "bar", .bar);
     try expectParse([]const u8, "hello", "hello");
+    // try expectParse(String, "hello", .initComptime("hello"));
+    try expectParse(ShortString, "hello", .initComptime("hello"));
 
     // optional
     try expectParse(?u32, "null", null);

@@ -1,4 +1,5 @@
 const std = @import("std");
+const string = @import("string.zig");
 const meta = @import("meta.zig");
 const testing = @import("testing.zig");
 
@@ -27,7 +28,7 @@ pub const Schema = union(enum) {
         }
 
         return switch (T) {
-            []const u8 => .string,
+            []const u8, string.String, string.ShortString => .string,
             else => switch (@typeInfo(T)) {
                 .null => .null,
                 .bool => .boolean,

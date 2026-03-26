@@ -3,6 +3,8 @@
 
 const std = @import("std");
 const meta = @import("meta.zig");
+const String = @import("string.zig").String;
+const ShortString = @import("string.zig").ShortString;
 
 // TODO: this is still WIP, do not use it for anything important
 pub const Writer = struct {
@@ -16,6 +18,10 @@ pub const Writer = struct {
 
     pub fn writeValue(self: *Writer, value: anytype) !void {
         const T = @TypeOf(value);
+
+        if (T == String or T == ShortString) {
+            return self.writeString(value.str());
+        }
 
         if (meta.isString(T)) {
             return self.writeString(value);
@@ -174,6 +180,8 @@ test {
     try expectYaml(123, "123");
     try expectYaml(12.3, "!!float 12.3");
     try expectYaml("bar", "bar");
+    try expectYaml(String.initComptime("bar"), "bar");
+    try expectYaml(ShortString.initComptime("bar"), "bar");
     try expectYaml(.foo, "foo");
 
     // comptime anytype

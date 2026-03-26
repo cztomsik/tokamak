@@ -15,6 +15,8 @@
 
 const std = @import("std");
 const meta = @import("meta.zig");
+const String = @import("string.zig").String;
+const ShortString = @import("string.zig").ShortString;
 
 pub const Edge = union(enum) {
     void,
@@ -36,6 +38,10 @@ const EdgeKind = std.meta.Tag(Edge);
 
 pub fn visit(val: anytype, cx: anytype, handler: *const fn (@TypeOf(cx), Edge) anyerror!void) anyerror!void {
     const T = @TypeOf(val);
+
+    if (T == String or T == ShortString) {
+        return handler(cx, .{ .string = (&val).str() });
+    }
 
     if (meta.isString(T)) {
         return handler(cx, .{ .string = val });
@@ -103,6 +109,8 @@ test {
     try expectEdges(123, &.{.int});
     try expectEdges(1.23, &.{.float});
     try expectEdges("hello", &.{.string});
+    try expectEdges(String.initComptime("foo"), &.{.string});
+    try expectEdges(ShortString.initComptime("foo"), &.{.string});
     try expectEdges(.{ .msg = "Hello" }, &.{ .begin_struct, .field, .string, .end_struct });
     try expectEdges(&[_]u32{ 1, 2, 3 }, &.{ .begin_array, .int, .int, .int, .end_array });
     try expectEdges(people[0], &.{ .begin_struct, .field, .string, .field, .int, .end_struct });
