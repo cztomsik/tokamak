@@ -1,5 +1,5 @@
 const std = @import("std");
-const util = @import("../util.zig");
+const String = @import("../string.zig").String;
 const Node = @import("node.zig").Node;
 const Document = @import("document.zig").Document;
 const LocalName = @import("local_name.zig").LocalName;
@@ -7,7 +7,7 @@ const LocalName = @import("local_name.zig").LocalName;
 pub const Attr = struct {
     next: ?*Attr = null,
     name: LocalName,
-    value: util.Smol128,
+    value: String,
 };
 
 // https://github.com/cztomsik/graffiti/blob/master/src/dom/element.zig
@@ -72,7 +72,7 @@ pub const Element = struct {
 
     pub fn setAttribute(self: *Element, name: []const u8, value: []const u8) !void {
         const lname = LocalName.parse(name);
-        const val = try util.Smol128.init(self.node.document.arena, value);
+        const val = try String.dupe(self.node.document.arena, value);
 
         if (self.findAttr(lname)) |attr| {
             attr.value = val;

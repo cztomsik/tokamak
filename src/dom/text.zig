@@ -1,5 +1,5 @@
 const std = @import("std");
-const util = @import("../util.zig");
+const String = @import("../string.zig").String;
 const Node = @import("node.zig").Node;
 const Document = @import("document.zig").Document;
 
@@ -8,7 +8,7 @@ const Document = @import("document.zig").Document;
 // https://github.com/cztomsik/graffiti/blob/master/lib/core/Text.js
 pub const Text = struct {
     node: Node,
-    data: util.Smol128,
+    data: String,
 
     comptime {
         // @compileLog(@sizeOf(Text));
@@ -18,7 +18,7 @@ pub const Text = struct {
     pub fn init(self: *Text, document: *Document, data: []const u8) !void {
         self.* = .{
             .node = .{ .document = document, .kind = .text },
-            .data = try .init(document.arena, data),
+            .data = try .dupe(document.arena, data),
         };
     }
 };

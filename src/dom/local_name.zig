@@ -1,20 +1,21 @@
 const std = @import("std");
-const util = @import("../util.zig");
+const ShortString = @import("../string.zig").ShortString;
 
-// TODO: arbitrary tag names/attributes (len > 12)
+// TODO: arbitrary tag names/attributes (len > 15)
 pub const LocalName = enum(u128) {
-    _, // tk.util.Smol128
+    _, // tk.ShortString
 
     // Shorthand for usage in switch statements
     const p = parse;
 
     pub fn parse(local_name: []const u8) LocalName {
-        const x = util.Smol128.initShort(local_name) orelse util.Smol128.initComptime("unknown");
-        return @enumFromInt(x.raw);
+        const x = ShortString.init(local_name) orelse ShortString.initComptime("unknown");
+        const raw: u128 = @bitCast(x);
+        return @enumFromInt(raw);
     }
 
     pub fn name(self: *const LocalName) []const u8 {
-        return util.Smol128.str(@ptrCast(self));
+        return ShortString.str(@ptrCast(self));
     }
 
     pub fn isVoid(self: LocalName) bool {

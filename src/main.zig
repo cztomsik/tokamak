@@ -37,6 +37,10 @@ pub const util = @import("util.zig");
 pub const vm = @import("vm.zig");
 pub const yaml = @import("yaml.zig");
 
+// Core types (general-purpose)
+pub const String = @import("string.zig").String;
+pub const ShortString = @import("string.zig").ShortString;
+
 // Core types (DI)
 pub const Injector = @import("injector.zig").Injector;
 pub const Container = @import("container.zig").Container;
