@@ -95,6 +95,8 @@ pub const String = extern union {
 };
 
 /// A string that is guaranteed to fit within 2 words (max 15 bytes of data).
+/// Note that we always zero-init the struct so that we can reliably compare
+/// two short strings just by value.
 pub const ShortString = extern struct {
     buf: [15]u8 = [_]u8{0} ** 15,
     head: u8 = 0,
