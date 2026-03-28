@@ -4,6 +4,10 @@ const dom = @import("dom.zig");
 pub const Options = struct {
     em_delim: []const u8 = "*",
     strong_delim: []const u8 = "**",
+    ignore: packed struct {
+        a: bool = false,
+        img: bool = false,
+    } = .{},
 };
 
 pub fn html2md(allocator: std.mem.Allocator, node: *dom.Node, options: Options) ![]const u8 {
@@ -43,8 +47,21 @@ pub const Html2Md = struct {
 
         try switch (element.local_name) {
             p("br") => self.br(if (self.pending == .br) 2 else 1),
+            p("hr") => {
+                self.br(2);
+                try self.push("---");
+                self.br(2);
+            },
             p("em"), p("i") => self.push(self.options.em_delim),
             p("strong"), p("b") => self.push(self.options.strong_delim),
+            p("a") => if (!self.options.ignore.a) self.push("["),
+            p("img") => if (!self.options.ignore.img) {
+                try self.push("![");
+                try self.push(element.getAttribute("alt") orelse "");
+                try self.push("](");
+                try self.push(element.getAttribute("src") orelse "");
+                try self.push(")");
+            },
             p("div") => self.br(1),
             p("ul"), p("ol") => {
                 self.br(if (self.indent > 0) 1 else 2);
@@ -94,6 +111,11 @@ pub const Html2Md = struct {
         try switch (element.local_name) {
             p("em"), p("i") => self.push(self.options.em_delim),
             p("strong"), p("b") => self.push(self.options.strong_delim),
+            p("a") => if (!self.options.ignore.a) {
+                try self.push("](");
+                try self.push(element.getAttribute("href") orelse "");
+                try self.push(")");
+            },
             p("div") => self.br(1),
             p("ul"), p("ol") => {
                 self.indent -|= 1;
@@ -185,10 +207,14 @@ pub const Html2Md = struct {
 };
 
 fn expectMd(comptime input: []const u8, expected: []const u8) !void {
+    try expectMdOpts(input, expected, .{});
+}
+
+fn expectMdOpts(comptime input: []const u8, expected: []const u8, options: Options) !void {
     var doc = try dom.Document.parseFromSlice(std.testing.allocator, "<test>" ++ input ++ "</test>");
     defer doc.deinit();
 
-    const md = try html2md(std.testing.allocator, &doc.node, .{});
+    const md = try html2md(std.testing.allocator, &doc.node, options);
     defer std.testing.allocator.free(md);
 
     try std.testing.expectEqualStrings(expected, md);
@@ -308,9 +334,22 @@ test "strip <script>, <style>" {
 // }
 
 test "links and images" {
-    // TODO: make this configurable
-    try expectMd("<a>foo</a>", "foo");
-    try expectMd("<img>", "");
+    try expectMd("<a>foo</a>", "[foo]()");
+    try expectMd("<a href=\"/\">Home</a>", "[Home](/)");
+
+    try expectMd("<img>", "![]()");
+    try expectMd("<img src=\"photo.jpg\" alt=\"A sunset\">", "![A sunset](photo.jpg)");
+    try expectMd("<a href=\"/gallery\"><img src=\"thumb.jpg\" alt=\"Preview\"></a>", "[![Preview](thumb.jpg)](/gallery)");
+
+    // With ignore options
+    try expectMdOpts("<a href=\"/\">Home</a>", "Home", .{ .ignore = .{ .a = true } });
+    try expectMdOpts("<img src=\"photo.jpg\" alt=\"A sunset\">", "", .{ .ignore = .{ .img = true } });
+    try expectMdOpts("<a href=\"/gallery\"><img src=\"thumb.jpg\" alt=\"Preview\"></a>", "", .{ .ignore = .{ .a = true, .img = true } });
+}
+
+test "horizontal rule" {
+    try expectMd("<p>A</p><hr><p>B</p>", "A\n\n---\n\nB");
+    try expectMd("<hr>", "---");
 }
 
 test "ignore other" {
