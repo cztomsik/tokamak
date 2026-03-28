@@ -39,6 +39,10 @@ pub const HtmlParser = struct {
         // It can only contain elements and the root node.
         var top: *Node = root;
 
+        // We need this because void elements like <img> are never part of the
+        // "stack", but we still need to parse their properties.
+        var open_el: ?*Element = null;
+
         const time = std.time.milliTimestamp();
         var n_elem: usize = 0;
         var n_attr: usize = 0;
@@ -55,6 +59,7 @@ pub const HtmlParser = struct {
                     const el = try doc.createElement(tag);
                     top.appendChild(&el.node);
                     n_elem += 1;
+                    open_el = el;
 
                     if (el.local_name.isRaw()) {
                         // Skip everything until the next </xxx>
@@ -69,7 +74,7 @@ pub const HtmlParser = struct {
                 },
 
                 .attr => |att| {
-                    if (top.element()) |el| {
+                    if (open_el) |el| {
                         try el.setAttribute(att.name, att.value);
                         n_attr += 1;
                     }
