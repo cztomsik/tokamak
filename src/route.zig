@@ -160,8 +160,8 @@ pub const Route = struct {
 
             for (std.meta.declarations(T)) |d| {
                 if (@typeInfo(@TypeOf(@field(T, d.name))) != .@"fn") continue;
+                const j = std.mem.indexOfScalar(u8, d.name, ' ') orelse continue;
 
-                const j = std.mem.indexOfScalar(u8, d.name, ' ') orelse @compileError("route must contain a space");
                 var buf: [j]u8 = undefined;
                 const method = std.ascii.lowerString(&buf, d.name[0..j]);
                 res = res ++ .{@field(@This(), method)(d.name[j + 1 ..], @field(T, d.name))};
