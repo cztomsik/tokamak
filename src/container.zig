@@ -139,7 +139,7 @@ const Dep = struct {
     }
 
     fn ptr(self: Dep, data: []u8) *self.type {
-        return if (@sizeOf(self.type) > 0) @ptrCast(@alignCast(&data[self.state.instance.offset])) else @ptrFromInt(0xaaaaaaaaaaaaaaaa);
+        return if (@sizeOf(self.type) > 0) @ptrCast(@alignCast(&data[self.state.instance.offset])) else undefined;
     }
 
     fn initInstance(self: Dep, data: []u8, inj: *Injector) !void {
