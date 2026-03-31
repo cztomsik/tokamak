@@ -4,21 +4,16 @@ const std = @import("std");
 /// A simple string type with SSO optimization. Strings up to 15 bytes are
 /// stored inline, longer strings are stored as a pointer+length pair.
 ///
-/// Discrimination is done via the `head` byte at offset 15, which overlaps
-/// with the MSB of the `ptr` field. On 64-bit little-endian systems, userspace
-/// pointers only use 48-57 bits of address space, so the MSB is always 0.
-/// Short strings store `len + 1` in `head` (range 1-16), which is never 0.
-///
-///     Byte: 0                                                15
-///     Short [buf: string data, zero-padded ...........] [len+1]
-///     Long  [len: usize       ] [ptr: [*]u8                  0]
+/// Discrimination is done via the LSB of the first byte: short strings set it
+/// to 1, long strings leave it at 0. Both variants store the actual length
+/// shifted left by 1 bit, halving the maximum representable length.
 pub const String = extern union {
     short: ShortString,
     long: LongString,
 
     comptime {
-        // 64-bit LE only
-        std.debug.assert(@sizeOf(usize) == 8 and builtin.cpu.arch.endian() == .little);
+        // 32/64-bit LE only
+        std.debug.assert((@sizeOf(usize) == 4 or @sizeOf(usize) == 8) and builtin.cpu.arch.endian() == .little);
     }
 
     pub const empty: String = initComptime("");
@@ -32,12 +27,7 @@ pub const String = extern union {
     }
 
     fn initLong(s: []const u8) String {
-        return .{
-            .long = .{
-                .ptr = s.ptr,
-                .len = @intCast(s.len),
-            },
-        };
+        return .{ .long = .init(s) };
     }
 
     pub fn dupe(gpa: std.mem.Allocator, s: []const u8) !String {
@@ -51,20 +41,20 @@ pub const String = extern union {
     }
 
     pub fn kind(self: String) enum { short, long } {
-        return if (self.short.head == 0) .long else .short;
+        return if (self.short.len21 & 1 == 1) .short else .long;
     }
 
     pub fn len(self: String) usize {
         return switch (self.kind()) {
             .short => self.short.len(),
-            .long => self.long.len,
+            .long => self.long.len(),
         };
     }
 
     pub fn str(self: *const String) []const u8 {
         return switch (self.kind()) {
             .short => self.short.str(),
-            .long => self.long.ptr[0..self.long.len],
+            .long => self.long.str(),
         };
     }
 
@@ -95,11 +85,11 @@ pub const String = extern union {
 };
 
 /// A string that is guaranteed to fit within 2 words (max 15 bytes of data).
-/// Note that we always zero-init the struct so that we can reliably compare
+/// Note that we always fully-init the struct so that we can reliably compare
 /// two short strings just by value.
 pub const ShortString = extern struct {
-    buf: [15]u8 = [_]u8{0} ** 15,
-    head: u8 = 0,
+    len21: u8 = 1,
+    buf: [15]u8 = @splat(0),
 
     pub const empty: ShortString = initComptime("");
 
@@ -109,14 +99,14 @@ pub const ShortString = extern struct {
 
     pub fn init(s: []const u8) ?ShortString {
         if (s.len <= 15) {
-            var res: ShortString = .{ .head = @intCast(s.len + 1) };
+            var res: ShortString = .{ .len21 = @intCast((s.len << 1) | 1) };
             @memcpy(res.buf[0..s.len], s);
             return res;
         } else return null;
     }
 
     pub fn len(self: ShortString) usize {
-        return self.head -| 1;
+        return self.len21 >> 1;
     }
 
     pub fn str(self: *const ShortString) []const u8 {
@@ -146,8 +136,26 @@ pub const ShortString = extern struct {
 };
 
 const LongString = extern struct {
-    len: usize,
+    len2: usize,
     ptr: [*]const u8,
+    _pad: [16 - 2 * @sizeOf(usize)]u8 = @splat(0),
+
+    fn init(s: []const u8) LongString {
+        std.debug.assert(s.len <= comptime std.math.maxInt(usize) >> 1);
+
+        return .{
+            .ptr = s.ptr,
+            .len2 = s.len << 1,
+        };
+    }
+
+    fn len(self: LongString) usize {
+        return self.len2 >> 1;
+    }
+
+    fn str(self: LongString) []const u8 {
+        return self.ptr[0..self.len()];
+    }
 };
 
 comptime {
