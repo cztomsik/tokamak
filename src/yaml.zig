@@ -173,7 +173,7 @@ fn expectYaml(val: anytype, expected: []const u8) !void {
     return testing.expectEqual(bw.written(), expected);
 }
 
-test {
+test "scalars" {
     try expectYaml({}, "null");
     try expectYaml(null, "null");
     try expectYaml(true, "true");
@@ -183,8 +183,9 @@ test {
     try expectYaml(String.initComptime("bar"), "bar");
     try expectYaml(ShortString.initComptime("bar"), "bar");
     try expectYaml(.foo, "foo");
+}
 
-    // comptime anytype
+test "structs" {
     try expectYaml(.{ .name = "John", .age = 123 },
         \\name: John
         \\age: 123
@@ -200,7 +201,9 @@ test {
         \\  name: John Doe
         \\  age: 21
     );
+}
 
+test "slices" {
     try expectYaml(users,
         \\- name: John Doe
         \\  age: 21
@@ -235,12 +238,6 @@ test {
         \\  kids: []
     );
 
-    // edge-cases
-    try expectYaml("", "\"\"");
-    try expectYaml("true", "\"true\"");
-    try expectYaml("foo:bar", "\"foo:bar\"");
-    try expectYaml(.{}, "{}");
-    try expectYaml(users[0..0], "[]");
     try expectYaml([_][]const u32{ &.{ 1, 2 }, &.{ 3, 4 } },
         \\- - 1
         \\  - 2
@@ -248,4 +245,15 @@ test {
         \\- - 3
         \\  - 4
     );
+}
+
+test "escaping" {
+    try expectYaml("", "\"\"");
+    try expectYaml("true", "\"true\"");
+    try expectYaml("foo:bar", "\"foo:bar\"");
+}
+
+test "empty" {
+    try expectYaml(.{}, "{}");
+    try expectYaml(users[0..0], "[]");
 }
