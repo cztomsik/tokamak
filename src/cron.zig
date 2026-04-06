@@ -245,6 +245,17 @@ pub const Expr = struct {
     //     }
     // }
 
+    pub fn format(self: *const Expr, w: *std.io.Writer) !void {
+        inline for (std.meta.fields(Expr), 0..) |f, i| {
+            if (i > 0) try w.writeByte(' ');
+            try writeField(w, @field(self, f.name), @bitSizeOf(f.type));
+        }
+    }
+
+    pub fn jsonStringify(self: *const Expr, w: anytype) !void {
+        return w.print("\"{f}\"", .{self});
+    }
+
     fn findNext(mask: anytype, curr: u32) ?u32 {
         // std.debug.print("find next:  {b:.>32} {}\n", .{ mask, curr });
         var n = curr + 1;
@@ -304,6 +315,61 @@ pub const Expr = struct {
         }
 
         return @truncate(mask);
+    }
+
+    fn writeField(writer: *std.io.Writer, mask: u64, comptime bits: u8) !void {
+        const all: u64 = (@as(u64, 1) << bits) - 1;
+
+        if (mask & all == all) {
+            return writer.writeByte('*');
+        }
+
+        // Detect */N patterns (same logic as parseField)
+        const steps = [_]u8{ 2, 3, 4, 5, 6, 10, 12, 15, 20, 30 };
+        for (steps) |step| {
+            if (step >= bits) continue;
+            if (bits % step != 0) continue;
+
+            var expected: u64 = 0;
+            var s: u8 = 0;
+            while (s < bits) : (s += step) {
+                expected |= @as(u64, 1) << @intCast(s);
+            }
+
+            if (mask & all == expected) {
+                return writer.print("*/{}", .{step});
+            }
+        }
+
+        // Enumerate distinct values, grouping 3+ consecutive into ranges
+        var first = true;
+        var i: u8 = 0;
+        while (i < bits) {
+            if (mask & (@as(u64, 1) << @intCast(i)) == 0) {
+                i += 1;
+                continue;
+            }
+
+            var end = i;
+            while (end + 1 < bits and (mask & (@as(u64, 1) << @intCast(end + 1))) != 0) {
+                end += 1;
+            }
+
+            if (!first) try writer.writeByte(',');
+            first = false;
+
+            if (end - i >= 2) {
+                try writer.print("{}-{}", .{ i, end });
+            } else {
+                try writer.print("{}", .{i});
+
+                if (end > i) {
+                    try writer.print(",{}", .{end});
+                }
+            }
+
+            i = end + 1;
+        }
     }
 };
 
@@ -452,4 +518,44 @@ test "expr.next()" {
         .{ 0, 4 * 24 * 3600 + 9 * 3600 }, // Jan 1 (Thu) -> Jan 5 (Mon) 9:00
         .{ 4 * 24 * 3600 + 9 * 3600, 11 * 24 * 3600 + 9 * 3600 }, // Jan 5 (Mon) -> Jan 12 (Mon) 9:00
     });
+}
+
+fn expectNormalized(input: []const u8, expected: []const u8) !void {
+    const expr = try Expr.parse(input);
+    try testing.expectFmt(expr, expected);
+}
+
+test "Expr.jsonStringify()" {
+    // Wildcard
+    try expectNormalized("* * * * *", "* * * * *");
+
+    // Step patterns
+    try expectNormalized("*/5 * * * *", "*/5 * * * *");
+    try expectNormalized("*/15 * * * *", "*/15 * * * *");
+    try expectNormalized("*/30 * * * *", "*/30 * * * *");
+    try expectNormalized("0 */6 * * *", "0 */6 * * *");
+    try expectNormalized("0 */12 * * *", "0 */12 * * *");
+
+    // Single values
+    try expectNormalized("0 0 * * *", "0 0 * * *");
+    try expectNormalized("0 9 * * 1", "0 9 * * 1");
+    try expectNormalized("0 0 1 1 *", "0 0 1 1 *");
+    try expectNormalized("0 0 31 1 *", "0 0 31 1 *");
+
+    // Comma-separated values
+    try expectNormalized("30 2,14 * * *", "30 2,14 * * *");
+
+    // Ranges (3+ consecutive → range)
+    try expectNormalized("0-10 * * * *", "0-10 * * * *");
+    try expectNormalized("0-5,30-35 * * * *", "0-5,30-35 * * * *");
+
+    // Short consecutive runs stay as comma list
+    try expectNormalized("0,1 * * * *", "0,1 * * * *");
+
+    // 3 consecutive → range
+    try expectNormalized("0,1,2 * * * *", "0-2 * * * *");
+    try expectNormalized("0-2 * * * *", "0-2 * * * *");
+
+    // Mixed: parse normalizes to same bitmask
+    try expectNormalized("0,1-2 * * * *", "0-2 * * * *");
 }
