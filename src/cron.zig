@@ -79,6 +79,15 @@ pub const Cron = struct {
         }
     }
 
+    pub fn list(self: *Cron, arena: std.mem.Allocator) ![]Job {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        const jobs = try arena.alloc(Job, self.jobs.items.len);
+        @memcpy(jobs, self.jobs.items);
+        return jobs;
+    }
+
     pub fn run(self: *Cron) !void {
         self.mutex.lock();
         defer self.mutex.unlock();
