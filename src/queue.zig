@@ -11,12 +11,12 @@ pub const JobState = enum(u8) { pending, running };
 
 pub const JobInfo = struct {
     id: ?JobId = null,
-    state: JobState = .pending,
     name: []const u8,
     /// Empty string means no key (no deduplication).
     key: []const u8 = "",
     data: []const u8 = "",
     scheduled_at: ?i64 = null,
+    state: JobState = .pending,
 };
 
 pub const Stats = struct {
@@ -129,7 +129,7 @@ pub const ShmQueue = struct {
         std.debug.assert(@sizeOf(Header) % @alignOf(Slot) == 0);
     }
 
-    const VERSION: u32 = 2;
+    const VERSION: u32 = 3;
     const BUF_LEN = 236;
     const FREE: JobId = 0;
 

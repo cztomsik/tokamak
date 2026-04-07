@@ -16,7 +16,7 @@
 
 const std = @import("std");
 const meta = @import("meta.zig");
-const yaml = @import("yaml.zig");
+const serde = @import("serde.zig");
 const Injector = @import("injector.zig").Injector;
 const parseValue = @import("parse.zig").parseValue;
 
@@ -74,13 +74,12 @@ pub const Context = struct {
                 continue :fmt .yaml;
             },
             .json => {
-                try self.out.print("{f}\n", .{
-                    std.json.fmt(res, .{ .whitespace = .indent_2 }),
-                });
+                var jw = serde.json.Writer.init(self.out, .{ .whitespace = .indent_2 });
+                try serde.serialize(&jw, res);
             },
             .yaml => {
-                var writer = yaml.Writer.init(self.out);
-                try writer.writeValue(res);
+                var yw = serde.yaml.Writer.init(self.out, .{});
+                try serde.serialize(&yw, res);
                 try self.out.writeByte('\n');
             },
         }

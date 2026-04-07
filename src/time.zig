@@ -141,6 +141,11 @@ pub const Date = struct {
         return @intCast(@mod(rata_day + 3, 7));
     }
 
+    pub fn serialize(self: Date, writer: anytype) !void {
+        var buf: [10]u8 = undefined;
+        try writer.write(.string, try std.fmt.bufPrint(&buf, "{f}", .{self}));
+    }
+
     pub fn format(self: Date, writer: anytype) !void {
         try writer.print("{d}-{d:0>2}-{d:0>2}", .{
             @as(u32, @intCast(self.year)),
@@ -280,6 +285,11 @@ pub const Time = struct {
             .minutes => @divTrunc(self.epoch, std.time.s_per_min),
             .hours => @divTrunc(self.epoch, std.time.s_per_hour),
         };
+    }
+
+    pub fn serialize(self: Time, writer: anytype) !void {
+        var buf: [23]u8 = undefined;
+        try writer.write(.string, try std.fmt.bufPrint(&buf, "{f}", .{self}));
     }
 
     pub fn format(self: Time, writer: anytype) !void {

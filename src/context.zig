@@ -1,6 +1,7 @@
 const std = @import("std");
 const httpz = @import("httpz");
 const meta = @import("meta.zig");
+const serde = @import("serde.zig");
 const Injector = @import("injector.zig").Injector;
 const Server = @import("server.zig").Server;
 const Route = @import("route.zig").Route;
@@ -136,7 +137,9 @@ pub const Context = struct {
                         }
                     },
                     else => {
-                        try self.res.json(res, .{});
+                        if (self.res.content_type == null) self.res.content_type = .JSON;
+                        var jw = serde.json.Writer.init(&self.res.buffer.writer, .{});
+                        try serde.serialize(&jw, res);
                     },
                 }
             },

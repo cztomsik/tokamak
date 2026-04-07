@@ -1,5 +1,6 @@
 const std = @import("std");
 const schema = @import("../schema.zig");
+const serde = @import("../serde.zig");
 const util = @import("../util.zig");
 
 const Content = struct {
@@ -17,10 +18,10 @@ pub const TextOrContents = union(enum) {
     text: []const u8,
     contents: []const Content,
 
-    pub fn jsonStringify(self: *const @This(), jw: anytype) !void {
-        try switch (self.*) {
-            inline else => |v| jw.write(v),
-        };
+    pub fn serialize(self: *const @This(), writer: anytype) !void {
+        switch (self.*) {
+            inline else => |v| try serde.serialize(writer, v),
+        }
     }
 
     pub fn jsonParse(allocator: std.mem.Allocator, source: anytype, options: std.json.ParseOptions) !@This() {

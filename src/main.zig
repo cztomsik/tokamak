@@ -10,7 +10,6 @@ pub const cli = @import("cli.zig");
 pub const config = @import("config.zig");
 pub const cron = @import("cron.zig");
 pub const crypto = @import("crypto.zig");
-pub const csv = @import("csv.zig");
 pub const dom = @import("dom.zig");
 pub const entities = @import("entities.zig");
 pub const event = @import("event.zig");
@@ -26,6 +25,7 @@ pub const queue = @import("queue.zig");
 pub const regex = @import("regex.zig");
 pub const resource = @import("resource.zig");
 pub const sax = @import("sax.zig");
+pub const serde = @import("serde.zig");
 pub const selector = @import("selector.zig");
 pub const sendmail = @import("sendmail.zig");
 pub const ssr = @import("ssr.zig");
@@ -35,7 +35,6 @@ pub const tpl = @import("tpl.zig");
 pub const tui = @import("tui.zig");
 pub const util = @import("util.zig");
 pub const vm = @import("vm.zig");
-pub const yaml = @import("yaml.zig");
 
 // Core types (general-purpose)
 pub const String = @import("string.zig").String;

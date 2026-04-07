@@ -261,8 +261,9 @@ pub const Expr = struct {
         }
     }
 
-    pub fn jsonStringify(self: *const Expr, w: anytype) !void {
-        return w.print("\"{f}\"", .{self});
+    pub fn serialize(self: *const Expr, writer: anytype) !void {
+        var buf: [64]u8 = undefined;
+        try writer.write(.string, try std.fmt.bufPrint(&buf, "{f}", .{self}));
     }
 
     fn findNext(mask: anytype, curr: u32) ?u32 {
@@ -534,7 +535,7 @@ fn expectNormalized(input: []const u8, expected: []const u8) !void {
     try testing.expectFmt(expr, expected);
 }
 
-test "Expr.jsonStringify()" {
+test "expr.format()" {
     // Wildcard
     try expectNormalized("* * * * *", "* * * * *");
 

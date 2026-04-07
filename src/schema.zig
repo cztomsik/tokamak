@@ -1,15 +1,8 @@
 const std = @import("std");
 const string = @import("string.zig");
 const meta = @import("meta.zig");
+const serde = @import("serde.zig");
 const testing = @import("testing.zig");
-
-/// Returns a formatter which will print a JSON-schema for the given type.
-pub fn fmt(comptime T: type) std.json.Formatter(Schema) {
-    return .{
-        .value = .forType(T),
-        .options = .{ .whitespace = .indent_2 },
-    };
-}
 
 pub const Schema = union(enum) {
     null,
@@ -65,38 +58,38 @@ pub const Schema = union(enum) {
         };
     }
 
-    pub fn jsonStringify(self: Schema, w: anytype) !void {
+    pub fn serialize(self: Schema, w: anytype) !void {
         switch (self) {
-            .oneOf => |schemas| try w.write(.{ .oneOf = schemas }),
-            .array => |schema| try w.write(.{ .type = .array, .items = schema }),
-            .tuple => |items| try w.write(.{ .type = .array, .items = items }),
+            .oneOf => |schemas| try serde.serialize(w, .{ .oneOf = schemas }),
+            .array => |schema| try serde.serialize(w, .{ .type = .array, .items = schema }),
+            .tuple => |items| try serde.serialize(w, .{ .type = .array, .items = items }),
             .object => |props| {
-                try w.beginObject();
+                try w.write(.struct_begin, {});
 
-                try w.objectField("type");
-                try w.write(.object);
+                try w.write(.struct_field, "type");
+                try w.write(.string, "object");
 
-                try w.objectField("properties");
-                try w.beginObject();
+                try w.write(.struct_field, "properties");
+                try w.write(.struct_begin, {});
                 for (props) |p| {
-                    try w.objectField(p.name);
-                    try w.write(p.schema);
+                    try w.write(.struct_field, p.name);
+                    try serde.serialize(w, p.schema);
                 }
-                try w.endObject();
+                try w.write(.struct_end, {});
 
-                try w.objectField("required");
-                try w.beginArray();
+                try w.write(.struct_field, "required");
+                try w.write(.array_begin, {});
                 for (props) |p| {
-                    try w.write(p.name);
+                    try w.write(.string, p.name);
                 }
-                try w.endArray();
+                try w.write(.array_end, {});
 
-                try w.objectField("additionalProperties");
-                try w.write(false);
+                try w.write(.struct_field, "additionalProperties");
+                try w.write(.bool, false);
 
-                try w.endObject();
+                try w.write(.struct_end, {});
             },
-            inline else => |_, t| try w.write(.{ .type = t }),
+            inline else => |_, t| try serde.serialize(w, .{ .type = t }),
         }
     }
 };
@@ -121,10 +114,10 @@ test "Schema.forType()" {
 }
 
 fn expectJsonSchema(comptime T: type, expected: []const u8) !void {
-    try testing.expectFmt(fmt(T), expected);
+    try serde.json.expectJson(Schema.forType(T), expected);
 }
 
-test "schema.jsonStringify()" {
+test "schema.serialize()" {
     try expectJsonSchema(u32,
         \\{
         \\  "type": "integer"
