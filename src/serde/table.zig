@@ -1,5 +1,4 @@
 const std = @import("std");
-const meta = @import("../meta.zig");
 const serde = @import("../serde.zig");
 const testing = @import("../testing.zig");
 
@@ -19,38 +18,34 @@ pub const Writer = struct {
     options: WriterOptions,
     row: usize = 0,
     col: usize = 0,
-    skip_next: bool = false,
 
     pub fn init(buf: []u8, writer: *std.io.Writer, options: WriterOptions) Writer {
         return .{ .buf = buf, .inner = writer, .options = options };
     }
 
     pub fn write(self: *Writer, comptime k: serde.Kind, value: anytype) !void {
-        if (self.skip_next) {
-            self.skip_next = false;
-            return;
-        }
-
-        if (self.row == 0) {
-            try self.writeHeader();
-            try self.writeSeparator();
-        }
-
         switch (k) {
             .void, .null => try self.writeCell(""),
             .bool => try self.writeCell(if (value) "true" else "false"),
             .int => try self.writeCell(try std.fmt.bufPrint(self.buf, "{}", .{value})),
             .float => try self.writeCell(try std.fmt.bufPrint(self.buf, "{d}", .{value})),
             .string => try self.writeCell(value),
-            .struct_begin => try self.beginRow(),
-            .struct_field => {
-                for (self.options.columns) |c| {
-                    if (std.mem.eql(u8, c.name, value)) break;
-                } else self.skip_next = true;
-            },
-            .struct_end => try self.endRow(),
-            else => {},
         }
+    }
+
+    pub fn beginSeq(self: *Writer, _: usize) !Seq {
+        try self.ensureHeader();
+        return .{ .writer = self };
+    }
+
+    pub fn beginTuple(self: *Writer, _: usize) !Tuple {
+        try self.ensureHeader();
+        return .{ .writer = self };
+    }
+
+    pub fn beginStruct(self: *Writer, comptime _: type, _: usize) !Struct {
+        try self.ensureHeader();
+        return .{ .writer = self };
     }
 
     fn writeHeader(self: *Writer) !void {
@@ -97,6 +92,61 @@ pub const Writer = struct {
                 try self.inner.splatByteAll(' ', width - value.len);
             }
         }
+    }
+
+    fn ensureHeader(self: *Writer) !void {
+        if (self.row == 0) {
+            try self.writeHeader();
+            try self.writeSeparator();
+        }
+    }
+};
+
+const Seq = struct {
+    writer: *Writer,
+
+    pub fn element(self: *Seq, value: anytype) !void {
+        try serde.serialize(self.writer, value);
+    }
+
+    pub fn end(_: *Seq) !void {}
+};
+
+const Tuple = struct {
+    writer: *Writer,
+    started: bool = false,
+
+    pub fn element(self: *Tuple, value: anytype) !void {
+        if (!self.started) {
+            try self.writer.beginRow();
+            self.started = true;
+        }
+
+        try serde.serialize(self.writer, value);
+    }
+
+    pub fn end(self: *Tuple) !void {
+        if (self.started) try self.writer.endRow();
+    }
+};
+
+const Struct = struct {
+    writer: *Writer,
+    started: bool = false,
+
+    pub fn field(self: *Struct, key: []const u8, value: anytype) !void {
+        if (!self.started) {
+            try self.writer.beginRow();
+            self.started = true;
+        }
+
+        if (self.writer.col >= self.writer.options.columns.len) return;
+        if (!std.mem.eql(u8, self.writer.options.columns[self.writer.col].name, key)) return;
+        try serde.serialize(self.writer, value);
+    }
+
+    pub fn end(self: *Struct) !void {
+        if (self.started) try self.writer.endRow();
     }
 };
 

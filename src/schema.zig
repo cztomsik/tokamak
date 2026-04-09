@@ -64,30 +64,36 @@ pub const Schema = union(enum) {
             .array => |schema| try serde.serialize(w, .{ .type = .array, .items = schema }),
             .tuple => |items| try serde.serialize(w, .{ .type = .array, .items = items }),
             .object => |props| {
-                try w.write(.struct_begin, {});
+                const PropertiesValue = struct {
+                    props: []const Property,
 
-                try w.write(.struct_field, "type");
-                try w.write(.string, "object");
+                    pub fn serialize(value: @This(), writer: anytype) !void {
+                        var st = try writer.beginStruct(void, value.props.len);
+                        for (value.props) |p| {
+                            try st.field(p.name, p.schema);
+                        }
+                        try st.end();
+                    }
+                };
 
-                try w.write(.struct_field, "properties");
-                try w.write(.struct_begin, {});
-                for (props) |p| {
-                    try w.write(.struct_field, p.name);
-                    try serde.serialize(w, p.schema);
-                }
-                try w.write(.struct_end, {});
+                const RequiredValue = struct {
+                    props: []const Property,
 
-                try w.write(.struct_field, "required");
-                try w.write(.array_begin, {});
-                for (props) |p| {
-                    try w.write(.string, p.name);
-                }
-                try w.write(.array_end, {});
+                    pub fn serialize(value: @This(), writer: anytype) !void {
+                        var seq = try writer.beginSeq(value.props.len);
+                        for (value.props) |p| {
+                            try seq.element(p.name);
+                        }
+                        try seq.end();
+                    }
+                };
 
-                try w.write(.struct_field, "additionalProperties");
-                try w.write(.bool, false);
-
-                try w.write(.struct_end, {});
+                var st = try w.beginStruct(void, 4);
+                try st.field("type", "object");
+                try st.field("properties", PropertiesValue{ .props = props });
+                try st.field("required", RequiredValue{ .props = props });
+                try st.field("additionalProperties", false);
+                try st.end();
             },
             inline else => |_, t| try serde.serialize(w, .{ .type = t }),
         }

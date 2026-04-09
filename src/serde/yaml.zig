@@ -14,41 +14,33 @@ pub const Writer = struct {
     options: WriterOptions,
     indent: usize = 0,
     after_dash: bool = false,
-    skip_depth: usize = 0,
 
     pub fn init(writer: *std.io.Writer, options: WriterOptions) Writer {
         return .{ .writer = writer, .options = options };
     }
 
     pub fn write(self: *Writer, comptime k: serde.Kind, value: anytype) !void {
-        if (self.skip_depth > 0) {
-            switch (k) {
-                .array_begin, .tuple_begin, .struct_begin => self.skip_depth += 1,
-                .array_end, .tuple_end, .struct_end => self.skip_depth -= 1,
-                else => {},
-            }
-            return;
-        }
-
         switch (k) {
             .void, .null => try self.writer.writeAll("null"),
             .bool, .int => try self.writer.print("{}", .{value}),
             .float => try self.writer.print("!!float {d}", .{value}),
             .string => try self.writeString(value),
-            .array_begin => {
-                try self.writeSlice(value);
-                self.skip_depth = 1;
-            },
-            .tuple_begin => {
-                try self.writeTuple(value);
-                self.skip_depth = 1;
-            },
-            .struct_begin => {
-                try self.writeStruct(value);
-                self.skip_depth = 1;
-            },
-            .struct_field, .array_end, .tuple_end, .struct_end => {},
         }
+    }
+
+    pub fn beginSeq(self: *Writer, len: usize) !Seq {
+        if (len == 0) try self.writer.writeAll("[]");
+        return .{ .writer = self };
+    }
+
+    pub fn beginTuple(self: *Writer, len: usize) !Tuple {
+        if (len == 0) try self.writer.writeAll("[]");
+        return .{ .writer = self };
+    }
+
+    pub fn beginStruct(self: *Writer, comptime _: type, len: usize) !Struct {
+        if (len == 0) try self.writer.writeAll("{}");
+        return .{ .writer = self };
     }
 
     fn writeString(self: *Writer, value: []const u8) !void {
@@ -64,90 +56,6 @@ pub const Writer = struct {
             try self.writer.print("{f}", .{std.json.fmt(value, .{})});
         } else {
             try self.writer.writeAll(value);
-        }
-    }
-
-    fn writeSlice(self: *Writer, items: anytype) !void {
-        if (items.len == 0) {
-            return self.writer.writeAll("[]");
-        }
-
-        for (items, 0..) |it, i| {
-            if (i > 0) {
-                try self.writer.writeAll(if (shouldInline(it)) "\n" else "\n\n");
-            }
-
-            if (!self.after_dash or i > 0) {
-                try self.writeIndent();
-            }
-
-            try self.writer.writeAll("- ");
-            self.after_dash = true;
-
-            self.indent += 1;
-            defer self.indent -= 1;
-            try serde.serialize(self, it);
-        }
-    }
-
-    fn writeTuple(self: *Writer, value: anytype) !void {
-        const fields = std.meta.fields(@TypeOf(value));
-
-        if (fields.len == 0) {
-            return self.writer.writeAll("[]");
-        }
-
-        inline for (fields, 0..) |_, i| {
-            const it = value[i];
-
-            if (i > 0) {
-                try self.writer.writeAll(if (shouldInline(it)) "\n" else "\n\n");
-            }
-
-            if (!self.after_dash or i > 0) {
-                try self.writeIndent();
-            }
-
-            try self.writer.writeAll("- ");
-            self.after_dash = true;
-
-            self.indent += 1;
-            try serde.serialize(self, it);
-            self.indent -= 1;
-        }
-    }
-
-    fn writeStruct(self: *Writer, value: anytype) !void {
-        const fields = std.meta.fields(@TypeOf(value));
-
-        if (fields.len == 0) {
-            return self.writer.writeAll("{}");
-        }
-
-        inline for (fields, 0..) |f, i| {
-            if (i > 0) {
-                try self.writer.writeByte('\n');
-            }
-
-            if (!self.after_dash) {
-                try self.writeIndent();
-            } else {
-                self.after_dash = false;
-            }
-
-            try serde.serialize(self, f.name);
-            try self.writer.writeAll(": ");
-
-            const val = @field(value, f.name);
-
-            if (shouldInline(val)) {
-                try serde.serialize(self, val);
-            } else {
-                try self.writer.writeByte('\n');
-                self.indent += 1;
-                try serde.serialize(self, val);
-                self.indent -= 1;
-            }
         }
     }
 
@@ -169,6 +77,89 @@ pub const Writer = struct {
             else => true,
         };
     }
+};
+
+const Seq = struct {
+    writer: *Writer,
+    index: usize = 0,
+
+    pub fn element(self: *Seq, value: anytype) !void {
+        if (self.index > 0) {
+            try self.writer.writer.writeAll(if (Writer.shouldInline(value)) "\n" else "\n\n");
+        }
+
+        if (!self.writer.after_dash or self.index > 0) {
+            try self.writer.writeIndent();
+        }
+
+        try self.writer.writer.writeAll("- ");
+        self.writer.after_dash = true;
+
+        self.writer.indent += 1;
+        defer self.writer.indent -= 1;
+        try serde.serialize(self.writer, value);
+        self.index += 1;
+    }
+
+    pub fn end(_: *Seq) !void {}
+};
+
+const Tuple = struct {
+    writer: *Writer,
+    index: usize = 0,
+
+    pub fn element(self: *Tuple, value: anytype) !void {
+        if (self.index > 0) {
+            try self.writer.writer.writeAll(if (Writer.shouldInline(value)) "\n" else "\n\n");
+        }
+
+        if (!self.writer.after_dash or self.index > 0) {
+            try self.writer.writeIndent();
+        }
+
+        try self.writer.writer.writeAll("- ");
+        self.writer.after_dash = true;
+
+        self.writer.indent += 1;
+        defer self.writer.indent -= 1;
+        try serde.serialize(self.writer, value);
+        self.index += 1;
+    }
+
+    pub fn end(_: *Tuple) !void {}
+};
+
+const Struct = struct {
+    writer: *Writer,
+    index: usize = 0,
+
+    pub fn field(self: *Struct, key: []const u8, value: anytype) !void {
+        if (self.index > 0) {
+            try self.writer.writer.writeByte('\n');
+        }
+
+        if (!self.writer.after_dash) {
+            try self.writer.writeIndent();
+        } else {
+            self.writer.after_dash = false;
+        }
+
+        try self.writer.write(.string, key);
+        try self.writer.writer.writeAll(": ");
+
+        if (Writer.shouldInline(value)) {
+            try serde.serialize(self.writer, value);
+        } else {
+            try self.writer.writer.writeByte('\n');
+            self.writer.indent += 1;
+            defer self.writer.indent -= 1;
+            try serde.serialize(self.writer, value);
+        }
+
+        self.index += 1;
+    }
+
+    pub fn end(_: *Struct) !void {}
 };
 
 const User = struct { name: []const u8, age: u32 };

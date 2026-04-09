@@ -1,5 +1,4 @@
 const std = @import("std");
-const meta = @import("../meta.zig");
 const serde = @import("../serde.zig");
 const testing = @import("../testing.zig");
 
@@ -26,7 +25,7 @@ pub const Writer = struct {
     }
 
     pub fn write(self: *Writer, comptime k: serde.Kind, value: anytype) !void {
-        if (self.col > 0 and k.isScalar()) {
+        if (self.col > 0) {
             try self.inner.writeByte(switch (self.options.delimiter) {
                 .comma => ',',
                 .semicolon => ';',
@@ -45,23 +44,33 @@ pub const Writer = struct {
             } else {
                 try self.inner.writeAll(value);
             },
-            .tuple_begin => {
-                if (self.row > 0) try self.inner.writeByte('\n');
-                self.row += 1;
-                self.col = 0;
-            },
-            .struct_begin => {
-                if (self.row == 0) try self.writeHeader(std.meta.fields(@TypeOf(value)));
-                try self.inner.writeByte('\n');
-                self.row += 1;
-                self.col = 0;
-            },
-            else => {},
         }
 
-        if (k.isScalar()) {
-            self.col += 1;
+        self.col += 1;
+    }
+
+    pub fn beginSeq(self: *Writer, _: usize) !Seq {
+        return .{ .writer = self };
+    }
+
+    pub fn beginTuple(self: *Writer, _: usize) !Tuple {
+        if (self.row > 0) {
+            try self.inner.writeByte('\n');
         }
+
+        return .{ .writer = self };
+    }
+
+    pub fn beginStruct(self: *Writer, comptime T: type, _: usize) !Struct {
+        if (self.row == 0 and self.options.header) {
+            try self.writeHeader(std.meta.fields(T));
+        }
+
+        if (self.row > 0) {
+            try self.inner.writeByte('\n');
+        }
+
+        return .{ .writer = self };
     }
 
     fn writeHeader(self: *Writer, comptime fields: anytype) !void {
@@ -88,6 +97,46 @@ pub const Writer = struct {
         }
 
         try self.inner.writeByte('"');
+    }
+};
+
+const Seq = struct {
+    writer: *Writer,
+
+    pub fn element(self: *Seq, value: anytype) !void {
+        try serde.serialize(self.writer, value);
+    }
+
+    pub fn end(_: *Seq) !void {}
+};
+
+const Tuple = struct {
+    writer: *Writer,
+
+    pub fn element(self: *Tuple, value: anytype) !void {
+        try serde.serialize(self.writer, value);
+    }
+
+    pub fn end(self: *Tuple) !void {
+        if (self.writer.col > 0) {
+            self.writer.row += 1;
+            self.writer.col = 0;
+        }
+    }
+};
+
+const Struct = struct {
+    writer: *Writer,
+
+    pub fn field(self: *Struct, _: []const u8, value: anytype) !void {
+        try serde.serialize(self.writer, value);
+    }
+
+    pub fn end(self: *Struct) !void {
+        if (self.writer.col > 0) {
+            self.writer.row += 1;
+            self.writer.col = 0;
+        }
     }
 };
 

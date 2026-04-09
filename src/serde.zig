@@ -31,35 +31,28 @@ pub const yaml = @import("serde/yaml.zig");
 
 pub const Error = anyerror;
 
-pub const Kind = enum {
-    void,
-    null,
-    bool,
-    int,
-    float,
-    string,
-    array_begin,
-    array_end,
-    tuple_begin,
-    tuple_end,
-    struct_begin,
-    struct_field,
-    struct_end,
+pub const Kind = enum { void, null, bool, int, float, string };
 
-    pub fn isScalar(self: Kind) bool {
-        return switch (self) {
-            .void, .null, .bool, .int, .float, .string => true,
-            else => false,
-        };
-    }
-};
-
-/// Serialize a value into a series of `writer.write(kind, value)` calls.
+/// Serialize a value by calling `writer.write(kind, value)` for scalar values
+/// and format-specific container factories for sequences, tuples and structs.
 /// Types can customize this in their `T.serialize()` hook.
 ///
-/// The writer must implement `write(kind: Kind, value: anytype) Error!void`
-/// and should call `serde.serialize()` recursively for any struct fields or
-/// slice elements.
+/// The writer must implement:
+///
+/// - `write(kind: Kind, value: anytype) Error!void` for scalar kinds
+/// - `beginSeq(len: usize) Error!anytype`
+/// - `beginTuple(len: usize) Error!anytype`
+/// - `beginStruct(comptime T: type, len: usize) Error!anytype`
+///
+/// Sequence / tuple containers must implement:
+///
+/// - `element(value: anytype) Error!void`
+/// - `end() Error!void`
+///
+/// Struct containers must implement:
+///
+/// - `field(key: []const u8, value: anytype) Error!void`
+/// - `end() Error!void`
 pub fn serialize(writer: anytype, value: anytype) Error!void {
     const T = @TypeOf(value);
 
@@ -73,7 +66,7 @@ pub fn serialize(writer: anytype, value: anytype) Error!void {
         return writer.write(.string, @as([]const u8, value));
     }
 
-    // Normalize everything into a series of `writer.write(kind, anytype)` calls
+    // Normalize everything into scalar writes or container callbacks
     return switch (@typeInfo(T)) {
         inline .void, .null, .bool, .int, .float => |_, t| writer.write(@field(Kind, @tagName(t)), value),
         .comptime_int => writer.write(.int, value),
@@ -85,33 +78,31 @@ pub fn serialize(writer: anytype, value: anytype) Error!void {
         .error_union => if (value) |v| serialize(writer, v) else |e| serialize(writer, e),
         .array => |a| serialize(writer, @as([]const a.child, &value)),
         .@"struct" => |s| if (s.is_tuple) {
-            try writer.write(.tuple_begin, value);
-            inline for (0..s.fields.len) |i| try serialize(writer, value[i]);
-            return writer.write(.tuple_end, {});
+            var tuple = try writer.beginTuple(s.fields.len);
+            inline for (0..s.fields.len) |i| try tuple.element(value[i]);
+            return tuple.end();
         } else {
-            try writer.write(.struct_begin, value);
+            var st = try writer.beginStruct(T, s.fields.len);
             inline for (s.fields) |f| {
-                try writer.write(.struct_field, f.name);
-                try serialize(writer, @field(value, f.name));
+                try st.field(f.name, @field(value, f.name));
             }
-            return writer.write(.struct_end, {});
+            return st.end();
         },
         .@"union" => |u| if (u.tag_type) |_| {
             switch (value) {
                 inline else => |v, t| {
-                    try writer.write(.struct_begin, value);
-                    try writer.write(.struct_field, @tagName(t));
-                    try serialize(writer, v);
-                    return writer.write(.struct_end, {});
+                    var st = try writer.beginStruct(void, 1);
+                    try st.field(@tagName(t), v);
+                    return st.end();
                 },
             }
         } else @compileError("unsupported type: " ++ @typeName(T)),
         .pointer => |p| switch (p.size) {
             .one => serialize(writer, if (@typeInfo(p.child) == .array) @as([]const std.meta.Elem(p.child), value) else value.*),
             .slice => {
-                try writer.write(.array_begin, value);
-                for (value) |item| try serialize(writer, item);
-                return writer.write(.array_end, {});
+                var seq = try writer.beginSeq(value.len);
+                for (value) |item| try seq.element(item);
+                return seq.end();
             },
             else => @compileError("unsupported type: " ++ @typeName(T)),
         },
