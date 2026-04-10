@@ -101,7 +101,11 @@ pub const Context = struct {
 
         while (true) {
             switch (try self.readKey()) {
-                .enter => break,
+                .enter => {
+                    try self.out.writeAll("\r\n");
+                    try self.out.flush();
+                    break;
+                },
                 .escape, .ctrl_c, .ctrl_d => return null,
                 .backspace => {
                     if (len > 0) {
