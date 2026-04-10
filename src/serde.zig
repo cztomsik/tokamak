@@ -34,15 +34,16 @@ pub const Error = anyerror;
 pub const Kind = enum { void, null, bool, int, float, string };
 
 /// Serialize a value by calling `writer.write(kind, value)` for scalar values
-/// and format-specific container factories for sequences, tuples and structs.
+/// and format-specific container factories for sequences, tuples, structs and maps.
 /// Types can customize this in their `T.serialize()` hook.
 ///
 /// The writer must implement:
 ///
 /// - `write(kind: Kind, value: anytype) Error!void` for scalar kinds
-/// - `beginSeq(len: usize) Error!anytype`
-/// - `beginTuple(len: usize) Error!anytype`
-/// - `beginStruct(comptime T: type, len: usize) Error!anytype`
+/// - `beginSeq(len: usize) Error!anytype` for slices and arrays
+/// - `beginTuple(len: usize) Error!anytype` for tuple structs
+/// - `beginStruct(comptime T: type, len: usize) Error!anytype` for structs and tagged unions
+/// - `beginMap(len: usize) Error!anytype` for map types (detected via `KV` decl)
 ///
 /// Sequence / tuple containers must implement:
 ///
@@ -52,6 +53,11 @@ pub const Kind = enum { void, null, bool, int, float, string };
 /// Struct containers must implement:
 ///
 /// - `field(key: []const u8, value: anytype) Error!void`
+/// - `end() Error!void`
+///
+/// Map containers must implement:
+///
+/// - `entry(key: anytype, value: anytype) Error!void`
 /// - `end() Error!void`
 pub fn serialize(writer: anytype, value: anytype) Error!void {
     const T = @TypeOf(value);
