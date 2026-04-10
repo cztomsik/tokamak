@@ -32,6 +32,46 @@ pub const Key = union(enum) {
     f12,
 };
 
+pub const LineEdit = struct {
+    buf: []u8,
+    len: usize = 0,
+    cursor: usize = 0,
+
+    pub fn handleKey(self: *LineEdit, key: Key) void {
+        switch (key) {
+            .char => |c| if (std.ascii.isPrint(c)) {
+                if (self.len >= self.buf.len) return;
+                std.mem.copyBackwards(u8, self.buf[self.cursor + 1 .. self.len + 1], self.buf[self.cursor..self.len]);
+                self.buf[self.cursor] = c;
+                self.cursor += 1;
+                self.len += 1;
+            },
+            .backspace => if (self.cursor > 0) {
+                std.mem.copyForwards(u8, self.buf[self.cursor - 1 .. self.len - 1], self.buf[self.cursor..self.len]);
+                self.cursor -= 1;
+                self.len -= 1;
+            },
+            .delete => if (self.cursor < self.len) {
+                std.mem.copyForwards(u8, self.buf[self.cursor .. self.len - 1], self.buf[self.cursor + 1 .. self.len]);
+                self.len -= 1;
+            },
+            .left => if (self.cursor > 0) {
+                self.cursor -= 1;
+            },
+            .right => if (self.cursor < self.len) {
+                self.cursor += 1;
+            },
+            .home => self.cursor = 0,
+            .end => self.cursor = self.len,
+            else => {},
+        }
+    }
+
+    pub fn text(self: *const LineEdit) []const u8 {
+        return self.buf[0..self.len];
+    }
+};
+
 pub const Context = struct {
     allocator: std.mem.Allocator,
     in: *std.io.Reader,
@@ -97,7 +137,7 @@ pub const Context = struct {
     }
 
     pub fn readLine(self: *Context, buf: []u8) !?[]const u8 {
-        var len: usize = 0;
+        var editor = LineEdit{ .buf = buf };
 
         while (true) {
             switch (try self.readKey()) {
@@ -107,26 +147,18 @@ pub const Context = struct {
                     break;
                 },
                 .escape, .ctrl_c, .ctrl_d => return null,
-                .backspace => {
-                    if (len > 0) {
-                        len -= 1;
-                        try self.out.writeAll("\x08 \x08");
-                        try self.out.flush();
-                    }
-                },
-                .char => |c| {
-                    if (len < buf.len - 1 and std.ascii.isPrint(c)) {
-                        buf[len] = c;
-                        len += 1;
-                        try self.out.print("{c}", .{c});
-                        try self.out.flush();
-                    }
-                },
-                else => {},
+                else => |key| editor.handleKey(key),
             }
+
+            try self.out.writeAll("\r\x1b[K");
+            try self.out.writeAll(editor.text());
+            if (editor.cursor < editor.len) {
+                try self.out.print("\x1b[{}D", .{editor.len - editor.cursor});
+            }
+            try self.out.flush();
         }
 
-        return buf[0..len];
+        return editor.text();
     }
 
     pub fn readKey(self: *Context) !Key {
