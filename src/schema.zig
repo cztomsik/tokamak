@@ -64,39 +64,27 @@ pub const Schema = union(enum) {
             .array => |schema| try serde.serialize(w, .{ .type = .array, .items = schema }),
             .tuple => |items| try serde.serialize(w, .{ .type = .array, .items = items }),
             .object => |props| {
-                const PropertiesValue = struct {
-                    props: []const Property,
-
-                    pub fn serialize(value: @This(), writer: anytype) !void {
-                        var st = try writer.beginStruct(void, value.props.len);
-                        for (value.props) |p| {
-                            try st.field(p.name, p.schema);
-                        }
-                        try st.end();
-                    }
-                };
-
-                const RequiredValue = struct {
-                    props: []const Property,
-
-                    pub fn serialize(value: @This(), writer: anytype) !void {
-                        var seq = try writer.beginSeq(value.props.len);
-                        for (value.props) |p| {
-                            try seq.element(p.name);
-                        }
-                        try seq.end();
-                    }
-                };
-
-                var st = try w.beginStruct(void, 4);
+                var st = try w.beginStruct(struct {}, 4);
                 try st.field("type", "object");
-                try st.field("properties", PropertiesValue{ .props = props });
-                try st.field("required", RequiredValue{ .props = props });
+                try st.field("properties", serde.serializer(props, serializeProperties));
+                try st.field("required", serde.serializer(props, serializeRequired));
                 try st.field("additionalProperties", false);
                 try st.end();
             },
             inline else => |_, t| try serde.serialize(w, .{ .type = t }),
         }
+    }
+
+    fn serializeProperties(props: []const Property, writer: anytype) !void {
+        var st = try writer.beginStruct(void, props.len);
+        for (props) |p| try st.field(p.name, p.schema);
+        try st.end();
+    }
+
+    fn serializeRequired(props: []const Property, writer: anytype) !void {
+        var seq = try writer.beginSeq(props.len);
+        for (props) |p| try seq.element(p.name);
+        try seq.end();
     }
 };
 

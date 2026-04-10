@@ -109,3 +109,17 @@ pub fn serialize(writer: anytype, value: anytype) Error!void {
         .type, .noreturn, .undefined, .@"fn", .@"opaque", .frame, .@"anyframe", .vector => @compileError("unsupported type: " ++ @typeName(T)),
     };
 }
+
+pub fn serializer(cx: anytype, comptime fun: anytype) Serializer(@TypeOf(cx), fun) {
+    return .{ .cx = cx };
+}
+
+pub fn Serializer(comptime Cx: type, comptime fun: anytype) type {
+    return struct {
+        cx: Cx,
+
+        pub inline fn serialize(self: @This(), writer: anytype) !void {
+            try fun(self.cx, writer);
+        }
+    };
+}
