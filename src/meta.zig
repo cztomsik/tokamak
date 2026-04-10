@@ -147,8 +147,12 @@ pub inline fn isSlice(comptime T: type) bool {
 
 pub inline fn isString(comptime T: type) bool {
     return switch (@typeInfo(T)) {
-        .pointer => |ptr| ptr.child == u8 or switch (@typeInfo(ptr.child)) {
-            .array => |arr| arr.child == u8,
+        .pointer => |ptr| switch (ptr.size) {
+            .slice => ptr.child == u8,
+            .one => switch (@typeInfo(ptr.child)) {
+                .array => |arr| arr.child == u8,
+                else => false,
+            },
             else => false,
         },
         else => false,
