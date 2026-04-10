@@ -8,6 +8,13 @@ pub const Config = struct {
     base_url: []const u8 = "https://api.openai.com/v1/",
     api_key: ?[]const u8 = null,
     timeout: ?usize = 2 * 60,
+
+    pub fn openrouter(api_key: []const u8) Config {
+        return .{
+            .base_url = "https://openrouter.ai/api/v1/",
+            .api_key = api_key,
+        };
+    }
 };
 
 pub const Client = struct {
