@@ -13,6 +13,9 @@ front of it, like Nginx or Cloudfront, which will handle SSL, caching,
 sanitization, etc.
 
 > ### Recent changes
+> - there's a new **serialization mini-framework** in `tk.serde.*`, if you were
+>   using `jsonStringify()` anywhere in your code, you might need to migrate
+>   to a new `T.serialize()` hook
 > - renamed few `bundle.addXxx()` methods to `bundle.provide()`,
 >   `bundle.override()`, ...
 > - renamed `inj.call0(fun)` → `inj.call(fun)`, `inj.call(fun, ...args)` →
