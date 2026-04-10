@@ -115,6 +115,8 @@ pub const StdClient = struct {
                 .content_type = if (options.body) |b| .{ .override = b.content_type } else .default,
             },
             .extra_headers = options.headers,
+            // TODO: fix this later, it looks like there's some std.http.Client pooling but we don't handle it properly
+            .keep_alive = false,
         });
         defer req.deinit();
 
