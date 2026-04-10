@@ -62,7 +62,6 @@ pub const Context = struct {
         var raw = original;
         raw.lflag = .{};
         raw.iflag = .{};
-        raw.oflag.OPOST = false;
         raw.cflag.CSIZE = .CS8;
         raw.cc[@intFromEnum(std.posix.V.MIN)] = 1;
         raw.cc[@intFromEnum(std.posix.V.TIME)] = 0;
