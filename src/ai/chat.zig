@@ -58,15 +58,14 @@ pub const Message = struct {
     tool_calls: ?[]const ToolCall = null,
     tool_call_id: ?[]const u8 = null,
 
-    pub fn jsonStringify(self: Message, jws: anytype) !void {
-        // TODO: this is ugly hack but zig only allows omitting null fields, which is not what we want
-        //       (what we want is to omit them only if they also have null as default value)
-        try jws.print("{f}", .{std.json.fmt(.{
-            .role = self.role,
-            .content = self.content,
-            .tool_calls = self.tool_calls,
-            .tool_call_id = self.tool_call_id,
-        }, .{ .emit_null_optional_fields = false })});
+    pub fn serialize(self: Message, w: anytype) !void {
+        // Only emit fields that are non-null (omit fields whose default is null)
+        var st = try w.beginStruct(Message, 4);
+        try st.field("role", self.role);
+        if (self.content) |v| try st.field("content", v);
+        if (self.tool_calls) |v| try st.field("tool_calls", v);
+        if (self.tool_call_id) |v| try st.field("tool_call_id", v);
+        try st.end();
     }
 };
 
