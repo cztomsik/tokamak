@@ -1,4 +1,5 @@
 const std = @import("std");
+const meta = @import("../meta.zig");
 const serde = @import("../serde.zig");
 const testing = @import("../testing.zig");
 
@@ -27,6 +28,11 @@ pub const Writer = struct {
     }
 
     pub fn beginStruct(self: *Writer, comptime _: type, _: usize) !Struct {
+        try self.inner.beginObject();
+        return .{ .writer = self };
+    }
+
+    pub fn beginMap(self: *Writer, _: usize) !Map {
         try self.inner.beginObject();
         return .{ .writer = self };
     }
@@ -65,6 +71,19 @@ const Struct = struct {
     }
 
     pub fn end(self: *Struct) !void {
+        try self.writer.inner.endObject();
+    }
+};
+
+const Map = struct {
+    writer: *Writer,
+
+    pub fn entry(self: *Map, key: anytype, value: anytype) !void {
+        try self.writer.inner.objectField(@as([]const u8, key));
+        try serde.serialize(self.writer, value);
+    }
+
+    pub fn end(self: *Map) !void {
         try self.writer.inner.endObject();
     }
 };

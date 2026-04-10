@@ -66,6 +66,14 @@ pub fn serialize(writer: anytype, value: anytype) Error!void {
         return writer.write(.string, @as([]const u8, value));
     }
 
+    // Detect map types
+    if (@typeInfo(T) == .@"struct" and @hasDecl(T, "KV")) {
+        var map = try writer.beginMap(value.count());
+        var it = value.iterator();
+        while (it.next()) |entry| try map.entry(entry.key_ptr.*, entry.value_ptr.*);
+        return map.end();
+    }
+
     // Normalize everything into scalar writes or container callbacks
     return switch (@typeInfo(T)) {
         inline .void, .null, .bool, .int, .float => |_, t| writer.write(@field(Kind, @tagName(t)), value),

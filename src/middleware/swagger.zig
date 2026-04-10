@@ -86,7 +86,7 @@ fn walk(arena: std.mem.Allocator, prefix: []const u8, res: *PathMap, routes: []c
             if (route.method) |met| {
                 const m = route.metadata orelse continue;
                 const key = try swaggerPath(arena, prefix, route.path orelse continue);
-                const path = (try res.map.getOrPutValue(arena, key, .{})).value_ptr;
+                const path = (try res.getOrPutValue(arena, key, .{})).value_ptr;
 
                 var op: Operation = .{};
 
@@ -106,30 +106,26 @@ fn walk(arena: std.mem.Allocator, prefix: []const u8, res: *PathMap, routes: []c
 
                 if (m.body) |schema| {
                     op.requestBody = .{
-                        .content = .{
-                            .map = try .init(arena, &.{"application/json"}, &.{.{ .schema = schema }}),
-                        },
+                        .content = try .init(arena, &.{"application/json"}, &.{.{ .schema = schema }}),
                     };
                 }
 
                 if (m.result) |schema| {
-                    try op.responses.map.put(arena, "200", .{
+                    try op.responses.put(arena, "200", .{
                         .description = null,
-                        .content = .{
-                            .map = try .init(arena, &.{"application/json"}, &.{.{ .schema = schema }}),
-                        },
+                        .content = try .init(arena, &.{"application/json"}, &.{.{ .schema = schema }}),
                     });
                 }
 
                 for (m.errors) |e| {
                     const status = try std.fmt.allocPrint(arena, "{d}", .{getErrorStatus(e)});
-                    try op.responses.map.put(arena, status, .{
+                    try op.responses.put(arena, status, .{
                         .description = @errorName(e),
                         .content = null,
                     });
                 }
 
-                try path.map.put(
+                try path.put(
                     arena,
                     try std.ascii.allocLowerString(arena, @tagName(met)),
                     op,
@@ -162,10 +158,10 @@ fn swaggerPath(arena: std.mem.Allocator, prefix: []const u8, path: []const u8) !
     return res.items;
 }
 
-const PathMap = std.json.ArrayHashMap(Path);
-const Path = std.json.ArrayHashMap(Operation);
-const Operation = struct { parameters: []const Parameter = &.{}, requestBody: ?RequestBody = null, responses: std.json.ArrayHashMap(Response) = .{} };
+const PathMap = std.StringArrayHashMapUnmanaged(Path);
+const Path = std.StringArrayHashMapUnmanaged(Operation);
+const Operation = struct { parameters: []const Parameter = &.{}, requestBody: ?RequestBody = null, responses: std.StringArrayHashMapUnmanaged(Response) = .{} };
 const Parameter = struct { name: []const u8, in: []const u8, required: bool, schema: Schema };
-const RequestBody = struct { content: std.json.ArrayHashMap(Content) };
-const Response = struct { description: ?[]const u8, content: ?std.json.ArrayHashMap(Content) };
+const RequestBody = struct { content: std.StringArrayHashMapUnmanaged(Content) };
+const Response = struct { description: ?[]const u8, content: ?std.StringArrayHashMapUnmanaged(Content) };
 const Content = struct { schema: Schema };
