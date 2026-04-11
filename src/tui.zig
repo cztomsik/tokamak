@@ -42,6 +42,7 @@ pub const TextEdit = struct {
 
     pub const Options = struct {
         multiline: bool = false,
+        start: usize = 0, // where we start "clearing", 0-based
     };
 
     pub fn handleKey(self: *TextEdit, key: Key) void {
@@ -83,6 +84,36 @@ pub const TextEdit = struct {
 
     pub fn text(self: *const TextEdit) []const u8 {
         return self.buf[0..self.len];
+    }
+
+    pub fn readFrom(self: *TextEdit, ctx: *Context) !?[]const u8 {
+        while (true) {
+            switch (try ctx.readKey()) {
+                .enter => {
+                    try ctx.out.writeAll("\r\n");
+                    try ctx.out.flush();
+                    break;
+                },
+                .escape, .ctrl_c, .ctrl_d => return null,
+                .paste_start => {
+                    while (true) {
+                        const k = try ctx.readKey();
+                        if (k == .paste_end) break;
+                        self.handleKey(k);
+                    }
+                },
+                else => |key| self.handleKey(key),
+            }
+
+            // Move to start column (CHA is 1-based)
+            try ctx.out.print("\x1b[{}G", .{self.options.start + 1});
+            try ctx.out.writeAll(self.buf[0..self.len]);
+            try ctx.out.writeAll("\x1b[K"); // clear to end of line
+            try ctx.out.print("\x1b[{}G", .{self.options.start + 1 + self.cursor});
+            try ctx.out.flush();
+        }
+
+        return self.text();
     }
 };
 
@@ -157,34 +188,7 @@ pub const Context = struct {
 
     pub fn readLine(self: *Context, buf: []u8, options: TextEdit.Options) !?[]const u8 {
         var editor = TextEdit{ .buf = buf, .options = options };
-
-        while (true) {
-            switch (try self.readKey()) {
-                .enter => {
-                    try self.out.writeAll("\r\n");
-                    try self.out.flush();
-                    break;
-                },
-                .escape, .ctrl_c, .ctrl_d => return null,
-                .paste_start => {
-                    while (true) {
-                        const k = try self.readKey();
-                        if (k == .paste_end) break;
-                        editor.handleKey(k);
-                    }
-                },
-                else => |key| editor.handleKey(key),
-            }
-
-            try self.out.writeAll("\r\x1b[K");
-            try self.out.writeAll(editor.text());
-            if (editor.cursor < editor.len) {
-                try self.out.print("\x1b[{}D", .{editor.len - editor.cursor});
-            }
-            try self.out.flush();
-        }
-
-        return editor.text();
+        return editor.readFrom(self);
     }
 
     pub fn readKey(self: *Context) !Key {
