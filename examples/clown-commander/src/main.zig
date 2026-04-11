@@ -311,7 +311,7 @@ fn createDirectory(commander: *Commander, ctx: *tk.tui.Context) !void {
 
     // Read directory name
     var name_buf: [256]u8 = undefined;
-    const dir_name = try ctx.readLine(&name_buf) orelse return; // User cancelled
+    const dir_name = try ctx.readLine(&name_buf, .{}) orelse return; // User cancelled
 
     if (dir_name.len == 0) return; // Empty name, cancel
 

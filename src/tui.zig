@@ -18,6 +18,8 @@ pub const Key = union(enum) {
     escape,
     ctrl_c,
     ctrl_d,
+    paste_start,
+    paste_end,
     f1,
     f2,
     f3,
@@ -32,17 +34,29 @@ pub const Key = union(enum) {
     f12,
 };
 
-pub const LineEdit = struct {
+pub const TextEdit = struct {
     buf: []u8,
     len: usize = 0,
     cursor: usize = 0,
+    options: Options,
 
-    pub fn handleKey(self: *LineEdit, key: Key) void {
+    pub const Options = struct {
+        multiline: bool = false,
+    };
+
+    pub fn handleKey(self: *TextEdit, key: Key) void {
         switch (key) {
             .char => |c| if (std.ascii.isPrint(c)) {
                 if (self.len >= self.buf.len) return;
                 std.mem.copyBackwards(u8, self.buf[self.cursor + 1 .. self.len + 1], self.buf[self.cursor..self.len]);
                 self.buf[self.cursor] = c;
+                self.cursor += 1;
+                self.len += 1;
+            },
+            .enter => if (self.options.multiline) {
+                if (self.len >= self.buf.len) return;
+                std.mem.copyBackwards(u8, self.buf[self.cursor + 1 .. self.len + 1], self.buf[self.cursor..self.len]);
+                self.buf[self.cursor] = '\n';
                 self.cursor += 1;
                 self.len += 1;
             },
@@ -67,7 +81,7 @@ pub const LineEdit = struct {
         }
     }
 
-    pub fn text(self: *const LineEdit) []const u8 {
+    pub fn text(self: *const TextEdit) []const u8 {
         return self.buf[0..self.len];
     }
 };
@@ -117,11 +131,16 @@ pub const Context = struct {
             .original_termios = original,
         };
 
+        try ctx.out.writeAll("\x1b[?2004h");
+        try ctx.out.flush();
+
         return ctx;
     }
 
     pub fn deinit(self: *Context) void {
         const allocator = self.allocator;
+        self.out.writeAll("\x1b[?2004l") catch {};
+        self.out.flush() catch {};
         _ = std.posix.tcsetattr(self.in_reader.file.handle, .FLUSH, self.original_termios) catch {};
         allocator.free(self.in.buffer);
         allocator.free(self.out.buffer);
@@ -136,8 +155,8 @@ pub const Context = struct {
         try self.out.flush();
     }
 
-    pub fn readLine(self: *Context, buf: []u8) !?[]const u8 {
-        var editor = LineEdit{ .buf = buf };
+    pub fn readLine(self: *Context, buf: []u8, options: TextEdit.Options) !?[]const u8 {
+        var editor = TextEdit{ .buf = buf, .options = options };
 
         while (true) {
             switch (try self.readKey()) {
@@ -147,6 +166,13 @@ pub const Context = struct {
                     break;
                 },
                 .escape, .ctrl_c, .ctrl_d => return null,
+                .paste_start => {
+                    while (true) {
+                        const k = try self.readKey();
+                        if (k == .paste_end) break;
+                        editor.handleKey(k);
+                    }
+                },
                 else => |key| editor.handleKey(key),
             }
 
@@ -208,16 +234,33 @@ pub const Context = struct {
                 return fkey;
             },
             '2' => {
-                const fkey: Key = switch (try self.readByte()) {
-                    '0' => .f9,
-                    '1' => .f10,
-                    '3' => .f11,
-                    '4' => .f12,
+                const b = try self.readByte();
+                switch (b) {
+                    '0' => {
+                        const b2 = try self.readByte();
+                        if (b2 == '~') return .f9; // \x1b[20~
+                        // \x1b[200~ or \x1b[201~
+                        self.in.toss(1); // ~
+                        return switch (b2) {
+                            '0' => .paste_start,
+                            '1' => .paste_end,
+                            else => .escape,
+                        };
+                    },
+                    '1' => {
+                        self.in.toss(1);
+                        return .f10;
+                    },
+                    '3' => {
+                        self.in.toss(1);
+                        return .f11;
+                    },
+                    '4' => {
+                        self.in.toss(1);
+                        return .f12;
+                    },
                     else => return .escape,
-                };
-
-                self.in.toss(1); // ~
-                return fkey;
+                }
             },
             '3' => {
                 self.in.toss(1); // ~
