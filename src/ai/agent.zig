@@ -55,6 +55,8 @@ pub const Agent = struct {
     }
 
     pub fn run(self: *Agent) ![]const u8 {
+        self.result = null;
+
         while (try self.next()) |tcs| {
             try self.acceptAll(tcs);
         }
@@ -122,10 +124,12 @@ pub const Agent = struct {
         });
     }
 
-    pub fn retry(self: *Agent) void {
+    pub fn retry(self: *Agent) ![]const u8 {
         while (self.messages.pop()) |msg| {
-            if (msg.role == .assistant) return;
+            if (msg.role == .assistant) break;
         }
+
+        return self.run();
     }
 };
 
