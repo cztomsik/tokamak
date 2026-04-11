@@ -5,6 +5,7 @@ const format = @import("ai/fmt.zig");
 // Data types
 pub const chat = @import("ai/chat.zig");
 pub const embedding = @import("ai/embedding.zig");
+pub const models = @import("ai/models.zig");
 
 // Client
 pub const ClientConfig = client.Config;

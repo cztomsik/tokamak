@@ -2,6 +2,7 @@ const std = @import("std");
 const http = @import("../http.zig");
 const chat = @import("chat.zig");
 const embedding = @import("embedding.zig");
+const models = @import("models.zig");
 const log = std.log.scoped(.ai_client);
 
 pub const Config = struct {
@@ -29,6 +30,21 @@ pub const Client = struct {
         });
 
         return res.json(chat.Response);
+    }
+
+    pub fn listModels(self: *Client, arena: std.mem.Allocator) ![]const models.Model {
+        const base_url = self.config.base_url;
+
+        const res = try self.request(arena, .{
+            .method = .GET,
+            .url = if (std.mem.indexOf(u8, base_url, "openrouter.ai") != null)
+                "models?supported_parameters=tools"
+            else
+                "models",
+        });
+
+        const list = try res.json(models.ListResponse);
+        return list.data;
     }
 
     pub fn createEmbeddings(self: *Client, arena: std.mem.Allocator, params: embedding.Request) !embedding.Response {
