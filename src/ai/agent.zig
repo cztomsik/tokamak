@@ -165,7 +165,8 @@ pub const AgentRuntime = struct {
             // TODO: try bus.dispatch(Xxx);
         }
 
-        const res = self.toolbox.execTool(agent.arena, tool.function.name, tool.function.arguments);
+        var inj = Injector.init(&.{ .ref(&agent.arena), .ref(agent) }, self.toolbox.injector);
+        const res = self.toolbox.execTool(&inj, agent.arena, tool.function.name, tool.function.arguments);
         return try stringifyAlloc(agent.arena, res);
     }
 };
@@ -250,14 +251,14 @@ pub const AgentToolbox = struct {
         return buf.toOwnedSlice(arena);
     }
 
-    fn execTool(self: *AgentToolbox, arena: std.mem.Allocator, name: []const u8, args: []const u8) ![]const u8 {
+    fn execTool(self: *AgentToolbox, inj: *Injector, arena: std.mem.Allocator, name: []const u8, args: []const u8) ![]const u8 {
         // NOTE: we assume that tool handlers are always comptime
         //       so we can just copy the pointer and release the lock
         self.mutex.lock();
 
         if (self.tools.get(name)) |tool| {
             self.mutex.unlock();
-            return tool.handler(self.injector, arena, args);
+            return tool.handler(inj, arena, args);
         }
 
         self.mutex.unlock();
@@ -282,6 +283,6 @@ test AgentToolbox {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
 
-    const res = try tbox.execTool(arena.allocator(), "add", "{\"a\":1,\"b\":2}");
+    const res = try tbox.execTool(&inj, arena.allocator(), "add", "{\"a\":1,\"b\":2}");
     try std.testing.expectEqualStrings("3", res);
 }
