@@ -1,199 +1,139 @@
 const std = @import("std");
-const ansi = @import("../ansi.zig");
+const input = @import("input.zig");
+const Screen = @import("screen.zig").Screen;
+const Frame = @import("frame.zig").Frame;
+const Builder = @import("builder.zig").Builder;
 
-const TextInput = @import("input.zig").TextInput;
-const Select = @import("select.zig").Select;
+const N_MAX_DEPTH = 16;
+const N_MAX_COLS = 16;
+const N_MAX_CONTROLS = 64;
 
-pub const Key = union(enum) {
-    // zig fmt: off
-    char: u8,
-    up, down, left, right,
-    home, end, page_up, page_down,
-    tab, enter, backspace, delete, escape,
-    ctrl_c, ctrl_d,
-    paste_start, paste_end,
-    f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12,
+pub const Key = input.Key;
+
+// Encode percentage as fixed-point value below -100_000
+pub fn perc(v: f32) i32 {
+    return @intFromFloat(v * -1_000_000);
+}
+
+pub fn cols(comptime n: u8) []const i32 {
+    const percs: [n]i32 = @splat(perc(100.0 / @as(f32, @floatFromInt(n))));
+    return &percs;
+}
+
+pub fn resolve(n: i32, total: i32, rem: i32) i32 {
+    if (n >= 0) return n; // abs
+    if (n == -1) return rem; // fill all
+    if (n <= -100_000) return @divTrunc(@divTrunc(-n, 100_000) * total, 1000); // percentage
+    return rem + n - 1; // N from the right edge
+}
+
+pub const Layout = struct {
+    widths: [N_MAX_COLS]i32 = @splat(-1),
+    n_widths: u8 = 1,
+    spacing: i32 = 1,
+    cursor: [2]i32 = .{ 0, 0 },
+    row_height: i32 = 0,
+};
+
+pub const Container = struct {
+    id: u8 = 0,
+    frame: Frame,
+    index: usize = 0,
+    layout: Layout = .{},
+
+    pub fn push(self: *Container, widths: []const i32, height: i32) ?*Container {
+        if ((self.id + 1) >= N_MAX_DEPTH) return null;
+        const new = &@as([*]Container, @ptrCast(self))[1];
+
+        new.* = .{
+            .id = self.id + 1,
+            .frame = self.next(height) orelse return null,
+            .layout = .{ .n_widths = @intCast(widths.len), .spacing = self.layout.spacing },
+        };
+        @memcpy(new.layout.widths[0..widths.len], widths);
+
+        return new;
+    }
+
+    pub fn peek(self: *Container) ?i32 {
+        if (self.layout.n_widths == 0) return null;
+        const col = self.index % self.layout.n_widths;
+        const at_wrap = col == 0 and self.index > 0;
+        return resolve(self.layout.widths[col], self.frame.rect[2], self.frame.rect[2] - if (at_wrap) @as(i32, 0) else self.layout.cursor[0]);
+    }
+
+    pub fn next(self: *Container, height: i32) ?Frame {
+        if (self.layout.n_widths == 0) return null;
+        const col = self.index % self.layout.n_widths;
+
+        if (col == 0 and self.index > 0) {
+            self.layout.cursor[1] += self.layout.row_height + self.layout.spacing;
+            self.layout.cursor[0] = 0;
+            self.layout.row_height = 0;
+        }
+
+        const res: [4]i32 = .{
+            self.frame.rect[0] + self.layout.cursor[0],
+            self.frame.rect[1] + self.layout.cursor[1],
+            resolve(self.layout.widths[col], self.frame.rect[2], self.frame.rect[2] - self.layout.cursor[0]),
+            resolve(height, self.frame.rect[3], self.frame.rect[3] - self.layout.cursor[1]),
+        };
+
+        self.index += 1;
+        self.layout.cursor[0] += res[2] + self.layout.spacing;
+        self.layout.row_height = @max(self.layout.row_height, res[3]);
+
+        if (res[2] <= 0 or res[3] <= 0) return null;
+
+        return self.frame.with("rect", res);
+    }
 };
 
 pub const Context = struct {
     gpa: std.mem.Allocator,
-    in: *std.io.Reader,
-    out: *std.io.Writer,
-    fin: std.fs.File.Reader,
-    fout: std.fs.File.Writer,
-    original_termios: std.posix.termios,
+    screen: Screen,
+    stack: [N_MAX_DEPTH]Container,
+    focus: i32 = 0,
+    n_controls: i32 = 0,
+    last_key: ?Key = null,
+    frame: u64 = 0,
+    cursors: [N_MAX_CONTROLS]usize = @splat(0),
 
     pub fn init(gpa: std.mem.Allocator) !*Context {
         const ctx = try gpa.create(Context);
         errdefer gpa.destroy(ctx);
 
-        const out_buf = try gpa.alloc(u8, 4096);
-        errdefer gpa.free(out_buf);
-
-        const in_buf = try gpa.alloc(u8, 1024);
-        errdefer gpa.free(in_buf);
-
-        const stdin = std.fs.File.stdin();
-
-        if (!stdin.isTty()) {
-            return error.NotATty;
-        }
-
-        // TODO: initTermios() + errdefer
-        const original = try std.posix.tcgetattr(stdin.handle);
-
-        var raw = original;
-        raw.lflag = .{};
-        raw.iflag = .{};
-        raw.cflag.CSIZE = .CS8;
-        raw.cc[@intFromEnum(std.posix.V.MIN)] = 1;
-        raw.cc[@intFromEnum(std.posix.V.TIME)] = 0;
-
-        try std.posix.tcsetattr(stdin.handle, .FLUSH, raw);
-
-        ctx.* = Context{
-            .gpa = gpa,
-            .in = &ctx.fin.interface,
-            .out = &ctx.fout.interface,
-            .fin = stdin.reader(in_buf),
-            .fout = std.fs.File.stdout().writer(out_buf),
-            .original_termios = original,
-        };
-
-        try ctx.out.writeAll("\x1b[?2004h");
-        try ctx.out.flush();
+        ctx.* = .{ .gpa = gpa, .screen = undefined, .stack = undefined };
+        try ctx.screen.init(gpa);
 
         return ctx;
     }
 
     pub fn deinit(self: *Context) void {
         const gpa = self.gpa;
-        self.out.writeAll("\x1b[?2004l") catch {};
-        self.out.flush() catch {};
-        _ = std.posix.tcsetattr(self.fin.file.handle, .FLUSH, self.original_termios) catch {};
-        gpa.free(self.in.buffer);
-        gpa.free(self.out.buffer);
+        self.screen.deinit(gpa);
         gpa.destroy(self);
     }
 
-    pub fn clear(self: *Context) !void {
-        try self.out.writeAll(ansi.clear);
+    pub fn beginFrame(self: *Context) !Builder {
+        const size = try self.screen.termSize();
+        try self.screen.clear();
+
+        self.stack[0] = .{ .frame = .{ .screen = &self.screen, .rect = .{ 0, 0, size[0], size[1] } } };
+        self.n_controls = 0;
+        self.frame += 1;
+
+        return .{
+            .ctx = self,
+            .frame = &self.stack[0].frame,
+        };
     }
 
-    pub fn flush(self: *Context) !void {
-        try self.out.flush();
-    }
-
-    pub fn readLine(self: *Context, buf: []u8, options: TextInput.Options) !?[]const u8 {
-        var editor = TextInput{ .buf = buf, .options = options };
-        return editor.readFrom(self);
-    }
-
-    pub fn select(self: *Context, items: []const []const u8) !?usize {
-        var s = Select{ .items = items };
-        return s.readFrom(self);
+    pub fn endFrame(self: *Context) !void {
+        try self.screen.flush();
     }
 
     pub fn readKey(self: *Context) !Key {
-        const ch = try self.readByte();
-
-        return switch (ch) {
-            0x03 => .ctrl_c,
-            0x04 => .ctrl_d,
-            ansi.esc[0] => try self.readCSI(),
-            '\t' => .tab,
-            '\r', '\n' => .enter,
-            0x7F, 0x08 => .backspace,
-            else => .{ .char = ch },
-        };
-    }
-
-    fn readByte(self: *Context) !u8 {
-        return (try self.in.take(1))[0];
-    }
-
-    fn readCSI(self: *Context) !Key {
-        const ch = try self.readByte();
-        if (ch != '[') return .escape; // Not a CSI
-
-        return switch (try self.readByte()) {
-            'A' => .up,
-            'B' => .down,
-            'C' => .right,
-            'D' => .left,
-            'H' => .home,
-            'F' => .end,
-            '1' => {
-                const fkey: Key = switch (try self.readByte()) {
-                    '~' => .home,
-                    '1' => .f1,
-                    '2' => .f2,
-                    '3' => .f3,
-                    '4' => .f4,
-                    '5' => .f5,
-                    '7' => .f6,
-                    '8' => .f7,
-                    '9' => .f8,
-                    else => return .escape,
-                };
-
-                self.in.toss(1); // ~
-                return fkey;
-            },
-            '2' => {
-                const b = try self.readByte();
-                switch (b) {
-                    '0' => {
-                        const b2 = try self.readByte();
-                        if (b2 == '~') return .f9; // \x1b[20~
-                        // \x1b[200~ or \x1b[201~
-                        self.in.toss(1); // ~
-                        return switch (b2) {
-                            '0' => .paste_start,
-                            '1' => .paste_end,
-                            else => .escape,
-                        };
-                    },
-                    '1' => {
-                        self.in.toss(1);
-                        return .f10;
-                    },
-                    '3' => {
-                        self.in.toss(1);
-                        return .f11;
-                    },
-                    '4' => {
-                        self.in.toss(1);
-                        return .f12;
-                    },
-                    else => return .escape,
-                }
-            },
-            '3' => {
-                self.in.toss(1); // ~
-                return .delete;
-            },
-            '4' => {
-                self.in.toss(1);
-                return .end;
-            },
-            '5' => {
-                self.in.toss(1);
-                return .page_up;
-            },
-            '6' => {
-                self.in.toss(1);
-                return .page_down;
-            },
-            else => .escape,
-        };
-    }
-
-    pub fn print(self: *Context, comptime fmt: []const u8, args: anytype) !void {
-        try self.out.print(fmt, args);
-    }
-
-    pub fn println(self: *Context, comptime fmt: []const u8, args: anytype) !void {
-        try self.out.print(fmt ++ "\r\n", args);
+        return input.readKey(self.screen.in);
     }
 };

@@ -1,7 +1,13 @@
 // Core types
-pub const Key = @import("tui/context.zig").Key;
+pub const Key = @import("tui/input.zig").Key;
 pub const Context = @import("tui/context.zig").Context;
+pub const Screen = @import("tui/screen.zig").Screen;
+pub const Frame = @import("tui/frame.zig").Frame;
+pub const Container = @import("tui/context.zig").Container;
+pub const Builder = @import("tui/builder.zig").Builder;
+pub const Control = @import("tui/control.zig").Control;
 
-// Builtin "components"
-pub const TextInput = @import("tui/input.zig").TextInput;
-pub const Select = @import("tui/select.zig").Select;
+// Helpers
+pub const perc = @import("tui/context.zig").perc;
+pub const cols = @import("tui/context.zig").cols;
+pub const resolve = @import("tui/context.zig").resolve;

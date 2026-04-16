@@ -2,7 +2,7 @@
 
 📚 **[Documentation](https://tomsik.cz/tokamak)**
 
-Tokamak is a server-side framework for Zig, built around
+Tokamak is a web application framework for Zig, built around
 [http.zig](https://github.com/karlseguin/http.zig) and a simple dependency
 injection container.
 
@@ -13,9 +13,9 @@ front of it, like Nginx or Cloudfront, which will handle SSL, caching,
 sanitization, etc.
 
 > ### Recent changes
-> - there's a new **serialization mini-framework** in `tk.serde.*`, if you were
->   using `jsonStringify()` anywhere in your code, you might need to migrate
->   to a new `T.serialize()` hook
+> - WIP **TUI module** for interactive apps in `tk.tui.*`
+> - WIP **serde module** in `tk.serde.*`, if you were using `jsonStringify()`
+>   anywhere in your code, you might need to migrate to a new `T.serialize()` hook
 > - renamed few `bundle.addXxx()` methods to `bundle.provide()`,
 >   `bundle.override()`, ...
 > - renamed `inj.call0(fun)` → `inj.call(fun)`, `inj.call(fun, ...args)` →
@@ -24,7 +24,7 @@ sanitization, etc.
 >   undocumented, incomplete, subtly broken, and not worth the extra complexity
 > - multi-mod API has changed
 >   [considerably](https://github.com/cztomsik/tokamak/pull/25)
-> - there's a new [cli module](https://github.com/cztomsik/tokamak/tree/master/src/cli.zig)
+> - new [cli module](https://github.com/cztomsik/tokamak/tree/master/src/cli.zig)
 > - injecting `tk.Injector` is deprecated, use `*tk.Injector`
 > - multi-module support (cross-module initializers, providers, overrides)
 > - Switched to [http.zig](https://github.com/karlseguin/http.zig) for improved

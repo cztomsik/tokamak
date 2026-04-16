@@ -1,0 +1,61 @@
+const Context = @import("context.zig").Context;
+const Container = @import("context.zig").Container;
+const Frame = @import("frame.zig").Frame;
+const Control = @import("control.zig").Control;
+
+pub const Builder = struct {
+    ctx: *Context,
+    frame: *Frame,
+
+    fn container(self: Builder) *Container {
+        return @fieldParentPtr("frame", self.frame);
+    }
+
+    pub fn push(self: Builder, widths: []const i32, height: i32) ?Builder {
+        return .{
+            .ctx = self.ctx,
+            .frame = &(self.container().push(widths, height) orelse return null).frame,
+        };
+    }
+
+    pub fn peek(self: Builder) ?i32 {
+        return self.container().peek();
+    }
+
+    pub fn next(self: Builder, height: i32) ?Frame {
+        return self.container().next(height);
+    }
+
+    pub fn control(self: Builder) Control {
+        return Control.init(self.ctx);
+    }
+
+    pub fn inset(self: Builder, sides: [4]i32) ?Builder {
+        self.frame.* = self.frame.inset(sides);
+        if (self.frame.empty()) return null;
+        return self;
+    }
+
+    const widgets = @import("widgets.zig");
+    pub const stack = widgets.stack;
+    pub const row = widgets.row;
+    pub const grid = widgets.grid;
+    pub const text = widgets.text;
+    pub const label = widgets.label;
+    pub const num = widgets.num;
+    pub const paragraph = widgets.paragraph;
+    pub const panel = widgets.panel;
+    pub const button = widgets.button;
+    pub const checkbox = widgets.checkbox;
+    pub const numberInput = widgets.numberInput;
+    pub const slider = widgets.slider;
+    pub const separator = widgets.separator;
+    pub const textInput = widgets.textInput;
+    pub const select = widgets.select;
+    pub const list = widgets.list;
+    pub const spinner = widgets.spinner;
+    pub const statusBar = widgets.statusBar;
+    pub const progress = widgets.progress;
+    pub const header = widgets.header;
+    pub const modal = widgets.modal;
+};

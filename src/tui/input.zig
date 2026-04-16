@@ -1,86 +1,110 @@
 const std = @import("std");
-const Context = @import("context.zig").Context;
-const Key = @import("context.zig").Key;
+const ansi = @import("../ansi.zig");
 
-pub const TextInput = struct {
-    buf: []u8,
-    len: usize = 0,
-    cursor: usize = 0,
-    options: Options,
-
-    pub const Options = struct {
-        multiline: bool = false,
-        start: usize = 0, // where we start "clearing", 0-based
-    };
-
-    pub fn handleKey(self: *TextInput, key: Key) void {
-        switch (key) {
-            .char => |c| if (std.ascii.isPrint(c)) {
-                if (self.len >= self.buf.len) return;
-                std.mem.copyBackwards(u8, self.buf[self.cursor + 1 .. self.len + 1], self.buf[self.cursor..self.len]);
-                self.buf[self.cursor] = c;
-                self.cursor += 1;
-                self.len += 1;
-            },
-            .enter => if (self.options.multiline) {
-                if (self.len >= self.buf.len) return;
-                std.mem.copyBackwards(u8, self.buf[self.cursor + 1 .. self.len + 1], self.buf[self.cursor..self.len]);
-                self.buf[self.cursor] = '\n';
-                self.cursor += 1;
-                self.len += 1;
-            },
-            .backspace => if (self.cursor > 0) {
-                std.mem.copyForwards(u8, self.buf[self.cursor - 1 .. self.len - 1], self.buf[self.cursor..self.len]);
-                self.cursor -= 1;
-                self.len -= 1;
-            },
-            .delete => if (self.cursor < self.len) {
-                std.mem.copyForwards(u8, self.buf[self.cursor .. self.len - 1], self.buf[self.cursor + 1 .. self.len]);
-                self.len -= 1;
-            },
-            .left => if (self.cursor > 0) {
-                self.cursor -= 1;
-            },
-            .right => if (self.cursor < self.len) {
-                self.cursor += 1;
-            },
-            .home => self.cursor = 0,
-            .end => self.cursor = self.len,
-            else => {},
-        }
-    }
-
-    pub fn text(self: *const TextInput) []const u8 {
-        return self.buf[0..self.len];
-    }
-
-    pub fn readFrom(self: *TextInput, ctx: *Context) !?[]const u8 {
-        while (true) {
-            switch (try ctx.readKey()) {
-                .enter => {
-                    try ctx.out.writeAll("\r\n");
-                    try ctx.out.flush();
-                    break;
-                },
-                .escape, .ctrl_c, .ctrl_d => return null,
-                .paste_start => {
-                    while (true) {
-                        const k = try ctx.readKey();
-                        if (k == .paste_end) break;
-                        self.handleKey(k);
-                    }
-                },
-                else => |key| self.handleKey(key),
-            }
-
-            // Move to start column (CHA is 1-based)
-            try ctx.out.print("\x1b[{}G", .{self.options.start + 1});
-            try ctx.out.writeAll(self.buf[0..self.len]);
-            try ctx.out.writeAll("\x1b[K"); // clear to end of line
-            try ctx.out.print("\x1b[{}G", .{self.options.start + 1 + self.cursor});
-            try ctx.out.flush();
-        }
-
-        return self.text();
-    }
+pub const Key = union(enum) {
+    // zig fmt: off
+    char: u8,
+    up, down, left, right,
+    home, end, page_up, page_down,
+    tab, shift_tab, enter, backspace, delete, escape,
+    ctrl_c, ctrl_d,
+    paste_start, paste_end,
+    f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12,
+    // zig fmt: on
 };
+
+pub fn readKey(reader: *std.io.Reader) !Key {
+    const ch = try readByte(reader);
+
+    return switch (ch) {
+        0x03 => .ctrl_c,
+        0x04 => .ctrl_d,
+        ansi.esc[0] => try readCSI(reader),
+        '\t' => .tab,
+        '\r', '\n' => .enter,
+        0x7F, 0x08 => .backspace,
+        else => .{ .char = ch },
+    };
+}
+
+fn readByte(reader: *std.io.Reader) !u8 {
+    return (try reader.take(1))[0];
+}
+
+fn readCSI(reader: *std.io.Reader) !Key {
+    const ch = try readByte(reader);
+    if (ch != '[') return .escape; // Not a CSI
+
+    return switch (try readByte(reader)) {
+        'A' => .up,
+        'B' => .down,
+        'C' => .right,
+        'D' => .left,
+        'H' => .home,
+        'F' => .end,
+        'Z' => .shift_tab,
+        '1' => {
+            const fkey: Key = switch (try readByte(reader)) {
+                '~' => .home,
+                '1' => .f1,
+                '2' => .f2,
+                '3' => .f3,
+                '4' => .f4,
+                '5' => .f5,
+                '7' => .f6,
+                '8' => .f7,
+                '9' => .f8,
+                else => return .escape,
+            };
+
+            reader.toss(1); // ~
+            return fkey;
+        },
+        '2' => {
+            const b = try readByte(reader);
+            switch (b) {
+                '0' => {
+                    const b2 = try readByte(reader);
+                    if (b2 == '~') return .f9; // \x1b[20~
+                    // \x1b[200~ or \x1b[201~
+                    reader.toss(1); // ~
+                    return switch (b2) {
+                        '0' => .paste_start,
+                        '1' => .paste_end,
+                        else => .escape,
+                    };
+                },
+                '1' => {
+                    reader.toss(1);
+                    return .f10;
+                },
+                '3' => {
+                    reader.toss(1);
+                    return .f11;
+                },
+                '4' => {
+                    reader.toss(1);
+                    return .f12;
+                },
+                else => return .escape,
+            }
+        },
+        '3' => {
+            reader.toss(1); // ~
+            return .delete;
+        },
+        '4' => {
+            reader.toss(1);
+            return .end;
+        },
+        '5' => {
+            reader.toss(1);
+            return .page_up;
+        },
+        '6' => {
+            reader.toss(1);
+            return .page_down;
+        },
+        else => .escape,
+    };
+}

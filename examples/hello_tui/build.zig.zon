@@ -1,0 +1,16 @@
+.{
+    .name = .hello_tui,
+    .fingerprint = 0x174b1bd68fa6a584,
+    .version = "0.0.0",
+    .minimum_zig_version = "0.15.2",
+    .dependencies = .{
+        .tokamak = .{
+            .path = "../..",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}
