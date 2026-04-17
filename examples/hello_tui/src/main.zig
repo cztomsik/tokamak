@@ -16,18 +16,18 @@ pub fn main() !void {
 
         switch (key) {
             .ctrl_c, .escape => break :loop,
-            .tab => cx.focus = @mod(cx.focus + 1, @max(1, cx.n_controls)),
-            .shift_tab => cx.focus = @mod(cx.focus - 1 + cx.n_controls, @max(1, cx.n_controls)),
+            .tab => cx.focus = (cx.focus + 1) % @max(1, cx.n_controls),
+            .shift_tab => cx.focus = (cx.focus + cx.n_controls - 1) % @max(1, cx.n_controls),
             else => {},
         }
     }
 }
 
 const State = struct {
-    slider_val: f32 = 0.5,
-    number_val: i32 = 0,
-    text_buf: [64]u8 = std.mem.zeroes([64]u8),
-    text_len: usize = 0,
+    slider_val: f32 = 0.123,
+    number_val: i32 = 123,
+    text_buf: [64]u8 = ("hello" ++ std.mem.zeroes([59]u8)).*,
+    text_len: usize = 5,
     select_val: usize = 0,
     list_sel: usize = 0,
     flags: [5]bool = @splat(true),
@@ -40,9 +40,7 @@ const select_items = [_][]const u8{ "Option A", "Option B", "Option C" };
 const list_items = [_][]const u8{ "Alpha", "Beta", "Gamma", "Delta", "Epsilon", "Zeta", "Eta", "Theta" };
 
 fn myapp(ui: Builder) void {
-    // TODO: .bg().fg() is currently returning a new value, maybe it should mutate instead?
-    ui.frame.* = ui.frame.bg(.white_muted);
-    ui.frame.clear();
+    ui.frame.fill(.white_muted);
 
     appbar(ui);
 

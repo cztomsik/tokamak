@@ -93,8 +93,7 @@ var cmd: Commander = undefined;
 // --- UI ---
 
 fn app(ui: Builder) void {
-    ui.frame.* = ui.frame.bg(.default);
-    ui.frame.clear();
+    ui.frame.fill(.white_muted);
 
     if (ui.grid(tk.tui.cols(2), -1)) |g| {
         filePanel(g, &cmd.panels[0]);
@@ -141,11 +140,9 @@ fn fileList(ui: Builder, items: []const DirEntry, selected: *usize, height: i32)
 
     var i: usize = scroll;
     while (i < items.len and i < scroll + visible) : (i += 1) {
-        const frame = inner.next(1) orelse return;
-        const w: usize = @intCast(frame.width());
-        if (w < 3) continue;
+        var f = inner.next(1) orelse return;
         const is_sel = i == selected.*;
-        const f = if (ctrl.focused and is_sel) frame.fg(.blue) else frame;
+        if (ctrl.focused() and is_sel) f = f.fg(.blue);
         f.left(2).text(if (is_sel) "> " else "  ");
         const file = items[i];
         if (file.kind == .directory) {
@@ -239,8 +236,8 @@ pub fn main() !void {
                     cmd.mkdir_len = 0;
                     cx.focus = @intCast(cmd.active);
                 },
-                .tab => cx.focus = @mod(cx.focus + 1, @max(1, cx.n_controls)),
-                .shift_tab => cx.focus = @mod(cx.focus - 1 + cx.n_controls, @max(1, cx.n_controls)),
+                .tab => cx.focus = (cx.focus + 1) % @max(1, cx.n_controls),
+                .shift_tab => cx.focus = (cx.focus + cx.n_controls - 1) % @max(1, cx.n_controls),
                 else => {},
             }
         } else {

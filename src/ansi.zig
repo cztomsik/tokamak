@@ -47,4 +47,14 @@ pub const Color = enum(u8) {
     magenta = 95,
     cyan = 96,
     white = 97,
+
+    pub fn bright(self: Color) Color {
+        const v = @intFromEnum(self);
+        return if (v >= 30 and v <= 37) @enumFromInt(v + 60) else self;
+    }
+
+    pub fn muted(self: Color) Color {
+        const v = @intFromEnum(self);
+        return if (v >= 90 and v <= 97) @enumFromInt(v - 60) else self;
+    }
 };

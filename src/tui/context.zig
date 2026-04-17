@@ -93,11 +93,11 @@ pub const Context = struct {
     gpa: std.mem.Allocator,
     screen: Screen,
     stack: [N_MAX_DEPTH]Container,
-    focus: i32 = 0,
-    n_controls: i32 = 0,
+    focus: u32 = 0,
+    n_controls: u32 = 0,
     last_key: ?Key = null,
     frame: u64 = 0,
-    cursors: [N_MAX_CONTROLS]usize = @splat(0),
+    cursors: [N_MAX_CONTROLS]usize = @splat(std.math.maxInt(usize)),
 
     pub fn init(gpa: std.mem.Allocator) !*Context {
         const ctx = try gpa.create(Context);
@@ -116,10 +116,10 @@ pub const Context = struct {
     }
 
     pub fn beginFrame(self: *Context) !Builder {
-        const size = try self.screen.termSize();
-        try self.screen.clear();
+        try self.screen.refresh(self.gpa);
+        self.screen.clear();
 
-        self.stack[0] = .{ .frame = .{ .screen = &self.screen, .rect = .{ 0, 0, size[0], size[1] } } };
+        self.stack[0] = .{ .frame = .{ .screen = &self.screen, .rect = .{ 0, 0, self.screen.width, self.screen.height } } };
         self.n_controls = 0;
         self.frame += 1;
 
