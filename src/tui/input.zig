@@ -33,6 +33,16 @@ fn readByte(reader: *std.io.Reader) !u8 {
 
 fn readCSI(reader: *std.io.Reader) !Key {
     const ch = try readByte(reader);
+
+    // SS3 sequences (\x1bO.): macOS terminals send F1-F4 this way
+    if (ch == 'O') return switch (try readByte(reader)) {
+        'P' => .f1,
+        'Q' => .f2,
+        'R' => .f3,
+        'S' => .f4,
+        else => .escape,
+    };
+
     if (ch != '[') return .escape; // Not a CSI
 
     return switch (try readByte(reader)) {
