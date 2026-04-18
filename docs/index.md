@@ -3,7 +3,7 @@
   <p class="text-2xl text-gray-500 dark:text-gray-400 my-2">Server-side framework for Zig</p>
   <p class="text-gray-500 dark:text-gray-400 mb-6">Simple, fast, and built around dependency injection</p>
   <div class="flex gap-4 justify-center">
-    <a href="/guide/getting-started/" class="btn brand">Get Started</a>
+    <a href="/tokamak/guide/getting-started" class="btn brand">Get Started</a>
     <a href="https://github.com/cztomsik/tokamak" class="btn alt">View on GitHub</a>
   </div>
 </div>
