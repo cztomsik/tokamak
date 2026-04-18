@@ -95,7 +95,7 @@ var cmd: Commander = undefined;
 fn app(ui: Builder) void {
     ui.frame.fill(.white_muted);
 
-    if (ui.grid(tk.tui.cols(2), -1)) |g| {
+    if (ui.pushEq(2, -1)) |g| {
         filePanel(g, &cmd.panels[0]);
         filePanel(g, &cmd.panels[1]);
     }

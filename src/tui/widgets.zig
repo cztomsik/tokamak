@@ -2,6 +2,12 @@ const std = @import("std");
 const ansi = @import("../ansi.zig");
 const Builder = @import("builder.zig").Builder;
 const Control = @import("control.zig").Control;
+const Key = @import("context.zig").Key;
+
+/// Renders an empty spacer of the given height.
+pub fn spacer(ui: Builder, height: i32) void {
+    _ = ui.next(height);
+}
 
 /// Pushes a single-column layout scope.
 pub fn stack(ui: Builder, height: i32) ?Builder {
@@ -33,7 +39,7 @@ pub fn num(ui: Builder, value: anytype) void {
 
 /// Renders multiple lines of text, wrapping at width. Reserves the required height from layout.
 pub fn paragraph(ui: Builder, str: []const u8) void {
-    const w: usize = @intCast(ui.peek() orelse return);
+    const w: usize = @intCast((ui.peek(-1) orelse return)[2]);
     var n_lines: i32 = 1;
     var col: usize = 0;
     for (str) |ch| {
@@ -62,9 +68,10 @@ pub fn panel(ui: Builder, widths: []const i32, height: i32) ?Builder {
 pub fn button(ui: Builder, lab: []const u8) bool {
     const f = ui.next(1) orelse return false;
     const ctrl = ui.control();
+    const t = ui.ctx.theme;
 
-    f.fill(if (ctrl.focused()) .blue else .cyan);
-    f.fg(if (ctrl.focused()) .white else .default).hcenter(@intCast(lab.len)).text(lab);
+    f.fill(if (ctrl.focused()) t.focus else t.accent);
+    f.fg(if (ctrl.focused()) t.active else t.fg).hcenter(@intCast(lab.len)).text(lab);
 
     return ctrl.pressed();
 }
@@ -75,7 +82,7 @@ pub fn checkbox(ui: Builder, lab: []const u8, checked: *bool) void {
     const ctrl = ui.control();
     ctrl.toggle(checked);
 
-    if (ctrl.focused()) f = f.fg(.blue);
+    if (ctrl.focused()) f = f.fg(ui.ctx.theme.focus);
     f.left(4).text(if (checked.*) "[x] " else "[ ] ");
     f.at(4, 0).text(lab);
 }
@@ -87,7 +94,7 @@ pub fn numberInput(ui: Builder, value: *i32, step: i32) void {
     ctrl.editNumber(value); // TODO: This should also take min, max, step
     ctrl.stepNumber(value, -1000, 1000, step);
 
-    if (ctrl.focused()) f = f.fg(.blue);
+    if (ctrl.focused()) f = f.fg(ui.ctx.theme.focus);
     var buf: [64]u8 = undefined;
     f.text(std.fmt.bufPrint(&buf, "{d}", .{value.*}) catch "");
 }
@@ -98,7 +105,7 @@ pub fn slider(ui: Builder, value: *f32, step: f32) void {
     const ctrl = ui.control();
     ctrl.stepNumber(value, 0, 1, step);
 
-    if (ctrl.focused()) f = f.fg(.blue);
+    if (ctrl.focused()) f = f.fg(ui.ctx.theme.focus);
     f.draw(0, 0, "◄");
     f.draw(f.width() - 1, 0, "►");
 
@@ -118,9 +125,9 @@ pub fn textInput(ui: Builder, buf: []u8, len: *usize) void {
     const ctrl = ui.control();
     ctrl.editText(buf, len);
 
-    if (ctrl.focused()) f = f.fg(.blue);
+    if (ctrl.focused()) f = f.fg(ui.ctx.theme.focus);
     f.text(buf[0..len.*]);
-    if (ctrl.focused()) f.sub(@intCast(ctrl.cursor().*), 0, 1, 1).fill(.white);
+    if (ctrl.focused()) f.sub(@intCast(ctrl.cursor().*), 0, 1, 1).fill(ui.ctx.theme.active);
 }
 
 /// Renders a radio-style picker. Up/down moves selection.
@@ -130,7 +137,7 @@ pub fn select(ui: Builder, items: []const []const u8, selected: *usize) void {
 
     for (items, 0..) |item, i| {
         var f = ui.next(1) orelse return;
-        if (ctrl.focused() and selected.* == i) f = f.fg(.blue);
+        if (ctrl.focused() and selected.* == i) f = f.fg(ui.ctx.theme.focus);
         f.left(4).text(if (selected.* == i) "(*) " else "( ) ");
         f.at(4, 0).text(item);
     }
@@ -149,7 +156,7 @@ pub fn list(ui: Builder, items: []const []const u8, selected: *usize, height: i3
     while (i < items.len and i < scroll + visible) : (i += 1) {
         const frame = inner.next(1) orelse return;
         const is_sel = i == selected.*;
-        const f = if (ctrl.focused() and is_sel) frame.fg(.blue) else frame;
+        const f = if (ctrl.focused() and is_sel) frame.fg(ui.ctx.theme.focus) else frame;
         f.left(2).text(if (is_sel) "> " else "  ");
         f.at(2, 0).text(items[i]);
     }
@@ -162,9 +169,11 @@ pub fn spinner(ui: Builder) void {
 
 /// Renders text pinned to the bottom row of the screen, outside the layout.
 pub fn statusBar(ui: Builder, txt: []const u8) void {
+    const t = ui.ctx.theme;
     const f = ui.ctx.stack[0].frame.bottom(1);
-    f.fill(.cyan);
-    f.fg(.black).text(txt);
+    f.splat(" "); // TODO: This shouldn't be needed
+    f.fill(t.accent);
+    f.fg(t.bg).text(txt);
 }
 
 /// Renders a collapsible section header. Toggles `open` on Enter/Space.
@@ -173,7 +182,7 @@ pub fn header(ui: Builder, lab: []const u8, open: *bool) bool {
     const ctrl = ui.control();
     ctrl.toggle(open);
 
-    const f = if (ctrl.focused()) frame.fg(.blue) else frame;
+    const f = if (ctrl.focused()) frame.fg(ui.ctx.theme.focus) else frame;
     f.left(4).text(if (open.*) "[v] " else "[>] ");
     f.at(4, 0).text(lab);
 

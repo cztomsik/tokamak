@@ -18,8 +18,15 @@ pub const Builder = struct {
         };
     }
 
-    pub fn peek(self: Builder) ?i32 {
-        return self.container().peek();
+    pub fn pushEq(self: Builder, n: u8, height: i32) ?Builder {
+        return .{
+            .ctx = self.ctx,
+            .frame = &(self.container().pushEq(n, height) orelse return null).frame,
+        };
+    }
+
+    pub fn peek(self: Builder, height: i32) ?[4]i32 {
+        return self.container().peek(height);
     }
 
     pub fn next(self: Builder, height: i32) ?Frame {
@@ -58,4 +65,17 @@ pub const Builder = struct {
     pub const progress = widgets.progress;
     pub const header = widgets.header;
     pub const modal = widgets.modal;
+    pub const badge = widgets.badge;
+    pub const spacer = widgets.spacer;
+    pub const tabs = widgets.tabs;
+    pub const menu = widgets.menu;
+    pub const menuItem = widgets.menuItem;
+    pub const titled = widgets.titled;
+    pub const kvRow = widgets.kvRow;
+    pub const table = widgets.table;
+    pub const barChart = widgets.barChart;
+    pub const breadcrumb = widgets.breadcrumb;
+    pub const toggle = widgets.toggle;
+    pub const alert = widgets.alert;
+    pub const tree = widgets.tree;
 };

@@ -1,4 +1,5 @@
 const std = @import("std");
+const Color = @import("../ansi.zig").Color;
 const input = @import("input.zig");
 const Screen = @import("screen.zig").Screen;
 const Frame = @import("frame.zig").Frame;
@@ -10,14 +11,9 @@ const N_MAX_CONTROLS = 64;
 
 pub const Key = input.Key;
 
-// Encode percentage as fixed-point value below -100_000
+/// Encode percentage as fixed-point value below -100_000
 pub fn perc(v: f32) i32 {
     return @intFromFloat(v * -1_000_000);
-}
-
-pub fn cols(comptime n: u8) []const i32 {
-    const percs: [n]i32 = @splat(perc(100.0 / @as(f32, @floatFromInt(n))));
-    return &percs;
 }
 
 pub fn resolve(n: i32, total: i32, rem: i32) i32 {
@@ -27,12 +23,17 @@ pub fn resolve(n: i32, total: i32, rem: i32) i32 {
     return rem + n - 1; // N from the right edge
 }
 
+test {
+    try std.testing.expectEqual(12, resolve(12, 100, 100));
+    try std.testing.expectEqual(33, resolve(perc(100.0 / 3.0), 100, 100));
+}
+
 pub const Layout = struct {
     widths: [N_MAX_COLS]i32 = @splat(-1),
     n_widths: u8 = 1,
     spacing: i32 = 1,
     cursor: [2]i32 = .{ 0, 0 },
-    row_height: i32 = 0,
+    line_height: i32 = 0,
 };
 
 pub const Container = struct {
@@ -41,6 +42,8 @@ pub const Container = struct {
     index: usize = 0,
     layout: Layout = .{},
 
+    /// Claim next cell and set up a new child container. NOTE that it is only
+    /// valid until the next push() at the same depth overwrites it.
     pub fn push(self: *Container, widths: []const i32, height: i32) ?*Container {
         if ((self.id + 1) >= N_MAX_DEPTH) return null;
         const new = &@as([*]Container, @ptrCast(self))[1];
@@ -55,44 +58,59 @@ pub const Container = struct {
         return new;
     }
 
-    pub fn peek(self: *Container) ?i32 {
-        if (self.layout.n_widths == 0) return null;
-        const col = self.index % self.layout.n_widths;
-        const at_wrap = col == 0 and self.index > 0;
-        return resolve(self.layout.widths[col], self.frame.rect[2], self.frame.rect[2] - if (at_wrap) @as(i32, 0) else self.layout.cursor[0]);
+    /// Like push(), but for N equal-sized columns.
+    pub fn pushEq(self: *Container, n: u8, height: i32) ?*Container {
+        const new = self.push(&.{}, height) orelse return null;
+        new.layout.n_widths = n;
+        @memset(new.layout.widths[0..n], perc(100.0 / @as(f32, @floatFromInt(n))));
+        return new;
     }
 
+    /// Get resolved rect of the next cell without advancing the cursor.
+    pub fn peek(self: *Container, height: i32) ?[4]i32 {
+        const col = self.index % self.layout.n_widths;
+        const wrap = col == 0 and self.index > 0;
+        const cx = if (wrap) @as(i32, 0) else self.layout.cursor[0];
+        const cy = self.layout.cursor[1] + if (wrap) self.layout.line_height + self.layout.spacing else @as(i32, 0);
+        const w = resolve(self.layout.widths[col], self.frame.rect[2], self.frame.rect[2] - cx);
+        const h = resolve(height, self.frame.rect[3], self.frame.rect[3] - cy);
+
+        if (w <= 0 or h <= 0) return null;
+        return .{ self.frame.rect[0] + cx, self.frame.rect[1] + cy, w, h };
+    }
+
+    /// Advance the cursor and returns the next cell Frame.
     pub fn next(self: *Container, height: i32) ?Frame {
-        if (self.layout.n_widths == 0) return null;
-        const col = self.index % self.layout.n_widths;
-
-        if (col == 0 and self.index > 0) {
-            self.layout.cursor[1] += self.layout.row_height + self.layout.spacing;
-            self.layout.cursor[0] = 0;
-            self.layout.row_height = 0;
-        }
-
-        const res: [4]i32 = .{
-            self.frame.rect[0] + self.layout.cursor[0],
-            self.frame.rect[1] + self.layout.cursor[1],
-            resolve(self.layout.widths[col], self.frame.rect[2], self.frame.rect[2] - self.layout.cursor[0]),
-            resolve(height, self.frame.rect[3], self.frame.rect[3] - self.layout.cursor[1]),
-        };
-
+        const rect = self.peek(height) orelse return null;
+        self.layout.cursor[0] = rect[0] - self.frame.rect[0] + rect[2] + self.layout.spacing;
+        self.layout.cursor[1] = rect[1] - self.frame.rect[1];
+        self.layout.line_height = @max(if (self.index % self.layout.n_widths == 0) @as(i32, 0) else self.layout.line_height, rect[3]);
         self.index += 1;
-        self.layout.cursor[0] += res[2] + self.layout.spacing;
-        self.layout.row_height = @max(self.layout.row_height, res[3]);
-
-        if (res[2] <= 0 or res[3] <= 0) return null;
-
-        return self.frame.with("rect", res);
+        return self.frame.with("rect", rect);
     }
+};
+
+test Container {
+    var stack: [2]Container = @splat(.{ .frame = .{ .rect = .{ 0, 0, 100, 100 }, .screen = undefined } });
+    const row = stack[0].pushEq(4, 1).?;
+    try std.testing.expectEqual(.{ 0, 0, 25, 1 }, row.next(1).?.rect);
+}
+
+pub const Theme = extern struct {
+    fg: Color = .black,
+    bg: Color = .default,
+    accent: Color = .cyan,
+    focus: Color = .blue,
+    active: Color = .white,
+
+    pub const dark: Theme = @bitCast([5]Color{ .white, .black, .blue, .cyan, .white });
 };
 
 pub const Context = struct {
     gpa: std.mem.Allocator,
     screen: Screen,
     stack: [N_MAX_DEPTH]Container,
+    theme: Theme = .{},
     focus: u32 = 0,
     n_controls: u32 = 0,
     last_key: ?Key = null,
