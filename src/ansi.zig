@@ -27,34 +27,3 @@ pub const ed3 = csi ++ "3J";
 // TODO: macos-only?
 pub const clear = ed2 ++ ed3 ++ cp;
 
-pub const Color = enum(u8) {
-    default = 39,
-
-    black_muted = 30,
-    red_muted = 31,
-    green_muted = 32,
-    yellow_muted = 33,
-    blue_muted = 34,
-    magenta_muted = 35,
-    cyan_muted = 36,
-    white_muted = 37,
-
-    black = 90,
-    red = 91,
-    green = 92,
-    yellow = 93,
-    blue = 94,
-    magenta = 95,
-    cyan = 96,
-    white = 97,
-
-    pub fn bright(self: Color) Color {
-        const v = @intFromEnum(self);
-        return if (v >= 30 and v <= 37) @enumFromInt(v + 60) else self;
-    }
-
-    pub fn muted(self: Color) Color {
-        const v = @intFromEnum(self);
-        return if (v >= 90 and v <= 97) @enumFromInt(v - 60) else self;
-    }
-};

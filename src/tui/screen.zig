@@ -1,10 +1,11 @@
 const std = @import("std");
 const ansi = @import("../ansi.zig");
+const Color = @import("color.zig").Color;
 
 pub const Cell = struct {
     char: u21 = ' ',
-    fg: ansi.Color = .default,
-    bg: ansi.Color = .default,
+    fg: Color = .white,
+    bg: Color = .black,
 };
 
 pub const Screen = struct {
@@ -16,6 +17,7 @@ pub const Screen = struct {
     cells: []Cell,
     width: i32,
     height: i32,
+    truecolor: bool = false,
 
     pub fn init(self: *Screen, gpa: std.mem.Allocator) !void {
         const io_buf = try gpa.alloc(u8, 2 * 4096);
@@ -35,6 +37,11 @@ pub const Screen = struct {
         raw.cc[@intFromEnum(std.posix.V.TIME)] = 0;
 
         try std.posix.tcsetattr(stdin.handle, .FLUSH, raw);
+
+        self.truecolor = if (std.posix.getenv("COLORTERM")) |ct|
+            std.mem.eql(u8, ct, "truecolor") or std.mem.eql(u8, ct, "24bit")
+        else
+            false;
 
         self.fin = stdin.reader(io_buf[0 .. io_buf.len / 2]);
         self.fout = std.fs.File.stdout().writer(io_buf[io_buf.len / 2 ..]);
@@ -71,7 +78,7 @@ pub const Screen = struct {
     //       and we could even consider using tk.ShortString instead for splats
     //       and maybe we could use ShortString even instead of the codepoint itself
     //       then we could avoid decoding/re-encoding and just update correct cells
-    pub fn splat(self: *Screen, x: i32, y: i32, bytes: []const u8, n: i32, fg: ansi.Color) void {
+    pub fn splat(self: *Screen, x: i32, y: i32, bytes: []const u8, n: i32, fg: Color) void {
         if (y < 0 or y >= self.height or n <= 0) return;
 
         // Decode codepoints from bytes
@@ -101,7 +108,7 @@ pub const Screen = struct {
         }
     }
 
-    pub fn fill(self: *Screen, x: i32, y: i32, w: i32, bg: ansi.Color) void {
+    pub fn fill(self: *Screen, x: i32, y: i32, w: i32, bg: Color) void {
         if (y < 0 or y >= self.height or w <= 0) return;
 
         const row_start: usize = @intCast(y * self.width);
@@ -131,8 +138,8 @@ pub const Screen = struct {
         // Cursor home
         try self.out.writeAll(ansi.cp);
 
-        var cur_fg: ansi.Color = .default;
-        var cur_bg: ansi.Color = .default;
+        var cur_fg: Color = .white;
+        var cur_bg: Color = .black;
 
         for (0..h) |row| {
             const row_start = row * w;
@@ -141,7 +148,11 @@ pub const Screen = struct {
 
                 // Emit color changes only when needed
                 if (cell.fg != cur_fg or cell.bg != cur_bg) {
-                    try self.out.print(ansi.csi ++ "{d};{d}m", .{ @intFromEnum(cell.fg), @intFromEnum(cell.bg) + 10 });
+                    if (self.truecolor) {
+                        try self.out.print(ansi.csi ++ "38;2;{d};{d};{d};48;2;{d};{d};{d}m", .{ cell.fg.r(), cell.fg.g(), cell.fg.b(), cell.bg.r(), cell.bg.g(), cell.bg.b() });
+                    } else {
+                        try self.out.print(ansi.csi ++ "38;5;{d};48;5;{d}m", .{ cell.fg.to256(), cell.bg.to256() });
+                    }
                     cur_fg = cell.fg;
                     cur_bg = cell.bg;
                 }

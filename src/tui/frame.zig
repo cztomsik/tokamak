@@ -1,14 +1,14 @@
 const Screen = @import("screen.zig").Screen;
-const Color = @import("../ansi.zig").Color;
+const Color = @import("color.zig").Color;
 
 pub const Style = struct {
-    fg: Color = .default,
+    fg: Color,
 };
 
 pub const Frame = struct {
     screen: *Screen,
     rect: [4]i32, // absolute x, y, w, h
-    style: Style = .{},
+    style: Style,
 
     /// Return a copy of self with one field replaced.
     pub fn with(self: Frame, comptime field: []const u8, value: @FieldType(Frame, field)) Frame {

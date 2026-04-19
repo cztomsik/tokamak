@@ -1,5 +1,5 @@
 const std = @import("std");
-const Color = @import("../ansi.zig").Color;
+const Color = @import("color.zig").Color;
 const input = @import("input.zig");
 const Screen = @import("screen.zig").Screen;
 const Frame = @import("frame.zig").Frame;
@@ -91,26 +91,32 @@ pub const Container = struct {
 };
 
 test Container {
-    var stack: [2]Container = @splat(.{ .frame = .{ .rect = .{ 0, 0, 100, 100 }, .screen = undefined } });
+    var stack: [2]Container = @splat(.{ .frame = .{ .rect = .{ 0, 0, 100, 100 }, .screen = undefined, .style = undefined } });
     const row = stack[0].pushEq(4, 1).?;
     try std.testing.expectEqual(.{ 0, 0, 25, 1 }, row.next(-1, 1).?.rect);
 }
 
 pub const Theme = extern struct {
-    fg: Color = .black,
-    bg: Color = .default,
-    accent: Color = .cyan,
-    focus: Color = .blue,
-    active: Color = .white,
+    text: Color,
+    base1: Color, // base bg
+    base2: Color, // darker (elevation/nesting)
+    base3: Color, // darkest
+    primary: Color,
+    secondary: Color,
+    accent: Color,
 
-    pub const dark: Theme = @bitCast([5]Color{ .white, .black, .blue, .cyan, .white });
+    pub const nord: Theme = @bitCast([7]u32{ 0xECEFF4, 0x2E3440, 0x3B4252, 0x434C5E, 0x88C0D0, 0x81A1C1, 0xA3BE8C });
+    pub const dracula: Theme = @bitCast([7]u32{ 0xF8F8F2, 0x282A36, 0x343746, 0x424450, 0xBD93F9, 0x6272A4, 0x8BE9FD });
+    pub const ayu_mirage: Theme = @bitCast([7]u32{ 0xCCCAC2, 0x1F2430, 0x232834, 0x2A2F3A, 0x5CCFE6, 0xAAD94C, 0xFFCC66 });
+    pub const catppuccin_mocha: Theme = @bitCast([7]u32{ 0xCDD6F4, 0x1E1E2E, 0x181825, 0x11111B, 0x89B4FA, 0xB4BEFE, 0xF5C2E7 });
+    pub const catppuccin_latte: Theme = @bitCast([7]u32{ 0x4C4F69, 0xEFF1F5, 0xE6E9EF, 0xDCE0E8, 0x1E66F5, 0x7287FD, 0xEA76CB });
 };
 
 pub const Context = struct {
     gpa: std.mem.Allocator,
     screen: Screen,
     stack: [N_MAX_DEPTH]Container,
-    theme: Theme = .{},
+    theme: Theme = .nord,
     focus: u32 = 0,
     n_controls: u32 = 0,
     last_key: ?Key = null,
@@ -137,7 +143,7 @@ pub const Context = struct {
         try self.screen.refresh(self.gpa);
         self.screen.clear();
 
-        self.stack[0] = .{ .frame = .{ .screen = &self.screen, .rect = .{ 0, 0, self.screen.width, self.screen.height } } };
+        self.stack[0] = .{ .frame = .{ .screen = &self.screen, .rect = .{ 0, 0, self.screen.width, self.screen.height }, .style = .{ .fg = self.theme.text } } };
         self.n_controls = 0;
         self.frame += 1;
 

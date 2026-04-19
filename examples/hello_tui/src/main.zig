@@ -7,7 +7,7 @@ pub fn main() !void {
     defer cx.deinit();
 
     while (!state.quit) {
-        cx.theme = if (state.dark_mode) tk.tui.Theme.dark else .{};
+        cx.theme = if (state.dark_mode) .nord else .catppuccin_latte;
         const root = try cx.beginFrame();
         myapp(root);
         try cx.endFrame();
@@ -33,7 +33,7 @@ const State = struct {
     confirm_reset: bool = false,
     tab_sel: usize = 0,
     tree_sel: usize = 0,
-    dark_mode: bool = false,
+    dark_mode: bool = true,
     quit: bool = false,
 };
 
@@ -42,7 +42,7 @@ var state: State = .{};
 const tab_items = [_][]const u8{ "Overview", "Settings", "Data" };
 
 fn myapp(ui: Builder) void {
-    if (ui.ctx.theme.bg != .default) ui.frame.fill(ui.ctx.theme.bg);
+    ui.frame.fill(ui.ctx.theme.base1);
 
     appbar(ui);
 
