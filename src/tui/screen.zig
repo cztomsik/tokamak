@@ -110,7 +110,7 @@ pub const Screen = struct {
         if (start >= end) return;
 
         for (@as(usize, @intCast(start))..@as(usize, @intCast(end))) |col| {
-            self.cells[row_start + col].bg = bg;
+            self.cells[row_start + col] = .{ .bg = bg };
         }
     }
 

@@ -204,7 +204,6 @@ pub fn progress(ui: Builder, value: f32) void {
 pub fn statusBar(ui: Builder, txt: []const u8) void {
     const t = ui.ctx.theme;
     const f = ui.ctx.stack[0].frame.bottom(1);
-    f.splat(" "); // TODO: This shouldn't be needed
     f.fill(t.accent);
     f.fg(t.bg).text(txt);
 }
@@ -213,8 +212,7 @@ pub fn statusBar(ui: Builder, txt: []const u8) void {
 pub fn menu(ui: Builder, n: u8) ?MenuBuilder {
     const bar = ui.pushEq(n, 1) orelse return null;
     bar.frame.rect = ui.ctx.stack[0].frame.bottom(1).rect;
-    bar.frame.splat(" "); // TODO: This shouldn't be needed
-    bar.frame.fill(ui.ctx.theme.bg.muted());
+    bar.frame.fill(ui.ctx.theme.accent.muted());
     return .{ .bar = bar };
 }
 
@@ -223,10 +221,9 @@ pub const MenuBuilder = struct {
 
     pub fn item(self: MenuBuilder, key: Key, txt: []const u8) bool {
         const f = self.bar.next(-1, 1) orelse return false;
-        f.fill(self.bar.ctx.theme.bg);
         f.left(2).fill(self.bar.ctx.theme.accent);
         f.fg(self.bar.ctx.theme.bg).text(@tagName(key));
-        f.at(2, 0).text(txt);
+        f.at(2, 0).fg(self.bar.ctx.theme.bg).text(txt);
 
         return if (self.bar.ctx.last_key) |k| std.meta.eql(k, key) else false;
     }

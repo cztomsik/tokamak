@@ -140,7 +140,7 @@ fn fileList(ui: Builder, items: []const DirEntry, selected: *usize, height: i32)
 
     var i: usize = scroll;
     while (i < items.len and i < scroll + visible) : (i += 1) {
-        var f = inner.next(1) orelse return;
+        var f = inner.next(-1, 1) orelse return;
         const is_sel = i == selected.*;
         if (ctrl.focused() and is_sel) f = f.fg(.blue);
         f.left(2).text(if (is_sel) "> " else "  ");
