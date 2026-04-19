@@ -25,12 +25,12 @@ pub const Builder = struct {
         };
     }
 
-    pub fn peek(self: Builder, height: i32) ?[4]i32 {
-        return self.container().peek(height);
+    pub fn peek(self: Builder, width: i32, height: i32) ?[4]i32 {
+        return self.container().peek(width, height);
     }
 
-    pub fn next(self: Builder, height: i32) ?Frame {
-        return self.container().next(height);
+    pub fn next(self: Builder, width: i32, height: i32) ?Frame {
+        return self.container().next(width, height);
     }
 
     pub fn control(self: Builder) Control {

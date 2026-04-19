@@ -50,7 +50,7 @@ pub const Container = struct {
 
         new.* = .{
             .id = self.id + 1,
-            .frame = self.next(height) orelse return null,
+            .frame = self.next(-1, height) orelse return null,
             .layout = .{ .n_widths = @intCast(widths.len), .spacing = self.layout.spacing },
         };
         @memcpy(new.layout.widths[0..widths.len], widths);
@@ -67,12 +67,12 @@ pub const Container = struct {
     }
 
     /// Get resolved rect of the next cell without advancing the cursor.
-    pub fn peek(self: *Container, height: i32) ?[4]i32 {
+    pub fn peek(self: *Container, width: i32, height: i32) ?[4]i32 {
         const col = self.index % self.layout.n_widths;
         const wrap = col == 0 and self.index > 0;
         const cx = if (wrap) @as(i32, 0) else self.layout.cursor[0];
         const cy = self.layout.cursor[1] + if (wrap) self.layout.line_height + self.layout.spacing else @as(i32, 0);
-        const w = resolve(self.layout.widths[col], self.frame.rect[2], self.frame.rect[2] - cx);
+        const w = resolve(if (width == -1) self.layout.widths[col] else width, self.frame.rect[2], self.frame.rect[2] - cx);
         const h = resolve(height, self.frame.rect[3], self.frame.rect[3] - cy);
 
         if (w <= 0 or h <= 0) return null;
@@ -80,8 +80,8 @@ pub const Container = struct {
     }
 
     /// Advance the cursor and returns the next cell Frame.
-    pub fn next(self: *Container, height: i32) ?Frame {
-        const rect = self.peek(height) orelse return null;
+    pub fn next(self: *Container, width: i32, height: i32) ?Frame {
+        const rect = self.peek(width, height) orelse return null;
         self.layout.cursor[0] = rect[0] - self.frame.rect[0] + rect[2] + self.layout.spacing;
         self.layout.cursor[1] = rect[1] - self.frame.rect[1];
         self.layout.line_height = @max(if (self.index % self.layout.n_widths == 0) @as(i32, 0) else self.layout.line_height, rect[3]);
@@ -93,7 +93,7 @@ pub const Container = struct {
 test Container {
     var stack: [2]Container = @splat(.{ .frame = .{ .rect = .{ 0, 0, 100, 100 }, .screen = undefined } });
     const row = stack[0].pushEq(4, 1).?;
-    try std.testing.expectEqual(.{ 0, 0, 25, 1 }, row.next(1).?.rect);
+    try std.testing.expectEqual(.{ 0, 0, 25, 1 }, row.next(-1, 1).?.rect);
 }
 
 pub const Theme = extern struct {
