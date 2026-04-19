@@ -64,6 +64,34 @@ pub fn panel(ui: Builder, widths: []const i32, height: i32) ?Builder {
     return g.inset(.{ 1, 1, 1, 1 });
 }
 
+/// Renders a titled separator: ── Title ──────
+pub fn header(ui: Builder, title: []const u8) void {
+    const f = ui.next(1) orelse return;
+    f.splat("─");
+    const len: i32 = @intCast(title.len + 2);
+    f.sub(1, 0, len, 1).draw(0, 0, " ");
+    f.sub(2, 0, len - 1, 1).text(title);
+    f.sub(2 + @as(i32, @intCast(title.len)), 0, 1, 1).draw(0, 0, " ");
+}
+
+/// Renders a collapsible section. Toggles `open` on Enter/Space.
+pub fn collapsible(ui: Builder, lab: []const u8, open: *bool) bool {
+    const frame = ui.next(1) orelse return open.*;
+    const ctrl = ui.control();
+    ctrl.toggle(open);
+
+    const f = if (ctrl.focused()) frame.fg(ui.ctx.theme.focus) else frame;
+    f.left(4).text(if (open.*) "[v] " else "[>] ");
+    f.at(4, 0).text(lab);
+
+    return open.*;
+}
+
+/// Renders a horizontal separator line.
+pub fn separator(ui: Builder) void {
+    if (ui.next(1)) |f| f.splat("-");
+}
+
 /// Renders a centered button with a solid background. Returns true when clicked (Enter/Space).
 pub fn button(ui: Builder, lab: []const u8) bool {
     const f = ui.next(1) orelse return false;
@@ -99,26 +127,6 @@ pub fn numberInput(ui: Builder, value: *i32, step: i32) void {
     f.text(std.fmt.bufPrint(&buf, "{d}", .{value.*}) catch "");
 }
 
-/// Renders an interactive slider. Left/right keys adjust the value by `step`.
-pub fn slider(ui: Builder, value: *f32, step: f32) void {
-    var f = ui.next(1) orelse return;
-    const ctrl = ui.control();
-    ctrl.stepNumber(value, 0, 1, step);
-
-    if (ctrl.focused()) f = f.fg(ui.ctx.theme.focus);
-    f.draw(0, 0, "◄");
-    f.draw(f.width() - 1, 0, "►");
-
-    const track = f.hcenter(f.width() - 4);
-    track.hline(0, 0, track.width());
-    track.draw(@intFromFloat(value.* * @as(f32, @floatFromInt(track.width()))), 0, "●");
-}
-
-/// Renders a horizontal separator line.
-pub fn separator(ui: Builder) void {
-    if (ui.next(1)) |f| f.splat("-");
-}
-
 /// Renders an editable single-line text field.
 pub fn textInput(ui: Builder, buf: []u8, len: *usize) void {
     var f = ui.next(1) orelse return;
@@ -143,28 +151,43 @@ pub fn select(ui: Builder, items: []const []const u8, selected: *usize) void {
     }
 }
 
-/// Renders a scrollable list. Up/down moves selection
-pub fn list(ui: Builder, items: []const []const u8, selected: *usize, height: i32) void {
-    const visible: usize = @intCast(@max(0, height));
-    const scroll: usize = if (selected.* >= visible) selected.* - visible + 1 else 0;
-
-    const inner = stack(ui, height) orelse return;
+/// Renders an interactive slider. Left/right keys adjust the value by `step`.
+pub fn slider(ui: Builder, value: *f32, step: f32) void {
+    var f = ui.next(1) orelse return;
     const ctrl = ui.control();
-    ctrl.navigate(selected, items.len);
+    ctrl.stepNumber(value, 0, 1, step);
 
-    var i: usize = scroll;
-    while (i < items.len and i < scroll + visible) : (i += 1) {
-        const frame = inner.next(1) orelse return;
-        const is_sel = i == selected.*;
-        const f = if (ctrl.focused() and is_sel) frame.fg(ui.ctx.theme.focus) else frame;
-        f.left(2).text(if (is_sel) "> " else "  ");
-        f.at(2, 0).text(items[i]);
-    }
+    if (ctrl.focused()) f = f.fg(ui.ctx.theme.focus);
+    f.draw(0, 0, "◄");
+    f.draw(f.width() - 1, 0, "►");
+
+    const track = f.hcenter(f.width() - 4);
+    track.hline(0, 0, track.width());
+    track.draw(@intFromFloat(value.* * @as(f32, @floatFromInt(track.width()))), 0, "●");
+}
+
+/// Render a colored alert with a single line of text.
+pub fn alert(ui: Builder, msg: []const u8, level: enum { info, warn, err }) void {
+    const f = ui.next(1) orelse return;
+
+    const color, const icon = switch (level) {
+        .info => @as(struct { ansi.Color, []const u8 }, .{ .blue, "i" }),
+        .warn => .{ .yellow, "!" },
+        .err => .{ .red, "x" },
+    };
+
+    f.left(1).fg(color).text(icon);
+    f.at(2, 0).text(msg);
 }
 
 /// Renders an animated spinner character.
 pub fn spinner(ui: Builder) void {
     if (ui.next(1)) |f| f.drawAnim(0, 0, &.{ "|", "/", "-", "\\" }, ui.ctx.frame);
+}
+
+/// Renders a progress bar as a background fill, value in 0.0..1.0
+pub fn progress(ui: Builder, value: f32) void {
+    if (ui.next(1)) |f| f.hbar(value, .yellow);
 }
 
 /// Renders text pinned to the bottom row of the screen, outside the layout.
@@ -176,17 +199,24 @@ pub fn statusBar(ui: Builder, txt: []const u8) void {
     f.fg(t.bg).text(txt);
 }
 
-/// Renders a collapsible section header. Toggles `open` on Enter/Space.
-pub fn header(ui: Builder, lab: []const u8, open: *bool) bool {
-    const frame = ui.next(1) orelse return open.*;
-    const ctrl = ui.control();
-    ctrl.toggle(open);
+/// Begin F1-F10 menu bar pinned to the bottom of the screen.
+pub fn menu(ui: Builder, n: u8) ?Builder {
+    const bar = ui.pushEq(n, 1) orelse return null;
+    bar.frame.rect = ui.ctx.stack[0].frame.bottom(1).rect;
+    bar.frame.splat(" "); // TODO: This shouldn't be needed
+    bar.frame.fill(ui.ctx.theme.bg.muted());
+    return bar;
+}
 
-    const f = if (ctrl.focused()) frame.fg(ui.ctx.theme.focus) else frame;
-    f.left(4).text(if (open.*) "[v] " else "[>] ");
-    f.at(4, 0).text(lab);
+/// Render one F-key menu item.
+pub fn menuItem(ui: Builder, key: Key, txt: []const u8) bool {
+    const f = ui.next(1) orelse return false;
+    f.fill(ui.ctx.theme.bg);
+    f.left(2).fill(ui.ctx.theme.accent);
+    f.fg(ui.ctx.theme.bg).text(@tagName(key));
+    f.at(2, 0).text(txt);
 
-    return open.*;
+    return if (ui.ctx.last_key) |k| std.meta.eql(k, key) else false;
 }
 
 /// Renders a centered modal overlay with border, shadow, and title.
@@ -210,7 +240,47 @@ pub fn modal(ui: Builder, open: *bool, title: []const u8, w: i32, h: i32) ?Build
     return m.inset(.{ 1, 1, 1, 1 });
 }
 
-/// Renders a progress bar as a background fill, value in 0.0..1.0
-pub fn progress(ui: Builder, value: f32) void {
-    if (ui.next(1)) |f| f.hbar(value, .yellow);
+/// Render a tab bar. Left/right keys switch tabs. Returns the selected index.
+pub fn tabs(ui: Builder, items: []const []const u8, selected: *usize) void {
+    const r = ui.pushEq(@intCast(items.len), 1) orelse return;
+    const ctrl = ui.control();
+    const t = ui.ctx.theme;
+    ctrl.navigate(selected, items.len);
+
+    for (items, 0..) |item, i| {
+        const f = r.next(1) orelse return;
+        if (selected.* == i) {
+            f.fill(if (ctrl.focused()) t.focus else t.accent);
+            f.fg(t.active).at(1, 0).text(item);
+        } else {
+            f.at(1, 0).text(item);
+        }
+    }
+}
+
+/// Renders a key-value pair: "label: value" with the label dimmed.
+pub fn kvRow(ui: Builder, lab: []const u8, value: []const u8) void {
+    const f = ui.next(1) orelse return;
+    const lw: i32 = @intCast(lab.len + 2);
+    f.fg(ui.ctx.theme.accent).left(lw).text(lab);
+    f.at(lw, 0).draw(0, 0, value);
+}
+
+/// Renders a tree view with indentation. `depths` gives the nesting level per item.
+pub fn tree(ui: Builder, items: []const []const u8, depths: []const u8, selected: *usize) void {
+    const ctrl = ui.control();
+    ctrl.navigate(selected, items.len);
+
+    for (items, 0..) |item, i| {
+        var f = ui.next(1) orelse return;
+        const depth: i32 = if (i < depths.len) @intCast(depths[i]) else 0;
+        const indent = depth * 2;
+        if (ctrl.focused() and selected.* == i) f = f.fg(ui.ctx.theme.focus);
+        if (selected.* == i) {
+            f.at(indent, 0).draw(0, 0, "> ");
+        } else {
+            f.at(indent, 0).draw(0, 0, "  ");
+        }
+        f.at(indent + 2, 0).text(item);
+    }
 }

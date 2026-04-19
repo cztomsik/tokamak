@@ -7,7 +7,7 @@ pub const Builder = struct {
     ctx: *Context,
     frame: *Frame,
 
-    fn container(self: Builder) *Container {
+    pub fn container(self: Builder) *Container {
         return @fieldParentPtr("frame", self.frame);
     }
 
@@ -44,38 +44,36 @@ pub const Builder = struct {
     }
 
     const widgets = @import("widgets.zig");
+    pub const spacer = widgets.spacer;
     pub const stack = widgets.stack;
     pub const row = widgets.row;
     pub const grid = widgets.grid;
+
     pub const text = widgets.text;
     pub const label = widgets.label;
     pub const num = widgets.num;
     pub const paragraph = widgets.paragraph;
+
     pub const panel = widgets.panel;
+    pub const header = widgets.header;
+    pub const collapsible = widgets.collapsible;
+    pub const separator = widgets.separator;
+
     pub const button = widgets.button;
     pub const checkbox = widgets.checkbox;
     pub const numberInput = widgets.numberInput;
-    pub const slider = widgets.slider;
-    pub const separator = widgets.separator;
     pub const textInput = widgets.textInput;
     pub const select = widgets.select;
-    pub const list = widgets.list;
+    pub const slider = widgets.slider;
+
+    pub const alert = widgets.alert;
     pub const spinner = widgets.spinner;
-    pub const statusBar = widgets.statusBar;
     pub const progress = widgets.progress;
-    pub const header = widgets.header;
+    pub const statusBar = widgets.statusBar;
     pub const modal = widgets.modal;
-    pub const badge = widgets.badge;
-    pub const spacer = widgets.spacer;
     pub const tabs = widgets.tabs;
     pub const menu = widgets.menu;
     pub const menuItem = widgets.menuItem;
-    pub const titled = widgets.titled;
     pub const kvRow = widgets.kvRow;
-    pub const table = widgets.table;
-    pub const barChart = widgets.barChart;
-    pub const breadcrumb = widgets.breadcrumb;
-    pub const toggle = widgets.toggle;
-    pub const alert = widgets.alert;
     pub const tree = widgets.tree;
 };

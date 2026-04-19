@@ -6,7 +6,8 @@ pub fn main() !void {
     var cx = try tk.tui.Context.init(std.heap.c_allocator);
     defer cx.deinit();
 
-    loop: while (true) {
+    while (!state.quit) {
+        cx.theme = if (state.dark_mode) tk.tui.Theme.dark else .{};
         const root = try cx.beginFrame();
         myapp(root);
         try cx.endFrame();
@@ -15,7 +16,7 @@ pub fn main() !void {
         cx.last_key = key;
 
         switch (key) {
-            .ctrl_c, .escape => break :loop,
+            .ctrl_c, .escape => break,
             .tab => cx.focus = (cx.focus + 1) % @max(1, cx.n_controls),
             .shift_tab => cx.focus = (cx.focus + cx.n_controls - 1) % @max(1, cx.n_controls),
             else => {},
@@ -28,19 +29,21 @@ const State = struct {
     number_val: i32 = 123,
     text_buf: [64]u8 = ("hello" ++ std.mem.zeroes([59]u8)).*,
     text_len: usize = 5,
-    select_val: usize = 0,
-    list_sel: usize = 0,
     flags: [5]bool = @splat(true),
     confirm_reset: bool = false,
+    tab_sel: usize = 0,
+    tree_sel: usize = 0,
+    dark_mode: bool = false,
+    quit: bool = false,
 };
 
 var state: State = .{};
 
 const select_items = [_][]const u8{ "Option A", "Option B", "Option C" };
-const list_items = [_][]const u8{ "Alpha", "Beta", "Gamma", "Delta", "Epsilon", "Zeta", "Eta", "Theta" };
+const tab_items = [_][]const u8{ "Overview", "Settings", "Data" };
 
 fn myapp(ui: Builder) void {
-    ui.frame.fill(.white_muted);
+    if (ui.ctx.theme.bg != .default) ui.frame.fill(ui.ctx.theme.bg);
 
     appbar(ui);
 
@@ -49,7 +52,12 @@ fn myapp(ui: Builder) void {
         mainarea(g);
     }
 
-    ui.statusBar("Tab/Shift-Tab: focus  |  Arrows: adjust  |  Esc: quit");
+    if (ui.menu(4)) |m| {
+        if (m.menuItem(.f1, "Help")) state.flags[0] = !state.flags[0];
+        if (m.menuItem(.f5, "Reset")) state.confirm_reset = true;
+        if (m.menuItem(.f9, "Dark")) state.dark_mode = !state.dark_mode;
+        if (m.menuItem(.f10, "Quit")) state.quit = true;
+    }
 
     if (state.confirm_reset) {
         resetmodal(ui);
@@ -57,17 +65,24 @@ fn myapp(ui: Builder) void {
 }
 
 fn appbar(ui: Builder) void {
-    if (ui.panel(&.{ -10, 10 }, 3)) |p| {
+    if (ui.panel(&.{ -30, 30 }, 3)) |p| {
         p.label("MyApp");
-        p.label("v1.0");
+        p.tabs(&tab_items, &state.tab_sel);
     }
 }
 
 fn sidebar(ui: Builder) void {
     if (ui.panel(&.{-1}, -1)) |p| {
-        inline for (1..11) |n| {
-            p.label("Item " ++ std.fmt.digits2(n));
-        }
+        p.header("Navigation");
+        p.tree(
+            &.{ "Root", "Child A", "Leaf 1", "Leaf 2", "Child B", "Leaf 3" },
+            &.{ 0, 1, 2, 2, 1, 2 },
+            &state.tree_sel,
+        );
+        p.spacer(1);
+        p.alert("Connected", .info);
+        p.alert("Disk 90% full", .warn);
+        p.alert("Service down", .err);
     }
 }
 
@@ -75,18 +90,18 @@ fn mainarea(ui: Builder) void {
     if (ui.panel(&.{-1}, -1)) |p| {
         if (p.grid(&.{ -32, -1 }, -1)) |cols| {
             if (cols.stack(-1)) |col| {
-                if (col.header("Buttons", &state.flags[0])) {
+                if (col.collapsible("Buttons", &state.flags[0])) {
                     if (col.button("OK")) state.flags[0] = false;
                     if (col.button("Cancel")) state.flags[0] = false;
                     if (col.button("Reset All...")) state.confirm_reset = true;
                 }
 
-                if (col.header("Settings", &state.flags[1])) {
+                if (col.collapsible("Settings", &state.flags[1])) {
                     col.checkbox("Notifications", &state.flags[2]);
-                    col.checkbox("Dark mode", &state.flags[3]);
+                    col.checkbox("Dark mode", &state.dark_mode);
                 }
 
-                if (col.header("Inputs", &state.flags[4])) {
+                if (col.collapsible("Inputs", &state.flags[4])) {
                     col.textInput(&state.text_buf, &state.text_len);
                     col.numberInput(&state.number_val, 1);
                     col.spinner();
@@ -102,12 +117,14 @@ fn mainarea(ui: Builder) void {
             }
 
             if (cols.stack(-1)) |col| {
-                col.label("-- Paragraph --");
-                col.paragraph("Lorem ipsum dolor sit amet. " ** 10);
-                col.label("-- Select --");
-                col.select(&select_items, &state.select_val);
-                col.label("-- List --");
-                col.list(&list_items, &state.list_sel, 5);
+                col.header("Details");
+                col.kvRow("Name: ", "Tokamak");
+                col.kvRow("Version: ", "1.0.0");
+                col.kvRow("Status: ", "Running");
+                col.spacer(1);
+
+                col.header("Select");
+                col.select(&select_items, &state.tab_sel);
             }
         }
     }
