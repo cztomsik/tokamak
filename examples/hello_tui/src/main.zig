@@ -39,7 +39,6 @@ const State = struct {
 
 var state: State = .{};
 
-const select_items = [_][]const u8{ "Option A", "Option B", "Option C" };
 const tab_items = [_][]const u8{ "Overview", "Settings", "Data" };
 
 fn myapp(ui: Builder) void {
@@ -53,10 +52,10 @@ fn myapp(ui: Builder) void {
     }
 
     if (ui.menu(4)) |m| {
-        if (m.menuItem(.f1, "Help")) state.flags[0] = !state.flags[0];
-        if (m.menuItem(.f5, "Reset")) state.confirm_reset = true;
-        if (m.menuItem(.f9, "Dark")) state.dark_mode = !state.dark_mode;
-        if (m.menuItem(.f10, "Quit")) state.quit = true;
+        if (m.item(.f1, "Help")) state.flags[0] = !state.flags[0];
+        if (m.item(.f5, "Reset")) state.confirm_reset = true;
+        if (m.item(.f9, "Dark")) state.dark_mode = !state.dark_mode;
+        if (m.item(.f10, "Quit")) state.quit = true;
     }
 
     if (state.confirm_reset) {
@@ -124,7 +123,11 @@ fn mainarea(ui: Builder) void {
                 col.spacer(1);
 
                 col.header("Select");
-                col.select(&select_items, &state.tab_sel);
+                if (col.select(3, &state.tab_sel)) |sel| {
+                    sel.item("Option A");
+                    sel.item("Option B");
+                    sel.item("Option C");
+                }
             }
         }
     }

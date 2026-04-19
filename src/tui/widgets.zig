@@ -139,17 +139,27 @@ pub fn textInput(ui: Builder, buf: []u8, len: *usize) void {
 }
 
 /// Renders a radio-style picker. Up/down moves selection.
-pub fn select(ui: Builder, items: []const []const u8, selected: *usize) void {
+pub fn select(ui: Builder, n: usize, selected: *usize) ?SelectBuilder {
+    if (n == 0) return null;
     const ctrl = ui.control();
-    ctrl.navigate(selected, items.len);
-
-    for (items, 0..) |item, i| {
-        var f = ui.next(-1, 1) orelse return;
-        if (ctrl.focused() and selected.* == i) f = f.fg(ui.ctx.theme.focus);
-        f.left(4).text(if (selected.* == i) "(*) " else "( ) ");
-        f.at(4, 0).text(item);
-    }
+    ctrl.navigate(selected, n);
+    const inner = ui.push(&.{-1}, @intCast(n)) orelse return null;
+    return .{ .ui = inner, .ctrl = ctrl, .selected = selected };
 }
+
+pub const SelectBuilder = struct {
+    ui: Builder,
+    ctrl: Control,
+    selected: *usize,
+
+    pub fn item(self: SelectBuilder, lab: []const u8) void {
+        const i = self.ui.container().index;
+        var f = self.ui.next(-1, 1) orelse return;
+        if (self.ctrl.focused() and self.selected.* == i) f = f.fg(self.ui.ctx.theme.focus);
+        f.left(4).text(if (self.selected.* == i) "(*) " else "( ) ");
+        f.at(4, 0).text(lab);
+    }
+};
 
 /// Renders an interactive slider. Left/right keys adjust the value by `step`.
 pub fn slider(ui: Builder, value: *f32, step: f32) void {
@@ -200,24 +210,27 @@ pub fn statusBar(ui: Builder, txt: []const u8) void {
 }
 
 /// Begin F1-F10 menu bar pinned to the bottom of the screen.
-pub fn menu(ui: Builder, n: u8) ?Builder {
+pub fn menu(ui: Builder, n: u8) ?MenuBuilder {
     const bar = ui.pushEq(n, 1) orelse return null;
     bar.frame.rect = ui.ctx.stack[0].frame.bottom(1).rect;
     bar.frame.splat(" "); // TODO: This shouldn't be needed
     bar.frame.fill(ui.ctx.theme.bg.muted());
-    return bar;
+    return .{ .bar = bar };
 }
 
-/// Render one F-key menu item.
-pub fn menuItem(ui: Builder, key: Key, txt: []const u8) bool {
-    const f = ui.next(-1, 1) orelse return false;
-    f.fill(ui.ctx.theme.bg);
-    f.left(2).fill(ui.ctx.theme.accent);
-    f.fg(ui.ctx.theme.bg).text(@tagName(key));
-    f.at(2, 0).text(txt);
+pub const MenuBuilder = struct {
+    bar: Builder,
 
-    return if (ui.ctx.last_key) |k| std.meta.eql(k, key) else false;
-}
+    pub fn item(self: MenuBuilder, key: Key, txt: []const u8) bool {
+        const f = self.bar.next(-1, 1) orelse return false;
+        f.fill(self.bar.ctx.theme.bg);
+        f.left(2).fill(self.bar.ctx.theme.accent);
+        f.fg(self.bar.ctx.theme.bg).text(@tagName(key));
+        f.at(2, 0).text(txt);
+
+        return if (self.bar.ctx.last_key) |k| std.meta.eql(k, key) else false;
+    }
+};
 
 /// Renders a centered modal overlay with border, shadow, and title.
 pub fn modal(ui: Builder, open: *bool, title: []const u8, w: i32, h: i32) ?Builder {
