@@ -7,11 +7,11 @@ const Builder = @import("builder.zig").Builder;
 
 const N_MAX_DEPTH = 16;
 const N_MAX_COLS = 16;
-const N_MAX_CONTROLS = 64;
+const N_MAX_STATE = 256;
 
 pub const Key = input.Key;
 
-/// Encode percentage as fixed-point value below -100_000
+/// Encode a percentage as a fixed-point value below -100_000
 pub fn perc(v: f32) i32 {
     return @intFromFloat(v * -1_000_000);
 }
@@ -28,6 +28,21 @@ test {
     try std.testing.expectEqual(33, resolve(perc(100.0 / 3.0), 100, 100));
 }
 
+// Our layout system is very simple but surprisingly capable. It is essentially
+// a simple row-wrapping grid with ahead-known height, pre-defined widths, and
+// whenever you ask for a "cell", you also need to specify width & height.
+// Weird, right? However, any of those sizes can be percentage or distance to
+// the right/bottom edge, meaning you can do equal-sized cols with `&.{
+// perc(33), ... }`, fill-remainder with `&.{ N, -1 }` or even `&.{ -N, N }` for
+// the opposite direction. Rows auto-grow if a next cell is higher, but this is
+// done AFTER previous items were already rendered. In other words, some layouts
+// are impossible, but given that this is meant for TUI interfaces, we can often
+// cheat a bit. Finally, rows also auto-grow in the horizontal direction, so if
+// you define &.{ 1, 1 }, but ask for .next(100, 1), the X cursor will advance
+// by 100. This is useful if you need a row but you don't know widths yet; in
+// such a case the layout will still kind of work, just note that the background
+// or borders might be broken. However, that can usually be fixed with some -1
+// here and there. Hats off to microui, where I first saw this.
 pub const Layout = struct {
     widths: [N_MAX_COLS]i32 = @splat(-1),
     n_widths: u8 = 1,
@@ -42,7 +57,7 @@ pub const Container = struct {
     index: usize = 0,
     layout: Layout = .{},
 
-    /// Claim next cell and set up a new child container. NOTE that it is only
+    /// Claim the next cell and set up a new child container. NOTE that it is only
     /// valid until the next push() at the same depth overwrites it.
     pub fn push(self: *Container, widths: []const i32, height: i32) ?*Container {
         if ((self.id + 1) >= N_MAX_DEPTH) return null;
@@ -79,7 +94,7 @@ pub const Container = struct {
         return .{ self.frame.rect[0] + cx, self.frame.rect[1] + cy, w, h };
     }
 
-    /// Advance the cursor and returns the next cell Frame.
+    /// Advance the cursor and return the next cell Frame.
     pub fn next(self: *Container, width: i32, height: i32) ?Frame {
         const rect = self.peek(width, height) orelse return null;
         self.layout.cursor[0] = rect[0] - self.frame.rect[0] + rect[2] + self.layout.spacing;
@@ -117,11 +132,15 @@ pub const Context = struct {
     screen: Screen,
     stack: [N_MAX_DEPTH]Container,
     theme: Theme = .nord,
-    focus: u32 = 0,
+    state: [N_MAX_STATE]State = @splat(.{}),
+    state_len: u32 = 0,
+    n_state: u32 = 0,
     n_controls: u32 = 0,
+    focus: u32 = 0,
     last_key: ?Key = null,
     frame: u64 = 0,
-    cursors: [N_MAX_CONTROLS]usize = @splat(std.math.maxInt(usize)),
+
+    const State = struct { key: u64 = 0, tid: [*:0]const u8 = @typeName(void), data: u64 = undefined };
 
     pub fn init(gpa: std.mem.Allocator) !*Context {
         const ctx = try gpa.create(Context);
@@ -143,6 +162,8 @@ pub const Context = struct {
         try self.screen.refresh(self.gpa);
 
         self.stack[0] = .{ .frame = .{ .screen = &self.screen, .rect = .{ 0, 0, self.screen.width, self.screen.height }, .style = .{ .fg = self.theme.text } } };
+        self.state_len = self.n_state;
+        self.n_state = 0;
         self.n_controls = 0;
         self.frame += 1;
 
@@ -156,6 +177,33 @@ pub const Context = struct {
 
     pub fn endFrame(self: *Context) !void {
         try self.screen.flush();
+    }
+
+    pub fn getState(self: *Context, key: u64, comptime T: type, default: T) *T {
+        comptime std.debug.assert(@sizeOf(T) <= @sizeOf(u64) and @alignOf(T) <= @alignOf(u64));
+
+        // Search for entry with matching tid AND hash (or point to the end of the list)
+        var i = self.n_state;
+        while (i < self.state_len and (self.state[i].tid != @typeName(T) or self.state[i].key != key)) i += 1;
+
+        // Swap so that this is in-order next time
+        if (i != self.n_state) {
+            std.mem.swap(State, &self.state[i], &self.state[self.n_state]);
+        }
+
+        const slot = &self.state[@min(self.n_state, N_MAX_STATE - 1)];
+        const data: *T = @ptrCast(&slot.data);
+        self.n_state += 1;
+
+        // If not found (i == len), initialize new entry
+        if (i == self.state_len) {
+            self.state_len += 1;
+            slot.tid = @typeName(T);
+            slot.key = key;
+            data.* = default;
+        }
+
+        return data;
     }
 
     pub fn readKey(self: *Context) !Key {

@@ -46,7 +46,7 @@ pub const Frame = struct {
         return self.with("rect", .{ ax, ay, cw, ch });
     }
 
-    /// Sub-frame at relative (x, y) with same size.
+    /// Sub-frame at relative (x, y) with the same size.
     pub fn at(self: Frame, x: i32, y: i32) Frame {
         return self.sub(x, y, self.rect[2], self.rect[3]);
     }
@@ -107,7 +107,7 @@ pub const Frame = struct {
         );
     }
 
-    /// Draw chunk once at (x, y).
+    /// Draw a chunk once at (x, y).
     pub fn draw(self: Frame, x: i32, y: i32, chunk: []const u8) void {
         self.screen.draw(self.rect[0] + x, self.rect[1] + y, chunk, self.style.fg);
     }
@@ -157,7 +157,7 @@ pub const Frame = struct {
         }
     }
 
-    /// Fill the entire frame by repeating chunk per cell (foreground only).
+    /// Fill the entire frame by repeating a chunk per cell (foreground only).
     pub fn splat(self: Frame, chunk: []const u8) void {
         var row: i32 = 0;
         while (row < self.rect[3]) : (row += 1) {

@@ -11,6 +11,13 @@ pub const Builder = struct {
         return @fieldParentPtr("frame", self.frame);
     }
 
+    pub fn state(self: Builder, comptime T: type, default: T) *T {
+        var key: u64 = @intFromPtr(self.frame);
+        key = (key ^ @returnAddress()) *% 0x100000001b3;
+
+        return self.ctx.getState(key, T, default);
+    }
+
     pub fn push(self: Builder, widths: []const i32, height: i32) ?Builder {
         return .{
             .ctx = self.ctx,

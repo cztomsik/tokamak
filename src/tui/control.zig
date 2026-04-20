@@ -6,12 +6,21 @@ const Key = @import("input.zig").Key;
 pub const Control = struct {
     id: u32,
     ctx: *Context,
+    cursor: *usize,
 
     pub fn init(ctx: *Context) Control {
         const id = ctx.n_controls;
         ctx.n_controls += 1;
 
-        return .{ .id = id, .ctx = ctx };
+        return .{
+            .id = id,
+            .ctx = ctx,
+            .cursor = ctx.getState(id, usize, std.math.maxInt(usize)),
+        };
+    }
+
+    pub fn pendingKey(self: Control) ?Key {
+        return if (self.focused()) self.ctx.last_key else null;
     }
 
     pub fn focused(self: Control) bool {
@@ -30,18 +39,17 @@ pub const Control = struct {
         if (self.pressed()) value.* = !value.*;
     }
 
-    pub fn navigate(self: Control, selected: *usize, len: usize) void {
+    pub fn navigate(self: Control, keys: [2]Key, selected: *usize, len: usize) void {
         if (len > 0) {
-            selected.* = switch (self.pendingKey() orelse return) {
-                .up => (selected.* + len - 1) % len,
-                .down => (selected.* + 1) % len,
-                else => return,
-            };
+            if (self.pendingKey()) |k| {
+                if (std.meta.eql(k, keys[0])) selected.* = (selected.* + len - 1) % len;
+                if (std.meta.eql(k, keys[1])) selected.* = (selected.* + 1) % len;
+            }
         }
     }
 
     pub fn editText(self: Control, buf: []u8, len: *usize) void {
-        const cur = self.cursor();
+        const cur = self.cursor;
         cur.* = @min(cur.*, len.*);
 
         switch (self.pendingKey() orelse return) {
@@ -91,24 +99,18 @@ pub const Control = struct {
     }
 
     pub fn stepNumber(self: Control, value: anytype, min: @TypeOf(value.*), max: @TypeOf(value.*), step: @TypeOf(value.*)) void {
-        value.* = std.math.clamp(if (comptime @typeInfo(@TypeOf(step)) == .float)
-            switch (self.pendingKey() orelse return) {
-                .left => value.* - step,
-                .right => value.* + step,
+        if (self.pendingKey()) |k| {
+            value.* = std.math.clamp(if (comptime @typeInfo(@TypeOf(step)) == .float)
+                switch (k) {
+                    .left => value.* - step,
+                    .right => value.* + step,
+                    else => return,
+                }
+            else switch (k) {
+                .left => value.* -| step,
+                .right => value.* +| step,
                 else => return,
-            }
-        else switch (self.pendingKey() orelse return) {
-            .left => value.* -| step,
-            .right => value.* +| step,
-            else => return,
-        }, min, max);
-    }
-
-    pub fn cursor(self: Control) *usize {
-        return &self.ctx.cursors[@min(self.id, self.ctx.cursors.len - 1)];
-    }
-
-    fn pendingKey(self: Control) ?Key {
-        return if (self.focused()) self.ctx.last_key else null;
+            }, min, max);
+        }
     }
 };

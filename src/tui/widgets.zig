@@ -1,10 +1,21 @@
+// NOTE: Most widgets here are simple immediate-mode functions, meaning that
+// they handle rendering, interactivity, and sometimes return a bool that can be
+// used for branching. Container widgets usually return an optional Builder, ie.
+// you can do `if (ui.panel(...)) |p| { ... }` pattern and put anything inside.
+// Finally, some containers return their own builders, enforcing what can go
+// inside, ie. select() returns SelectBuilder, that can only generate select
+// items. Most widgets are stateless in the sense that they keep their state
+// using user-provided ptrs. Some widgets (like controls) can have their own
+// state, like cursor position, and that is stored in the ctx.state "pool",
+// which is a bit like React hooks but way more limited.
+
 const std = @import("std");
 const Color = @import("color.zig").Color;
 const Builder = @import("builder.zig").Builder;
 const Control = @import("control.zig").Control;
 const Key = @import("context.zig").Key;
 
-/// Renders an empty spacer of the given height.
+/// Render an empty spacer of the given height.
 pub fn spacer(ui: Builder, height: i32) void {
     _ = ui.next(-1, height);
 }
@@ -23,7 +34,7 @@ pub fn grid(ui: Builder, widths: []const i32, height: i32) ?Builder {
     return ui.push(widths, height);
 }
 
-/// Renders a single line of text clipped to the next layout cell's width.
+/// Render a single line of text clipped to the next layout cell's width.
 pub fn text(ui: Builder, str: []const u8) void {
     if (ui.next(-1, 1)) |f| f.text(str);
 }
@@ -31,13 +42,13 @@ pub fn text(ui: Builder, str: []const u8) void {
 /// Alias to text(), at least for now
 pub const label = text;
 
-/// Renders any numeric value (int or float) as text.
+/// Render any numeric value (int or float) as text.
 pub fn num(ui: Builder, value: anytype) void {
     var buf: [64]u8 = undefined;
     ui.text(std.fmt.bufPrint(&buf, "{d}", .{value}) catch "");
 }
 
-/// Renders multiple lines of text, wrapping at width. Reserves the required height from layout.
+/// Render multiple lines of text, wrapping at width. Reserves the required height from layout.
 pub fn paragraph(ui: Builder, str: []const u8) void {
     const w: usize = @intCast((ui.peek(-1, -1) orelse return)[2]);
     var n_lines: i32 = 1;
@@ -64,7 +75,7 @@ pub fn panel(ui: Builder, widths: []const i32, height: i32) ?Builder {
     return g.inset(.{ 1, 1, 1, 1 });
 }
 
-/// Renders a titled separator: ── Title ──────
+/// Render a titled separator: ── Title ──────
 pub fn header(ui: Builder, title: []const u8) void {
     const f = ui.next(-1, 1) orelse return;
     f.splat("─");
@@ -74,7 +85,7 @@ pub fn header(ui: Builder, title: []const u8) void {
     f.sub(2 + @as(i32, @intCast(title.len)), 0, 1, 1).draw(0, 0, " ");
 }
 
-/// Renders a collapsible section. Toggles `open` on Enter/Space.
+/// Render a collapsible section. Toggles `open` on Enter/Space.
 pub fn collapsible(ui: Builder, lab: []const u8, open: *bool) bool {
     const frame = ui.next(-1, 1) orelse return open.*;
     const ctrl = ui.control();
@@ -87,12 +98,12 @@ pub fn collapsible(ui: Builder, lab: []const u8, open: *bool) bool {
     return open.*;
 }
 
-/// Renders a horizontal separator line.
+/// Render a horizontal separator line.
 pub fn separator(ui: Builder) void {
     if (ui.next(-1, 1)) |f| f.splat("-");
 }
 
-/// Renders a centered button with a solid background. Returns true when clicked (Enter/Space).
+/// Render a centered button with a solid background. Returns true when clicked (Enter/Space).
 pub fn button(ui: Builder, lab: []const u8) bool {
     const f = ui.next(-1, 1) orelse return false;
     const ctrl = ui.control();
@@ -104,7 +115,7 @@ pub fn button(ui: Builder, lab: []const u8) bool {
     return ctrl.pressed();
 }
 
-/// Renders a checkbox. Enter/space toggles the value.
+/// Render a checkbox. Enter/space toggles the value.
 pub fn checkbox(ui: Builder, lab: []const u8, checked: *bool) void {
     var f = ui.next(-1, 1) orelse return;
     const ctrl = ui.control();
@@ -115,7 +126,7 @@ pub fn checkbox(ui: Builder, lab: []const u8, checked: *bool) void {
     f.at(4, 0).text(lab);
 }
 
-/// Renders an interactive number input.
+/// Render an interactive number input.
 pub fn numberInput(ui: Builder, value: *i32, step: i32) void {
     var f = ui.next(-1, 1) orelse return;
     const ctrl = ui.control();
@@ -127,7 +138,7 @@ pub fn numberInput(ui: Builder, value: *i32, step: i32) void {
     f.text(std.fmt.bufPrint(&buf, "{d}", .{value.*}) catch "");
 }
 
-/// Renders an editable single-line text field.
+/// Render an editable single-line text field.
 pub fn textInput(ui: Builder, buf: []u8, len: *usize) void {
     var f = ui.next(-1, 1) orelse return;
     const ctrl = ui.control();
@@ -135,16 +146,15 @@ pub fn textInput(ui: Builder, buf: []u8, len: *usize) void {
 
     if (ctrl.focused()) f = f.fg(ui.ctx.theme.primary);
     f.text(buf[0..len.*]);
-    if (ctrl.focused()) f.sub(@intCast(ctrl.cursor().*), 0, 1, 1).fill(ui.ctx.theme.text);
+    if (ctrl.focused()) f.sub(@intCast(ctrl.cursor.*), 0, 1, 1).fill(ui.ctx.theme.text);
 }
 
-/// Renders a radio-style picker. Up/down moves selection.
+/// Render a radio-style picker. Up/down moves selection.
 pub fn select(ui: Builder, n: usize, selected: *usize) ?SelectBuilder {
-    if (n == 0) return null;
+    const st = ui.stack(@intCast(n)) orelse return null;
     const ctrl = ui.control();
-    ctrl.navigate(selected, n);
-    const inner = ui.push(&.{-1}, @intCast(n)) orelse return null;
-    return .{ .ui = inner, .ctrl = ctrl, .selected = selected };
+    ctrl.navigate(.{ .up, .down }, selected, n);
+    return .{ .ui = st, .ctrl = ctrl, .selected = selected };
 }
 
 pub const SelectBuilder = struct {
@@ -161,7 +171,7 @@ pub const SelectBuilder = struct {
     }
 };
 
-/// Renders an interactive slider. Left/right keys adjust the value by `step`.
+/// Render an interactive slider. Left/right keys adjust the value by `step`.
 pub fn slider(ui: Builder, value: *f32, step: f32) void {
     var f = ui.next(-1, 1) orelse return;
     const ctrl = ui.control();
@@ -190,17 +200,17 @@ pub fn alert(ui: Builder, msg: []const u8, level: enum { info, warn, err }) void
     f.at(2, 0).text(msg);
 }
 
-/// Renders an animated spinner character.
+/// Render an animated spinner character.
 pub fn spinner(ui: Builder) void {
     if (ui.next(-1, 1)) |f| f.drawAnim(0, 0, &.{ "|", "/", "-", "\\" }, ui.ctx.frame);
 }
 
-/// Renders a progress bar as a background fill, value in 0.0..1.0
+/// Render a progress bar as a background fill, value in 0.0..1.0
 pub fn progress(ui: Builder, value: f32) void {
     if (ui.next(-1, 1)) |f| f.hbar(value, .yellow);
 }
 
-/// Renders text pinned to the bottom row of the screen, outside the layout.
+/// Render text pinned to the bottom row of the screen, outside the layout.
 pub fn statusBar(ui: Builder, txt: []const u8) void {
     const t = ui.ctx.theme;
     const f = ui.ctx.stack[0].frame.bottom(1);
@@ -229,7 +239,7 @@ pub const MenuBuilder = struct {
     }
 };
 
-/// Renders a centered modal overlay with border, shadow, and title.
+/// Render a centered modal overlay with border, shadow, and title.
 pub fn modal(ui: Builder, open: *bool, title: []const u8, w: i32, h: i32) ?Builder {
     if (ui.ctx.last_key != null and ui.ctx.last_key.? == .escape) {
         open.* = false;
@@ -244,6 +254,7 @@ pub fn modal(ui: Builder, open: *bool, title: []const u8, w: i32, h: i32) ?Build
 
     const m = ui.stack(1) orelse return null;
     m.frame.* = ui.ctx.stack[0].frame.center(w, h);
+    m.frame.fill(ui.ctx.theme.base3);
     m.frame.border();
     m.frame.top(1).hcenter(@intCast(title.len)).text(title);
     m.frame.shadow();
@@ -255,7 +266,7 @@ pub fn tabs(ui: Builder, n: usize, selected: *usize) ?TabBuilder {
     if (n == 0) return null;
     const r = ui.pushEq(@intCast(n), 1) orelse return null;
     const ctrl = ui.control();
-    ctrl.navigate(selected, n);
+    ctrl.navigate(.{ .left, .right }, selected, n);
     return .{ .r = r, .ctrl = ctrl, .selected = selected };
 }
 
@@ -273,7 +284,7 @@ pub const TabBuilder = struct {
     }
 };
 
-/// Renders a key-value pair: "label: value" with the label dimmed.
+/// Render a key-value pair: "label: value" with the label dimmed.
 pub fn kvRow(ui: Builder, lab: []const u8, value: []const u8) void {
     const f = ui.next(-1, 1) orelse return;
     const lw: i32 = @intCast(lab.len + 2);
@@ -281,10 +292,10 @@ pub fn kvRow(ui: Builder, lab: []const u8, value: []const u8) void {
     f.at(lw, 0).draw(0, 0, value);
 }
 
-/// Renders a tree view with indentation. `depths` gives the nesting level per item.
+/// Render a tree view with indentation. `depths` gives the nesting level per item.
 pub fn tree(ui: Builder, items: []const []const u8, depths: []const u8, selected: *usize) void {
     const ctrl = ui.control();
-    ctrl.navigate(selected, items.len);
+    ctrl.navigate(.{ .up, .down }, selected, items.len);
 
     for (items, 0..) |item, i| {
         var f = ui.next(-1, 1) orelse return;
