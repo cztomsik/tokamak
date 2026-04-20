@@ -134,7 +134,7 @@ fn fileList(ui: Builder, items: []const DirEntry, selected: *usize, height: i32)
     const visible: usize = @intCast(@max(0, inner.frame.height()));
     const scroll: usize = if (selected.* >= visible) selected.* - visible + 1 else 0;
     const ctrl = ui.control();
-    ctrl.navigate(selected, items.len);
+    ctrl.navigate(.{ .up, .down }, selected, items.len);
 
     var i: usize = scroll;
     while (i < items.len and i < scroll + visible) : (i += 1) {
