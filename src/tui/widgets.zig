@@ -92,8 +92,8 @@ pub fn collapsible(ui: Builder, lab: []const u8, open: *bool) bool {
     ctrl.toggle(open);
 
     const f = if (ctrl.focused()) frame.fg(ui.ctx.theme.primary) else frame;
-    f.left(4).text(if (open.*) "[v] " else "[>] ");
-    f.at(4, 0).text(lab);
+    f.draw(0, 0, if (open.*) "▼" else "▶");
+    f.at(2, 0).text(lab);
 
     return open.*;
 }
