@@ -57,11 +57,11 @@ pub fn paragraph(ui: Builder, txt: []const u8, max_height: i32) void {
     if (ui.next(-1, @min(n_lines, max[3]))) |f| f.text(txt);
 }
 
-/// Draws an ASCII border around a grid() and returns the inner scope.
-pub fn panel(ui: Builder, widths: []const i32, height: i32) ?Builder {
-    const g = ui.grid(widths, height) orelse return null;
-    g.frame.border();
-    return g.inset(.{ 1, 1, 1, 1 });
+/// Draws an ASCII border around a stack() and returns the inner scope.
+pub fn panel(ui: Builder, height: i32) ?Builder {
+    const s = ui.stack(height) orelse return null;
+    s.frame.border();
+    return s.inset(.{ 1, 1, 1, 1 });
 }
 
 /// Render a titled separator: ── Title ──────

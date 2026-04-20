@@ -62,16 +62,19 @@ fn myapp(ui: Builder) void {
 }
 
 fn appbar(ui: Builder) void {
-    if (ui.panel(&.{ -30, 30 }, 3)) |p| {
-        p.label("MyApp");
-        if (p.tabs(tab_items.len, &state.tab_sel)) |t| {
-            for (tab_items) |item| t.item(item);
+    if (ui.panel(3)) |p| {
+        if (p.row(&.{ -30, 30 })) |r| {
+            r.label("MyApp");
+
+            if (r.tabs(tab_items.len, &state.tab_sel)) |t| {
+                for (tab_items) |item| t.item(item);
+            }
         }
     }
 }
 
 fn sidebar(ui: Builder) void {
-    if (ui.panel(&.{-1}, -1)) |p| {
+    if (ui.panel(-1)) |p| {
         p.header("Navigation");
         p.tree(
             &.{ "Root", "Child A", "Leaf 1", "Leaf 2", "Child B", "Leaf 3" },
@@ -86,7 +89,7 @@ fn sidebar(ui: Builder) void {
 }
 
 fn mainarea(ui: Builder) void {
-    if (ui.panel(&.{-1}, -1)) |p| {
+    if (ui.panel(-1)) |p| {
         if (p.grid(&.{ -32, -1 }, -1)) |cols| {
             if (cols.stack(-1)) |col| {
                 if (col.collapsible("Buttons", &state.flags[0])) {

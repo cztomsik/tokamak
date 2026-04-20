@@ -122,7 +122,7 @@ fn app(ui: Builder) void {
 }
 
 fn filePanel(ui: Builder, panel: *Panel) void {
-    if (ui.panel(&.{-1}, -1)) |p| {
+    if (ui.panel(-1)) |p| {
         p.label(panel.path);
         p.separator();
         fileList(p, panel.files.items, &panel.selected, -2);
