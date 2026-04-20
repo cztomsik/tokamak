@@ -109,7 +109,7 @@ pub const Frame = struct {
 
     /// Draw chunk once at (x, y).
     pub fn draw(self: Frame, x: i32, y: i32, chunk: []const u8) void {
-        self.screen.splat(self.rect[0] + x, self.rect[1] + y, chunk, 1, self.style.fg);
+        self.screen.draw(self.rect[0] + x, self.rect[1] + y, chunk, self.style.fg);
     }
 
     /// Draw one frame of an animation, cycling by `tick`.

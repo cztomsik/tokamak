@@ -69,42 +69,45 @@ pub const Screen = struct {
         gpa.free(self.in.buffer.ptr[0 .. 2 * self.in.buffer.len]);
     }
 
+    pub fn refresh(self: *Screen, gpa: std.mem.Allocator) !void {
+        const size = try self.querySizeIoctl();
+        if (size[0] != self.width or size[1] != self.height) {
+            self.width = size[0];
+            self.height = size[1];
+            const total: usize = @intCast(self.width * self.height);
+            self.cells = try gpa.realloc(self.cells, total);
+        }
+    }
+
     pub fn clear(self: *Screen) void {
         @memset(self.cells, Cell{});
     }
 
-    // TODO: We should also add draw() for regular drawing (without repetition)
-    //       and then we could probably even decrese the buffer size here
-    //       and we could even consider using tk.ShortString instead for splats
-    //       and maybe we could use ShortString even instead of the codepoint itself
-    //       then we could avoid decoding/re-encoding and just update correct cells
-    pub fn splat(self: *Screen, x: i32, y: i32, bytes: []const u8, n: i32, fg: Color) void {
-        if (y < 0 or y >= self.height or n <= 0) return;
+    pub fn draw(self: *Screen, x: i32, y: i32, bytes: []const u8, fg: Color) void {
+        if (y < 0 or y >= self.height) return;
 
-        // Decode codepoints from bytes
-        var codepoints: [256]u21 = undefined;
-        var cp_len: usize = 0;
+        var col = x;
+        const view: std.unicode.Utf8View = .initUnchecked(bytes);
+        var it = view.iterator();
+
+        while (it.nextCodepoint()) |cp| : (col += 1) {
+            if (col >= self.width) break;
+            const idx: usize = @intCast(y * self.width + col);
+            self.cells[idx].char = cp;
+            self.cells[idx].fg = fg;
+        }
+    }
+
+    pub fn splat(self: *Screen, x: i32, y: i32, bytes: []const u8, n: i32, fg: Color) void {
+        if (n <= 0) return;
         const view = std.unicode.Utf8View.initUnchecked(bytes);
         var it = view.iterator();
-        while (it.nextCodepoint()) |cp| {
-            if (cp_len >= codepoints.len) break;
-            codepoints[cp_len] = cp;
-            cp_len += 1;
-        }
-        if (cp_len == 0) return;
-
-        const row_start: usize = @intCast(y * self.width);
-        var col = x;
+        var stride: i32 = 0;
+        while (it.nextCodepoint() != null) stride += 1;
+        if (stride == 0) return;
         var rep: i32 = 0;
         while (rep < n) : (rep += 1) {
-            for (codepoints[0..cp_len]) |cp| {
-                if (col >= 0 and col < self.width) {
-                    const idx = row_start + @as(usize, @intCast(col));
-                    self.cells[idx].char = cp;
-                    self.cells[idx].fg = fg;
-                }
-                col += 1;
-            }
+            self.draw(x + rep * stride, y, bytes, fg);
         }
     }
 
@@ -118,16 +121,6 @@ pub const Screen = struct {
 
         for (@as(usize, @intCast(start))..@as(usize, @intCast(end))) |col| {
             self.cells[row_start + col] = .{ .bg = bg };
-        }
-    }
-
-    pub fn refresh(self: *Screen, gpa: std.mem.Allocator) !void {
-        const size = try self.querySizeIoctl();
-        if (size[0] != self.width or size[1] != self.height) {
-            self.width = size[0];
-            self.height = size[1];
-            const total: usize = @intCast(self.width * self.height);
-            self.cells = try gpa.realloc(self.cells, total);
         }
     }
 

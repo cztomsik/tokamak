@@ -141,11 +141,12 @@ pub const Context = struct {
 
     pub fn beginFrame(self: *Context) !Builder {
         try self.screen.refresh(self.gpa);
-        self.screen.clear();
 
         self.stack[0] = .{ .frame = .{ .screen = &self.screen, .rect = .{ 0, 0, self.screen.width, self.screen.height }, .style = .{ .fg = self.theme.text } } };
         self.n_controls = 0;
         self.frame += 1;
+
+        self.stack[0].frame.fill(self.theme.base1);
 
         return .{
             .ctx = self,

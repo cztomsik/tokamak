@@ -42,8 +42,6 @@ var state: State = .{};
 const tab_items = [_][]const u8{ "Overview", "Settings", "Data" };
 
 fn myapp(ui: Builder) void {
-    ui.frame.fill(ui.ctx.theme.base1);
-
     appbar(ui);
 
     if (ui.grid(&.{ 30, -1 }, -1)) |g| {
@@ -66,7 +64,9 @@ fn myapp(ui: Builder) void {
 fn appbar(ui: Builder) void {
     if (ui.panel(&.{ -30, 30 }, 3)) |p| {
         p.label("MyApp");
-        p.tabs(&tab_items, &state.tab_sel);
+        if (p.tabs(tab_items.len, &state.tab_sel)) |t| {
+            for (tab_items) |item| t.item(item);
+        }
     }
 }
 

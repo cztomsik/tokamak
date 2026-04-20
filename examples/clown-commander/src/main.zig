@@ -93,8 +93,6 @@ var cmd: Commander = undefined;
 // --- UI ---
 
 fn app(ui: Builder) void {
-    ui.frame.fill(ui.ctx.theme.base1);
-
     if (ui.pushEq(2, -1)) |g| {
         filePanel(g, &cmd.panels[0]);
         filePanel(g, &cmd.panels[1]);

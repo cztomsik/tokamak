@@ -250,23 +250,28 @@ pub fn modal(ui: Builder, open: *bool, title: []const u8, w: i32, h: i32) ?Build
     return m.inset(.{ 1, 1, 1, 1 });
 }
 
-/// Render a tab bar. Left/right keys switch tabs. Returns the selected index.
-pub fn tabs(ui: Builder, items: []const []const u8, selected: *usize) void {
-    const r = ui.pushEq(@intCast(items.len), 1) orelse return;
+/// Render a tab bar. Left/right keys switch tabs.
+pub fn tabs(ui: Builder, n: usize, selected: *usize) ?TabBuilder {
+    if (n == 0) return null;
+    const r = ui.pushEq(@intCast(n), 1) orelse return null;
     const ctrl = ui.control();
-    const t = ui.ctx.theme;
-    ctrl.navigate(selected, items.len);
-
-    for (items, 0..) |item, i| {
-        const f = r.next(-1, 1) orelse return;
-        if (selected.* == i) {
-            f.fill(if (ctrl.focused()) t.primary else t.base2);
-            f.fg(t.text).at(1, 0).text(item);
-        } else {
-            f.at(1, 0).text(item);
-        }
-    }
+    ctrl.navigate(selected, n);
+    return .{ .r = r, .ctrl = ctrl, .selected = selected };
 }
+
+pub const TabBuilder = struct {
+    r: Builder,
+    ctrl: Control,
+    selected: *usize,
+
+    pub fn item(self: TabBuilder, lab: []const u8) void {
+        const i = self.r.container().index;
+        const f = self.r.next(-1, 1) orelse return;
+        const t = self.r.ctx.theme;
+        if (self.selected.* == i) f.fill(if (self.ctrl.focused()) t.primary else t.base2);
+        f.at(1, 0).text(lab);
+    }
+};
 
 /// Renders a key-value pair: "label: value" with the label dimmed.
 pub fn kvRow(ui: Builder, lab: []const u8, value: []const u8) void {
@@ -285,12 +290,9 @@ pub fn tree(ui: Builder, items: []const []const u8, depths: []const u8, selected
         var f = ui.next(-1, 1) orelse return;
         const depth: i32 = if (i < depths.len) @intCast(depths[i]) else 0;
         const indent = depth * 2;
+
         if (ctrl.focused() and selected.* == i) f = f.fg(ui.ctx.theme.primary);
-        if (selected.* == i) {
-            f.at(indent, 0).draw(0, 0, "> ");
-        } else {
-            f.at(indent, 0).draw(0, 0, "  ");
-        }
+        f.draw(indent, 0, if (selected.* == i) "> " else "  ");
         f.at(indent + 2, 0).text(item);
     }
 }
