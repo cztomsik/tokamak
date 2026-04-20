@@ -10,6 +10,7 @@
 // which is a bit like React hooks but way more limited.
 
 const std = @import("std");
+const util = @import("../util.zig");
 const Color = @import("color.zig").Color;
 const Builder = @import("builder.zig").Builder;
 const Control = @import("control.zig").Control;
@@ -35,8 +36,8 @@ pub fn grid(ui: Builder, widths: []const i32, height: i32) ?Builder {
 }
 
 /// Render a single line of text clipped to the next layout cell's width.
-pub fn text(ui: Builder, str: []const u8) void {
-    if (ui.next(-1, 1)) |f| f.text(str);
+pub fn text(ui: Builder, txt: []const u8) void {
+    if (ui.next(-1, 1)) |f| f.text(txt);
 }
 
 /// Alias to text(), at least for now
@@ -49,23 +50,10 @@ pub fn num(ui: Builder, value: anytype) void {
 }
 
 /// Render multiple lines of text, wrapping at width. Reserves the required height from layout.
-pub fn paragraph(ui: Builder, str: []const u8) void {
+pub fn paragraph(ui: Builder, txt: []const u8) void {
     const w: usize = @intCast((ui.peek(-1, -1) orelse return)[2]);
-    var n_lines: i32 = 1;
-    var col: usize = 0;
-    for (str) |ch| {
-        if (ch == '\n') {
-            n_lines += 1;
-            col = 0;
-        } else if (col == w) {
-            n_lines += 1;
-            col = 1;
-        } else {
-            col += 1;
-        }
-    }
-
-    if (ui.next(-1, n_lines)) |f| f.text(str);
+    const n_lines: i32 = @intCast(util.countLines(txt, w));
+    if (ui.next(-1, n_lines)) |f| f.text(txt);
 }
 
 /// Draws an ASCII border around a grid() and returns the inner scope.

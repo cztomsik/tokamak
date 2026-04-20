@@ -20,6 +20,66 @@ pub fn truncateStart(text: []const u8, width: usize) []const u8 {
     return if (text.len <= width) text else text[0..width];
 }
 
+pub fn wordWrap(str: []const u8, max_width: usize) WordWrapIterator {
+    return .{
+        .inner = std.unicode.Utf8View.initUnchecked(str).iterator(),
+        .max_width = max_width,
+    };
+}
+
+// TODO: This will NOT work for multi-codepoint emojis, but I'm not sure there's
+// anything we can do here without some grapheme-cluster segmentation and I'm
+// not sure if it's not even font-specific and... I'm not going to do that.
+pub const WordWrapIterator = struct {
+    inner: std.unicode.Utf8Iterator,
+    max_width: usize,
+    col: usize = 0,
+
+    pub fn next(self: *WordWrapIterator) ?[]const u8 {
+        const start = self.inner.i;
+
+        while (self.inner.nextCodepointSlice()) |s| {
+            self.col += 1;
+
+            if ((s.len == 1 and s[0] == '\n') or (self.col == self.max_width)) {
+                const line = trim(self.inner.bytes[start..self.inner.i]);
+                self.col = 0;
+                self.inner.bytes = trim(self.inner.bytes[self.inner.i..]);
+                self.inner.i = 0;
+                return line;
+            }
+        } else return if (start < self.inner.bytes.len) self.inner.bytes[start..self.inner.i] else null;
+    }
+};
+
+fn expectWrap(input: []const u8, max_width: usize, expected: []const []const u8) !void {
+    var it = wordWrap(input, max_width);
+    for (expected) |exp| {
+        const actual = it.next() orelse return error.TestUnexpectedResult;
+        try std.testing.expectEqualStrings(exp, actual);
+    } else if (it.next()) |_| return error.TestUnexpectedResult;
+}
+
+test wordWrap {
+    try expectWrap("hello world", 5, &.{ "hello", "world" });
+    try expectWrap("hello\nworld", 10, &.{ "hello", "world" });
+    try expectWrap("hello\n", 10, &.{"hello"});
+    try expectWrap("hello world", 5, &.{ "hello", "world" });
+    try expectWrap("😀😀😀", 2, &.{ "😀😀", "😀" });
+}
+
+pub fn countLines(str: []const u8, max_width: usize) usize {
+    var it = wordWrap(str, max_width);
+    var n: usize = 0;
+    while (it.next() != null) n += 1;
+    return n;
+}
+
+test countLines {
+    try std.testing.expectEqual(1, countLines("hello", 10));
+    try std.testing.expectEqual(2, countLines("hello\nworld", 10));
+}
+
 pub fn countScalar(comptime T: type, slice: []const T, value: T) usize {
     var n: usize = 0;
     for (slice) |c| {

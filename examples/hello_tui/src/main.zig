@@ -128,6 +128,9 @@ fn mainarea(ui: Builder) void {
                     sel.item("Option B");
                     sel.item("Option C");
                 }
+
+                col.header("Paragraph");
+                col.paragraph("Lorem ipsum dolor sit amet" ** 4);
             }
         }
     }

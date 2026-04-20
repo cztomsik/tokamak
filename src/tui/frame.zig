@@ -1,3 +1,4 @@
+const util = @import("../util.zig");
 const Screen = @import("screen.zig").Screen;
 const Color = @import("color.zig").Color;
 
@@ -121,32 +122,13 @@ pub const Frame = struct {
     /// If the frame is taller than one row, renders multiple lines with
     /// wrapping at width and honoring '\n'.
     pub fn text(self: Frame, str: []const u8) void {
-        if (self.rect[2] <= 0) return;
-        if (self.rect[3] <= 1) {
-            const max: usize = @intCast(self.rect[2]);
-            self.draw(0, 0, str[0..@min(str.len, max)]);
-            return;
-        }
-        const w: usize = @intCast(self.rect[2]);
+        if (self.rect[2] <= 0 or self.rect[3] <= 0) return;
+
+        var it = util.wordWrap(str, @intCast(self.rect[2]));
         var row: i32 = 0;
-        var start: usize = 0;
-        var col: usize = 0;
-        for (str, 0..) |ch, i| {
-            if (ch == '\n') {
-                self.draw(0, row, str[start..i]);
-                row += 1;
-                start = i + 1;
-                col = 0;
-            } else if (col == w) {
-                self.draw(0, row, str[start..i]);
-                row += 1;
-                start = i;
-                col = 1;
-            } else {
-                col += 1;
-            }
+        while (row < self.rect[3]) : (row += 1) {
+            self.draw(0, row, it.next() orelse return);
         }
-        if (start < str.len) self.draw(0, row, str[start..]);
     }
 
     /// Fill the entire frame background.
