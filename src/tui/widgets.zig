@@ -49,12 +49,12 @@ pub fn num(ui: Builder, value: anytype) void {
     ui.text(std.fmt.bufPrint(&buf, "{d}", .{value}) catch "");
 }
 
-/// Render multiple lines of text, wrapping at width. Reserves the required height from layout.
-/// If max_height >= 0, the height is capped at that value.
+/// Render multiple lines of text, wrapping at width. Reserves the required
+/// height from layout (max_height = -1 means auto).
 pub fn paragraph(ui: Builder, txt: []const u8, max_height: i32) void {
-    const max = (ui.peek(-1, max_height) orelse return);
-    const n_lines: i32 = @intCast(util.countLines(txt, @intCast(max[2])));
-    if (ui.next(-1, @min(n_lines, max[3]))) |f| f.text(txt);
+    const max_w = (ui.peek(-1, -1) orelse return)[2];
+    const n_lines: i32 = @intCast(util.countLines(txt, @intCast(max_w)));
+    if (ui.next(-1, if (max_height == -1) n_lines else @min(n_lines, max_height))) |f| f.text(txt);
 }
 
 /// Draws an ASCII border around a stack() and returns the inner scope.
