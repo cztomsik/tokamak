@@ -50,10 +50,11 @@ pub fn num(ui: Builder, value: anytype) void {
 }
 
 /// Render multiple lines of text, wrapping at width. Reserves the required height from layout.
-pub fn paragraph(ui: Builder, txt: []const u8) void {
-    const w: usize = @intCast((ui.peek(-1, -1) orelse return)[2]);
-    const n_lines: i32 = @intCast(util.countLines(txt, w));
-    if (ui.next(-1, n_lines)) |f| f.text(txt);
+/// If max_height >= 0, the height is capped at that value.
+pub fn paragraph(ui: Builder, txt: []const u8, max_height: i32) void {
+    const max = (ui.peek(-1, max_height) orelse return);
+    const n_lines: i32 = @intCast(util.countLines(txt, @intCast(max[2])));
+    if (ui.next(-1, @min(n_lines, max[3]))) |f| f.text(txt);
 }
 
 /// Draws an ASCII border around a grid() and returns the inner scope.
@@ -140,6 +141,7 @@ pub fn textInput(ui: Builder, buf: []u8, len: *usize) void {
 /// Render a radio-style picker. Up/down moves selection.
 pub fn select(ui: Builder, n: usize, selected: *usize) ?SelectBuilder {
     const st = ui.stack(@intCast(n)) orelse return null;
+    st.container().layout.spacing = 0; // TODO: either remove spacing, or make the API easier to use
     const ctrl = ui.control();
     ctrl.navigate(.{ .up, .down }, selected, n);
     return .{ .ui = st, .ctrl = ctrl, .selected = selected };

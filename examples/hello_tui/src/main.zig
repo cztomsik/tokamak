@@ -130,7 +130,8 @@ fn mainarea(ui: Builder) void {
                 }
 
                 col.header("Paragraph");
-                col.paragraph("Lorem ipsum dolor sit amet" ** 4);
+                col.paragraph("Lorem ipsum dolor sit amet. " ** 10, -1);
+                col.paragraph("Lorem ipsum dolor sit amet. " ** 10, 2);
             }
         }
     }
