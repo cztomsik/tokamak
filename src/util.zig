@@ -20,6 +20,18 @@ pub fn truncateStart(text: []const u8, width: usize) []const u8 {
     return if (text.len <= width) text else text[0..width];
 }
 
+pub fn split2(str: []const u8, delim: []const u8) struct { []const u8, []const u8 } {
+    var it = std.mem.splitSequence(u8, str, delim);
+    const head = it.next() orelse return .{ str, "" };
+    return .{ head, it.rest() };
+}
+
+test split2 {
+    try std.testing.expectEqualDeep(.{ "", "" }, split2("", " "));
+    try std.testing.expectEqualDeep(.{ "hello", "" }, split2("hello", " "));
+    try std.testing.expectEqualDeep(.{ "hello", "world" }, split2("hello world", " "));
+}
+
 pub fn wordWrap(str: []const u8, max_width: usize) WordWrapIterator {
     return .{
         .inner = std.unicode.Utf8View.initUnchecked(str).iterator(),
