@@ -41,7 +41,12 @@ pub const WordWrapIterator = struct {
         while (self.inner.nextCodepointSlice()) |s| {
             self.col += 1;
 
-            if ((s.len == 1 and s[0] == '\n') or (self.col == self.max_width)) {
+            if (s.len == 1 and s[0] == '\n') {
+                self.col = 0;
+                return self.inner.bytes[start .. self.inner.i - 1];
+            }
+
+            if (self.col == self.max_width) {
                 const line = trim(self.inner.bytes[start..self.inner.i]);
                 self.col = 0;
                 self.inner.bytes = trim(self.inner.bytes[self.inner.i..]);
@@ -66,6 +71,10 @@ test wordWrap {
     try expectWrap("hello\n", 10, &.{"hello"});
     try expectWrap("hello world", 5, &.{ "hello", "world" });
     try expectWrap("😀😀😀", 2, &.{ "😀😀", "😀" });
+
+    // TODO: word-boundaries, preserve indentation?
+    try expectWrap("a\n\nb", 80, &.{ "a", "", "b" });
+    try expectWrap("hi there", 5, &.{ "hi th", "ere" });
 }
 
 pub fn countLines(str: []const u8, max_width: usize) usize {
