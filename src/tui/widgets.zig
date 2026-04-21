@@ -53,7 +53,7 @@ pub fn num(ui: Builder, value: anytype) void {
 /// height from layout (max_height = -1 means auto).
 pub fn paragraph(ui: Builder, txt: []const u8, max_height: i32) void {
     const max_w = (ui.peek(-1, -1) orelse return)[2];
-    const n_lines: i32 = @intCast(util.countLines(txt, @intCast(max_w)));
+    const n_lines: i32 = @intCast(@max(1, util.countLines(txt, @intCast(max_w))));
     if (ui.next(-1, if (max_height == -1) n_lines else @min(n_lines, max_height))) |f| f.text(txt);
 }
 
