@@ -3,7 +3,7 @@ const ansi = @import("../ansi.zig");
 
 pub const Key = union(enum) {
     // zig fmt: off
-    char: u8,
+    char: u21,
     up, down, left, right,
     home, end, page_up, page_down,
     tab, shift_tab, enter, backspace, delete, escape,
@@ -23,12 +23,20 @@ pub fn readKey(reader: *std.io.Reader) !Key {
         '\t' => .tab,
         '\r', '\n' => .enter,
         0x7F, 0x08 => .backspace,
-        else => .{ .char = ch },
+        else => .{ .char = try readUtf8(reader, ch) },
     };
 }
 
 fn readByte(reader: *std.io.Reader) !u8 {
     return (try reader.take(1))[0];
+}
+
+fn readUtf8(reader: *std.io.Reader, first: u8) !u21 {
+    const seq_len = std.unicode.utf8ByteSequenceLength(first) catch 1;
+    if (seq_len == 1) return first;
+    var buf: [4]u8 = .{ first, undefined, undefined, undefined };
+    for (1..seq_len) |i| buf[i] = try readByte(reader);
+    return std.unicode.utf8Decode(buf[0..seq_len]) catch first;
 }
 
 fn readCSI(reader: *std.io.Reader) !Key {

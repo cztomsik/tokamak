@@ -76,8 +76,12 @@ pub const Builder = struct {
     pub const alert = widgets.alert;
     pub const spinner = widgets.spinner;
     pub const progress = widgets.progress;
-    pub const statusBar = widgets.statusBar;
+
+    pub const overlay = widgets.overlay;
+    pub const flash = widgets.flash;
     pub const modal = widgets.modal;
+
+    pub const statusBar = widgets.statusBar;
     pub const tabs = widgets.tabs;
     pub const menu = widgets.menu;
     pub const menuItem = widgets.menuItem;

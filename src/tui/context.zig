@@ -167,6 +167,7 @@ pub const Context = struct {
         self.n_controls = 0;
         self.frame += 1;
 
+        self.screen.clear();
         self.stack[0].frame.fill(self.theme.base1);
 
         return .{

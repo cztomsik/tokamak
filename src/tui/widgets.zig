@@ -134,8 +134,39 @@ pub fn textInput(ui: Builder, buf: []u8, len: *usize) void {
     ctrl.editText(buf, len);
 
     if (ctrl.focused()) f.fg = ui.ctx.theme.primary;
-    f.text(buf[0..len.*]);
-    if (ctrl.focused()) f.sub(@intCast(ctrl.cursor.*), 0, 1, 1).fill(ui.ctx.theme.text);
+
+    const w: usize = @intCast(f.width());
+    const content = buf[0..len.*];
+    const cur = ctrl.cursor.*;
+
+    // Convert byte cursor to display column count.
+    const cur_col = utf8ColCount(content[0..cur]);
+    // Scroll so the cursor is always visible within the frame width.
+    const scroll_cols: usize = if (w > 0 and cur_col >= w) cur_col - w + 1 else 0;
+    // Find byte offset corresponding to scroll_cols display columns.
+    const scroll = utf8ColToByteOffset(content, scroll_cols);
+    f.text(content[scroll..]);
+    if (ctrl.focused()) f.sub(@intCast(cur_col - scroll_cols), 0, 1, 1).fill(ui.ctx.theme.text);
+}
+
+/// Count the number of display columns in a UTF-8 byte slice (1 codepoint = 1 column).
+fn utf8ColCount(bytes: []const u8) usize {
+    const view: std.unicode.Utf8View = .initUnchecked(bytes);
+    var it = view.iterator();
+    var cols: usize = 0;
+    while (it.nextCodepoint() != null) cols += 1;
+    return cols;
+}
+
+/// Return the byte offset into `bytes` that corresponds to `cols` display columns.
+fn utf8ColToByteOffset(bytes: []const u8, cols: usize) usize {
+    const view: std.unicode.Utf8View = .initUnchecked(bytes);
+    var it = view.iterator();
+    var c: usize = 0;
+    while (c < cols) : (c += 1) {
+        if (it.nextCodepoint() == null) break;
+    }
+    return @intFromPtr(it.peek(1).ptr) - @intFromPtr(bytes.ptr);
 }
 
 /// Render a radio-style picker. Up/down moves selection.
@@ -200,6 +231,50 @@ pub fn progress(ui: Builder, value: f32) void {
     if (ui.next(-1, 1)) |f| f.hbar(value, .yellow);
 }
 
+/// Render a full-screen overlay with z=100, always on top of other content.
+pub fn overlay(ui: Builder, width: i32, height: i32) ?Builder {
+    // TODO: find a way how to push new container without claiming a cell
+    const old = ui.container().layout;
+    defer ui.container().layout = old;
+
+    const o = ui.stack(1) orelse return null;
+    o.frame.* = ui.ctx.stack[0].frame.center(width, height);
+    o.frame.z = 100;
+    return o;
+}
+
+/// Render short message in always on top overlay.
+pub fn flash(ui: Builder, msg: []const u8) void {
+    if (ui.overlay(48, 10)) |o| {
+        o.frame.fill(ui.ctx.theme.base3);
+        o.frame.border();
+        o.frame.sub(1, 1, 46, 8).text(msg);
+        o.frame.shadow();
+    }
+}
+
+/// Render a centered modal overlay with border, shadow, and title.
+pub fn modal(ui: Builder, open: *bool, title: []const u8, w: i32, h: i32) ?Builder {
+    if (ui.ctx.last_key != null and ui.ctx.last_key.? == .escape) {
+        open.* = false;
+        ui.ctx.last_key = null;
+        return null;
+    }
+
+    if (ui.ctx.focus < ui.ctx.n_controls) {
+        ui.ctx.focus = @max(ui.ctx.focus, ui.ctx.n_controls); // focus next
+        ui.ctx.last_key = null; // prevent instant interactivity
+    }
+
+    const m = ui.stack(1) orelse return null;
+    m.frame.* = ui.ctx.stack[0].frame.center(w, h);
+    m.frame.fill(ui.ctx.theme.base3);
+    m.frame.border();
+    m.frame.top(1).hcenter(@intCast(title.len)).text(title);
+    m.frame.shadow();
+    return m.inset(.{ 1, 1, 1, 1 });
+}
+
 /// Render text pinned to the bottom row of the screen, outside the layout.
 pub fn statusBar(ui: Builder, txt: []const u8) void {
     const t = ui.ctx.theme;
@@ -228,28 +303,6 @@ pub const MenuBuilder = struct {
         return if (self.bar.ctx.last_key) |k| std.meta.eql(k, key) else false;
     }
 };
-
-/// Render a centered modal overlay with border, shadow, and title.
-pub fn modal(ui: Builder, open: *bool, title: []const u8, w: i32, h: i32) ?Builder {
-    if (ui.ctx.last_key != null and ui.ctx.last_key.? == .escape) {
-        open.* = false;
-        ui.ctx.last_key = null;
-        return null;
-    }
-
-    if (ui.ctx.focus < ui.ctx.n_controls) {
-        ui.ctx.focus = @max(ui.ctx.focus, ui.ctx.n_controls); // focus next
-        ui.ctx.last_key = null; // prevent instant interactivity
-    }
-
-    const m = ui.stack(1) orelse return null;
-    m.frame.* = ui.ctx.stack[0].frame.center(w, h);
-    m.frame.fill(ui.ctx.theme.base3);
-    m.frame.border();
-    m.frame.top(1).hcenter(@intCast(title.len)).text(title);
-    m.frame.shadow();
-    return m.inset(.{ 1, 1, 1, 1 });
-}
 
 /// Render a tab bar. Left/right keys switch tabs.
 pub fn tabs(ui: Builder, n: usize, selected: *usize) ?TabBuilder {

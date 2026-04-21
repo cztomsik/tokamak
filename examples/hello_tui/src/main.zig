@@ -93,8 +93,7 @@ fn mainarea(ui: Builder) void {
         if (p.grid(&.{ -32, -1 }, -1)) |cols| {
             if (cols.stack(-1)) |col| {
                 if (col.collapsible("Buttons", &state.flags[0])) {
-                    if (col.button("OK")) state.flags[0] = false;
-                    if (col.button("Cancel")) state.flags[0] = false;
+                    if (col.button("Show hello")) col.flash("Hello world!");
                     if (col.button("Reset All...")) state.confirm_reset = true;
                 }
 

@@ -53,31 +53,49 @@ pub const Control = struct {
         cur.* = @min(cur.*, len.*);
 
         switch (self.pendingKey() orelse return) {
-            .char => |ch| if (std.ascii.isPrint(ch) and len.* < buf.len) {
-                std.mem.copyBackwards(u8, buf[cur.* + 1 .. len.* + 1], buf[cur.*..len.*]);
-                buf[cur.*] = ch;
-                cur.* += 1;
-                len.* += 1;
+            .char => |ch| {
+                var enc: [4]u8 = undefined;
+                const n = std.unicode.utf8Encode(ch, &enc) catch return;
+                if (len.* + n > buf.len) return;
+                std.mem.copyBackwards(u8, buf[cur.* + n .. len.* + n], buf[cur.*..len.*]);
+                @memcpy(buf[cur.* .. cur.* + n], enc[0..n]);
+                cur.* += n;
+                len.* += n;
             },
             .backspace => if (cur.* > 0) {
-                std.mem.copyForwards(u8, buf[cur.* - 1 .. len.* - 1], buf[cur.*..len.*]);
-                cur.* -= 1;
-                len.* -= 1;
+                const n = prevCodepointLen(buf[0..cur.*]);
+                std.mem.copyForwards(u8, buf[cur.* - n .. len.* - n], buf[cur.*..len.*]);
+                cur.* -= n;
+                len.* -= n;
             },
             .delete => if (cur.* < len.*) {
-                std.mem.copyForwards(u8, buf[cur.* .. len.* - 1], buf[cur.* + 1 .. len.*]);
-                len.* -= 1;
+                const n = std.unicode.utf8ByteSequenceLength(buf[cur.*]) catch 1;
+                const end = @min(cur.* + n, len.*);
+                std.mem.copyForwards(u8, buf[cur.* .. len.* - (end - cur.*)], buf[end..len.*]);
+                len.* -= end - cur.*;
             },
             .left => if (cur.* > 0) {
-                cur.* -= 1;
+                cur.* -= prevCodepointLen(buf[0..cur.*]);
             },
             .right => if (cur.* < len.*) {
-                cur.* += 1;
+                cur.* += std.unicode.utf8ByteSequenceLength(buf[cur.*]) catch 1;
+                cur.* = @min(cur.*, len.*);
             },
-            .home => cur.* = 0,
-            .end => cur.* = len.*,
+            .home, .up => cur.* = 0,
+            .end, .down => cur.* = len.*,
             else => {},
         }
+    }
+
+    /// Return the byte length of the codepoint just before `pos` in `text`.
+    fn prevCodepointLen(text: []const u8) usize {
+        var i = text.len;
+        while (i > 0) {
+            i -= 1;
+            // Continuation bytes have the pattern 10xxxxxx
+            if (text[i] & 0xC0 != 0x80) break;
+        }
+        return text.len - i;
     }
 
     pub fn editNumber(self: Control, value: *i32) void {
