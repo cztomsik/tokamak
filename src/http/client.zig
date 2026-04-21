@@ -160,7 +160,7 @@ test {
         // .post("/echo", tk.meta.dupe),
     };
 
-    var server = try tk.Server.init(std.testing.allocator, routes, .{});
+    var server = try tk.Server.init(std.testing.allocator, routes, .{ .listen = .{ .port = 8081 } });
     defer server.deinit();
 
     var thread = try std.Thread.spawn(.{}, tk.Server.start, .{&server});
@@ -175,7 +175,7 @@ test {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
 
-    const res1 = try client.request(arena.allocator(), .{ .url = "http://localhost:8080/ping" });
+    const res1 = try client.request(arena.allocator(), .{ .url = "http://localhost:8081/ping" });
     try std.testing.expectEqual(.ok, res1.status);
     try std.testing.expectEqualStrings("pong", res1.body);
 }
