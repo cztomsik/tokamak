@@ -76,11 +76,11 @@ pub fn header(ui: Builder, title: []const u8) void {
 
 /// Render a collapsible section. Toggles `open` on Enter/Space.
 pub fn collapsible(ui: Builder, lab: []const u8, open: *bool) bool {
-    const frame = ui.next(-1, 1) orelse return open.*;
+    var f = ui.next(-1, 1) orelse return open.*;
     const ctrl = ui.control();
     ctrl.toggle(open);
 
-    const f = if (ctrl.focused()) frame.fg(ui.ctx.theme.primary) else frame;
+    if (ctrl.focused()) f.fg = ui.ctx.theme.primary;
     f.draw(0, 0, if (open.*) "▼" else "▶");
     f.at(2, 0).text(lab);
 
@@ -110,7 +110,7 @@ pub fn checkbox(ui: Builder, lab: []const u8, checked: *bool) void {
     const ctrl = ui.control();
     ctrl.toggle(checked);
 
-    if (ctrl.focused()) f = f.fg(ui.ctx.theme.primary);
+    if (ctrl.focused()) f.fg = ui.ctx.theme.primary;
     f.left(4).text(if (checked.*) "[x] " else "[ ] ");
     f.at(4, 0).text(lab);
 }
@@ -122,7 +122,7 @@ pub fn numberInput(ui: Builder, value: *i32, step: i32) void {
     ctrl.editNumber(value); // TODO: This should also take min, max, step
     ctrl.stepNumber(value, -1000, 1000, step);
 
-    if (ctrl.focused()) f = f.fg(ui.ctx.theme.primary);
+    if (ctrl.focused()) f.fg = ui.ctx.theme.primary;
     var buf: [64]u8 = undefined;
     f.text(std.fmt.bufPrint(&buf, "{d}", .{value.*}) catch "");
 }
@@ -133,7 +133,7 @@ pub fn textInput(ui: Builder, buf: []u8, len: *usize) void {
     const ctrl = ui.control();
     ctrl.editText(buf, len);
 
-    if (ctrl.focused()) f = f.fg(ui.ctx.theme.primary);
+    if (ctrl.focused()) f.fg = ui.ctx.theme.primary;
     f.text(buf[0..len.*]);
     if (ctrl.focused()) f.sub(@intCast(ctrl.cursor.*), 0, 1, 1).fill(ui.ctx.theme.text);
 }
@@ -155,7 +155,7 @@ pub const SelectBuilder = struct {
     pub fn item(self: SelectBuilder, lab: []const u8) void {
         const i = self.ui.container().index;
         var f = self.ui.next(-1, 1) orelse return;
-        if (self.ctrl.focused() and self.selected.* == i) f = f.fg(self.ui.ctx.theme.primary);
+        if (self.ctrl.focused() and self.selected.* == i) f.fg = self.ui.ctx.theme.primary;
         f.left(4).text(if (self.selected.* == i) "(*) " else "( ) ");
         f.at(4, 0).text(lab);
     }
@@ -167,7 +167,7 @@ pub fn slider(ui: Builder, value: *f32, step: f32) void {
     const ctrl = ui.control();
     ctrl.stepNumber(value, 0, 1, step);
 
-    if (ctrl.focused()) f = f.fg(ui.ctx.theme.primary);
+    if (ctrl.focused()) f.fg = ui.ctx.theme.primary;
     f.draw(0, 0, "◄");
     f.draw(f.width() - 1, 0, "►");
 
@@ -186,7 +186,7 @@ pub fn alert(ui: Builder, msg: []const u8, level: enum { info, warn, err }) void
         .err => .{ .red, "x" },
     };
 
-    f.left(1).fg(color).text(icon);
+    f.left(1).with("fg", color).text(icon);
     f.at(2, 0).text(msg);
 }
 
@@ -205,7 +205,7 @@ pub fn statusBar(ui: Builder, txt: []const u8) void {
     const t = ui.ctx.theme;
     const f = ui.ctx.stack[0].frame.bottom(1);
     f.fill(t.accent);
-    f.fg(t.base3).text(txt);
+    f.with("fg", t.base3).text(txt);
 }
 
 /// Begin F1-F10 menu bar pinned to the bottom of the screen.
@@ -222,8 +222,8 @@ pub const MenuBuilder = struct {
     pub fn item(self: MenuBuilder, key: Key, txt: []const u8) bool {
         const f = self.bar.next(-1, 1) orelse return false;
         f.left(2).fill(self.bar.ctx.theme.accent);
-        f.fg(self.bar.ctx.theme.base1).text(@tagName(key));
-        f.at(2, 0).fg(self.bar.ctx.theme.secondary).text(txt);
+        f.with("fg", self.bar.ctx.theme.base1).text(@tagName(key));
+        f.at(2, 0).with("fg", self.bar.ctx.theme.secondary).text(txt);
 
         return if (self.bar.ctx.last_key) |k| std.meta.eql(k, key) else false;
     }
@@ -278,7 +278,7 @@ pub const TabBuilder = struct {
 pub fn kvRow(ui: Builder, lab: []const u8, value: []const u8) void {
     const f = ui.next(-1, 1) orelse return;
     const lw: i32 = @intCast(lab.len + 2);
-    f.fg(ui.ctx.theme.accent).left(lw).text(lab);
+    f.with("fg", ui.ctx.theme.accent).left(lw).text(lab);
     f.at(lw, 0).draw(0, 0, value);
 }
 
@@ -292,7 +292,7 @@ pub fn tree(ui: Builder, items: []const []const u8, depths: []const u8, selected
         const depth: i32 = if (i < depths.len) @intCast(depths[i]) else 0;
         const indent = depth * 2;
 
-        if (ctrl.focused() and selected.* == i) f = f.fg(ui.ctx.theme.primary);
+        if (ctrl.focused() and selected.* == i) f.fg = ui.ctx.theme.primary;
         f.draw(indent, 0, if (selected.* == i) "> " else "  ");
         f.at(indent + 2, 0).text(item);
     }

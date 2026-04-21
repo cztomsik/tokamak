@@ -6,6 +6,7 @@ pub const Cell = struct {
     char: u21 = ' ',
     fg: Color = .white,
     bg: Color = .black,
+    z: i32 = 0,
 };
 
 pub const Screen = struct {
@@ -83,7 +84,7 @@ pub const Screen = struct {
         @memset(self.cells, Cell{});
     }
 
-    pub fn draw(self: *Screen, x: i32, y: i32, bytes: []const u8, fg: Color) void {
+    pub fn draw(self: *Screen, x: i32, y: i32, z: i32, bytes: []const u8, fg: Color) void {
         if (y < 0 or y >= self.height) return;
 
         var col = x;
@@ -93,12 +94,14 @@ pub const Screen = struct {
         while (it.nextCodepoint()) |cp| : (col += 1) {
             if (col >= self.width) break;
             const idx: usize = @intCast(y * self.width + col);
+            if (z < self.cells[idx].z) continue;
             self.cells[idx].char = cp;
             self.cells[idx].fg = fg;
+            self.cells[idx].z = z;
         }
     }
 
-    pub fn splat(self: *Screen, x: i32, y: i32, bytes: []const u8, n: i32, fg: Color) void {
+    pub fn splat(self: *Screen, x: i32, y: i32, z: i32, bytes: []const u8, n: i32, fg: Color) void {
         if (n <= 0) return;
         const view = std.unicode.Utf8View.initUnchecked(bytes);
         var it = view.iterator();
@@ -107,11 +110,11 @@ pub const Screen = struct {
         if (stride == 0) return;
         var rep: i32 = 0;
         while (rep < n) : (rep += 1) {
-            self.draw(x + rep * stride, y, bytes, fg);
+            self.draw(x + rep * stride, y, z, bytes, fg);
         }
     }
 
-    pub fn fill(self: *Screen, x: i32, y: i32, w: i32, bg: Color) void {
+    pub fn fill(self: *Screen, x: i32, y: i32, z: i32, w: i32, bg: Color) void {
         if (y < 0 or y >= self.height or w <= 0) return;
 
         const row_start: usize = @intCast(y * self.width);
@@ -120,7 +123,8 @@ pub const Screen = struct {
         if (start >= end) return;
 
         for (@as(usize, @intCast(start))..@as(usize, @intCast(end))) |col| {
-            self.cells[row_start + col] = .{ .bg = bg };
+            if (z < self.cells[row_start + col].z) continue;
+            self.cells[row_start + col] = .{ .bg = bg, .z = z };
         }
     }
 
@@ -128,13 +132,13 @@ pub const Screen = struct {
         const w: usize = @intCast(self.width);
         const h: usize = @intCast(self.height);
 
-        // Cursor home
-        try self.out.writeAll(ansi.cp);
-
         var cur_fg: Color = .white;
         var cur_bg: Color = .black;
 
         for (0..h) |row| {
+            // Move cursor to start of row to contain wide-char layout damage (single emoji ruining layout for the whole app)
+            try self.out.print(ansi.csi ++ "{d};1H", .{row + 1});
+
             const row_start = row * w;
             for (0..w) |col| {
                 const cell = self.cells[row_start + col];

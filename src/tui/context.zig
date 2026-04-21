@@ -106,7 +106,7 @@ pub const Container = struct {
 };
 
 test Container {
-    var stack: [2]Container = @splat(.{ .frame = .{ .rect = .{ 0, 0, 100, 100 }, .screen = undefined, .style = undefined } });
+    var stack: [2]Container = @splat(.{ .frame = .{ .rect = .{ 0, 0, 100, 100 }, .screen = undefined, .fg = undefined } });
     const row = stack[0].pushEq(4, 1).?;
     try std.testing.expectEqual(.{ 0, 0, 25, 1 }, row.next(-1, 1).?.rect);
 }
@@ -161,7 +161,7 @@ pub const Context = struct {
     pub fn beginFrame(self: *Context) !Builder {
         try self.screen.refresh(self.gpa);
 
-        self.stack[0] = .{ .frame = .{ .screen = &self.screen, .rect = .{ 0, 0, self.screen.width, self.screen.height }, .style = .{ .fg = self.theme.text } } };
+        self.stack[0] = .{ .frame = .{ .screen = &self.screen, .rect = .{ 0, 0, self.screen.width, self.screen.height }, .fg = self.theme.text } };
         self.state_len = self.n_state;
         self.n_state = 0;
         self.n_controls = 0;
@@ -177,6 +177,7 @@ pub const Context = struct {
 
     pub fn endFrame(self: *Context) !void {
         try self.screen.flush();
+        self.last_key = null;
     }
 
     pub fn getState(self: *Context, key: u64, comptime T: type, default: T) *T {

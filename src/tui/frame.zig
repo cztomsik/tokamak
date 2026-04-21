@@ -2,25 +2,17 @@ const util = @import("../util.zig");
 const Screen = @import("screen.zig").Screen;
 const Color = @import("color.zig").Color;
 
-pub const Style = struct {
-    fg: Color,
-};
-
 pub const Frame = struct {
     screen: *Screen,
     rect: [4]i32, // absolute x, y, w, h
-    style: Style,
+    fg: Color = .white,
+    z: i8 = 0,
 
     /// Return a copy of self with one field replaced.
     pub fn with(self: Frame, comptime field: []const u8, value: @FieldType(Frame, field)) Frame {
         var copy = self;
         @field(copy, field) = value;
         return copy;
-    }
-
-    /// Return a copy with the foreground color set.
-    pub fn fg(self: Frame, color: Color) Frame {
-        return self.with("style", .{ .fg = color });
     }
 
     /// True if the frame has zero or negative dimensions.
@@ -110,7 +102,7 @@ pub const Frame = struct {
 
     /// Draw a chunk once at (x, y).
     pub fn draw(self: Frame, x: i32, y: i32, chunk: []const u8) void {
-        self.screen.draw(self.rect[0] + x, self.rect[1] + y, chunk, self.style.fg);
+        self.screen.draw(self.rect[0] + x, self.rect[1] + y, self.z, chunk, self.fg);
     }
 
     /// Draw one frame of an animation, cycling by `tick`.
@@ -135,7 +127,7 @@ pub const Frame = struct {
     pub fn fill(self: Frame, bg: Color) void {
         var row: i32 = 0;
         while (row < self.rect[3]) : (row += 1) {
-            self.screen.fill(self.rect[0], self.rect[1] + row, self.rect[2], bg);
+            self.screen.fill(self.rect[0], self.rect[1] + row, self.z, self.rect[2], bg);
         }
     }
 
@@ -143,7 +135,7 @@ pub const Frame = struct {
     pub fn splat(self: Frame, chunk: []const u8) void {
         var row: i32 = 0;
         while (row < self.rect[3]) : (row += 1) {
-            self.screen.splat(self.rect[0], self.rect[1] + row, chunk, self.rect[2], self.style.fg);
+            self.screen.splat(self.rect[0], self.rect[1] + row, self.z, chunk, self.rect[2], self.fg);
         }
     }
 

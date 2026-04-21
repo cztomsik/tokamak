@@ -140,7 +140,7 @@ fn fileList(ui: Builder, items: []const DirEntry, selected: *usize, height: i32)
     while (i < items.len and i < scroll + visible) : (i += 1) {
         var f = inner.next(-1, 1) orelse return;
         const is_sel = i == selected.*;
-        if (ctrl.focused() and is_sel) f = f.fg(ui.ctx.theme.primary);
+        if (ctrl.focused() and is_sel) f.fg = ui.ctx.theme.primary;
         f.left(2).text(if (is_sel) "> " else "  ");
         const file = items[i];
         if (file.kind == .directory) {
