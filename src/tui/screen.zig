@@ -34,8 +34,8 @@ pub const Screen = struct {
         raw.lflag = .{};
         raw.iflag = .{};
         raw.cflag.CSIZE = .CS8;
-        raw.cc[@intFromEnum(std.posix.V.MIN)] = 1;
-        raw.cc[@intFromEnum(std.posix.V.TIME)] = 0;
+        raw.cc[@intFromEnum(std.posix.V.MIN)] = 0;
+        raw.cc[@intFromEnum(std.posix.V.TIME)] = 1;
 
         try std.posix.tcsetattr(stdin.handle, .FLUSH, raw);
 

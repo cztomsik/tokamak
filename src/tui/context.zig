@@ -11,7 +11,7 @@ const N_MAX_STATE = 256;
 
 pub const Key = input.Key;
 
-pub const Event = union(enum) { render: Builder, key: Key };
+pub const Event = union(enum) { render: Builder, key: Key, idle };
 
 /// Encode a percentage as a fixed-point value below -100_000
 pub fn perc(v: f32) i32 {
@@ -140,7 +140,7 @@ pub const Context = struct {
     n_controls: u32 = 0,
     focus: u32 = 0,
     pending_key: ?Key = null,
-    next_tick: enum { clear, render, flush, read } = .clear,
+    next_tick: enum { clear, render, flush, poll, idle } = .render,
     frame: u64 = 0,
 
     const State = struct { key: u64 = 0, tid: [*:0]const u8 = @typeName(void), data: u64 = undefined };
@@ -185,19 +185,26 @@ pub const Context = struct {
 
                 self.screen.clear();
                 self.stack[0].frame.fill(self.theme.base1);
-                self.next_tick = .flush;
 
-                return .{
-                    .render = .{ .ctx = self, .frame = &self.stack[0].frame },
-                };
+                self.next_tick = .flush;
+                return .{ .render = .{ .ctx = self, .frame = &self.stack[0].frame } };
             },
             .flush => {
+                self.pending_key = null;
                 try self.screen.flush();
-                continue :next .read;
+                continue :next .poll;
             },
-            .read => {
-                self.next_tick = .render;
-                return .{ .key = try input.readKey(self.screen.in) };
+            .poll => {
+                if (try input.pollKey(&self.screen.fin, 100)) |k| {
+                    self.next_tick = .render;
+                    return .{ .key = k };
+                }
+
+                continue :next .idle;
+            },
+            .idle => {
+                self.next_tick = .poll;
+                return .idle;
             },
         }
     }

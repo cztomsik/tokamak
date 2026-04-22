@@ -247,6 +247,7 @@ pub fn main() !void {
                 .ctrl_c => cmd.quit = true,
                 else => cx.pending_key = k,
             },
+            else => {},
         }
     }
 }

@@ -15,6 +15,7 @@ pub fn main() !void {
                 .ctrl_c, .escape => break,
                 else => cx.pending_key = k,
             },
+            else => cx.next_tick = .render, // animate spinner
         }
     }
 }

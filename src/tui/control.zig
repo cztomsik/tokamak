@@ -87,8 +87,10 @@ pub fn Control(comptime T: type) type {
                 },
                 .home, .up => cur.* = 0,
                 .end, .down => cur.* = len.*,
-                else => {},
+                else => return,
             }
+
+            self.ctx.next_tick = .clear;
         }
 
         /// Return the byte length of the codepoint just before `pos` in `text`.
