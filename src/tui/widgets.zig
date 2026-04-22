@@ -60,7 +60,7 @@ pub fn paragraph(ui: Builder, txt: []const u8, max_height: i32) void {
 /// Draws an ASCII border around a stack() and returns the inner scope.
 pub fn panel(ui: Builder, height: i32) ?Builder {
     const s = ui.stack(height) orelse return null;
-    s.frame.border();
+    s.frame.border(.all);
     return s.inset(.{ 1, 1, 1, 1 });
 }
 
@@ -77,10 +77,10 @@ pub fn header(ui: Builder, title: []const u8) void {
 /// Render a collapsible section. Toggles `open` on Enter/Space.
 pub fn collapsible(ui: Builder, lab: []const u8, open: *bool) bool {
     var f = ui.next(-1, 1) orelse return open.*;
-    const ctrl = ui.control();
-    ctrl.toggle(open);
+    const ctrl = ui.control(open);
+    if (ctrl.pressed()) ctrl.toggle();
 
-    if (ctrl.focused()) f.fg = ui.ctx.theme.primary;
+    if (ctrl.focused) f.fg = ui.ctx.theme.primary;
     f.draw(0, 0, if (open.*) "▼" else "▶");
     f.at(2, 0).text(lab);
 
@@ -95,22 +95,27 @@ pub fn separator(ui: Builder) void {
 /// Render a centered button with a solid background. Returns true when clicked (Enter/Space).
 pub fn button(ui: Builder, lab: []const u8) bool {
     const f = ui.next(-1, 1) orelse return false;
-    const ctrl = ui.control();
+    const ctrl = ui.control(@as(*void, undefined));
     const t = ui.ctx.theme;
 
-    f.fill(if (ctrl.focused()) t.primary else t.accent);
+    f.fill(if (ctrl.focused) t.primary else t.accent);
     f.hcenter(@intCast(lab.len)).text(lab);
 
-    return ctrl.pressed();
+    if (ctrl.pressed()) {
+        ui.ctx.next_tick = .clear;
+        return true;
+    }
+
+    return false;
 }
 
 /// Render a checkbox. Enter/space toggles the value.
 pub fn checkbox(ui: Builder, lab: []const u8, checked: *bool) void {
     var f = ui.next(-1, 1) orelse return;
-    const ctrl = ui.control();
-    ctrl.toggle(checked);
+    const ctrl = ui.control(checked);
+    if (ctrl.pressed()) ctrl.toggle();
 
-    if (ctrl.focused()) f.fg = ui.ctx.theme.primary;
+    if (ctrl.focused) f.fg = ui.ctx.theme.primary;
     f.left(4).text(if (checked.*) "[x] " else "[ ] ");
     f.at(4, 0).text(lab);
 }
@@ -118,11 +123,11 @@ pub fn checkbox(ui: Builder, lab: []const u8, checked: *bool) void {
 /// Render an interactive number input.
 pub fn numberInput(ui: Builder, value: *i32, step: i32) void {
     var f = ui.next(-1, 1) orelse return;
-    const ctrl = ui.control();
-    ctrl.editNumber(value); // TODO: This should also take min, max, step
-    ctrl.stepNumber(value, -1000, 1000, step);
+    const ctrl = ui.control(value);
+    ctrl.editNumber(); // TODO: This should also take min, max, step
+    ctrl.stepNumber(-1000, 1000, step);
 
-    if (ctrl.focused()) f.fg = ui.ctx.theme.primary;
+    if (ctrl.focused) f.fg = ui.ctx.theme.primary;
     var buf: [64]u8 = undefined;
     f.text(std.fmt.bufPrint(&buf, "{d}", .{value.*}) catch "");
 }
@@ -130,23 +135,23 @@ pub fn numberInput(ui: Builder, value: *i32, step: i32) void {
 /// Render an editable single-line text field.
 pub fn textInput(ui: Builder, buf: []u8, len: *usize) void {
     var f = ui.next(-1, 1) orelse return;
-    const ctrl = ui.control();
-    ctrl.editText(buf, len);
+    const ctrl = ui.control(len);
+    const cur = ui.state(usize, len.*);
+    ctrl.editText(buf, len, cur);
 
-    if (ctrl.focused()) f.fg = ui.ctx.theme.primary;
+    if (ctrl.focused) f.fg = ui.ctx.theme.primary;
 
     const w: usize = @intCast(f.width());
     const content = buf[0..len.*];
-    const cur = ctrl.cursor.*;
 
     // Convert byte cursor to display column count.
-    const cur_col = utf8ColCount(content[0..cur]);
+    const cur_col = utf8ColCount(content[0..cur.*]);
     // Scroll so the cursor is always visible within the frame width.
     const scroll_cols: usize = if (w > 0 and cur_col >= w) cur_col - w + 1 else 0;
     // Find byte offset corresponding to scroll_cols display columns.
     const scroll = utf8ColToByteOffset(content, scroll_cols);
     f.text(content[scroll..]);
-    if (ctrl.focused()) f.sub(@intCast(cur_col - scroll_cols), 0, 1, 1).fill(ui.ctx.theme.text);
+    if (ctrl.focused) f.sub(@intCast(cur_col - scroll_cols), 0, 1, 1).fill(ui.ctx.theme.text);
 }
 
 /// Count the number of display columns in a UTF-8 byte slice (1 codepoint = 1 column).
@@ -173,21 +178,20 @@ fn utf8ColToByteOffset(bytes: []const u8, cols: usize) usize {
 pub fn select(ui: Builder, n: usize, selected: *usize) ?SelectBuilder {
     const st = ui.stack(@intCast(n)) orelse return null;
     st.container().layout.spacing = 0; // TODO: either remove spacing, or make the API easier to use
-    const ctrl = ui.control();
-    ctrl.navigate(.{ .up, .down }, selected, n);
-    return .{ .ui = st, .ctrl = ctrl, .selected = selected };
+    const ctrl = ui.control(selected);
+    ctrl.navigate(.{ .up, .down }, n);
+    return .{ .ui = st, .ctrl = ctrl };
 }
 
 pub const SelectBuilder = struct {
     ui: Builder,
-    ctrl: Control,
-    selected: *usize,
+    ctrl: Control(usize),
 
     pub fn item(self: SelectBuilder, lab: []const u8) void {
         const i = self.ui.container().index;
         var f = self.ui.next(-1, 1) orelse return;
-        if (self.ctrl.focused() and self.selected.* == i) f.fg = self.ui.ctx.theme.primary;
-        f.left(4).text(if (self.selected.* == i) "(*) " else "( ) ");
+        if (self.ctrl.focused and self.ctrl.value.* == i) f.fg = self.ui.ctx.theme.primary;
+        f.left(4).text(if (self.ctrl.value.* == i) "(*) " else "( ) ");
         f.at(4, 0).text(lab);
     }
 };
@@ -195,10 +199,10 @@ pub const SelectBuilder = struct {
 /// Render an interactive slider. Left/right keys adjust the value by `step`.
 pub fn slider(ui: Builder, value: *f32, step: f32) void {
     var f = ui.next(-1, 1) orelse return;
-    const ctrl = ui.control();
-    ctrl.stepNumber(value, 0, 1, step);
+    const ctrl = ui.control(value);
+    ctrl.stepNumber(0, 1, step);
 
-    if (ctrl.focused()) f.fg = ui.ctx.theme.primary;
+    if (ctrl.focused) f.fg = ui.ctx.theme.primary;
     f.draw(0, 0, "◄");
     f.draw(f.width() - 1, 0, "►");
 
@@ -247,7 +251,7 @@ pub fn overlay(ui: Builder, width: i32, height: i32) ?Builder {
 pub fn flash(ui: Builder, msg: []const u8) void {
     if (ui.overlay(48, 10)) |o| {
         o.frame.fill(ui.ctx.theme.base3);
-        o.frame.border();
+        o.frame.border(.all);
         o.frame.sub(1, 1, 46, 8).text(msg);
         o.frame.shadow();
     }
@@ -255,21 +259,21 @@ pub fn flash(ui: Builder, msg: []const u8) void {
 
 /// Render a centered modal overlay with border, shadow, and title.
 pub fn modal(ui: Builder, open: *bool, title: []const u8, w: i32, h: i32) ?Builder {
-    if (ui.ctx.last_key != null and ui.ctx.last_key.? == .escape) {
+    if (ui.ctx.pending_key != null and ui.ctx.pending_key.? == .escape) {
         open.* = false;
-        ui.ctx.last_key = null;
+        ui.ctx.pending_key = null;
         return null;
     }
 
     if (ui.ctx.focus < ui.ctx.n_controls) {
         ui.ctx.focus = @max(ui.ctx.focus, ui.ctx.n_controls); // focus next
-        ui.ctx.last_key = null; // prevent instant interactivity
+        ui.ctx.pending_key = null; // prevent instant interactivity
     }
 
     const m = ui.stack(1) orelse return null;
     m.frame.* = ui.ctx.stack[0].frame.center(w, h);
     m.frame.fill(ui.ctx.theme.base3);
-    m.frame.border();
+    m.frame.border(.all);
     m.frame.top(1).hcenter(@intCast(title.len)).text(title);
     m.frame.shadow();
     return m.inset(.{ 1, 1, 1, 1 });
@@ -288,19 +292,24 @@ pub fn menu(ui: Builder, n: u8) ?MenuBuilder {
     const bar = ui.pushEq(n, 1) orelse return null;
     bar.frame.rect = ui.ctx.stack[0].frame.bottom(1).rect;
     bar.frame.fill(ui.ctx.theme.base3);
-    return .{ .bar = bar };
+    return .{ .ui = bar };
 }
 
 pub const MenuBuilder = struct {
-    bar: Builder,
+    ui: Builder,
 
     pub fn item(self: MenuBuilder, key: Key, txt: []const u8) bool {
-        const f = self.bar.next(-1, 1) orelse return false;
-        f.left(2).fill(self.bar.ctx.theme.accent);
-        f.with("fg", self.bar.ctx.theme.base1).text(@tagName(key));
-        f.at(2, 0).with("fg", self.bar.ctx.theme.secondary).text(txt);
+        const f = self.ui.next(-1, 1) orelse return false;
+        f.left(2).fill(self.ui.ctx.theme.accent);
+        f.with("fg", self.ui.ctx.theme.base1).text(@tagName(key));
+        f.at(2, 0).with("fg", self.ui.ctx.theme.secondary).text(txt);
 
-        return if (self.bar.ctx.last_key) |k| std.meta.eql(k, key) else false;
+        if (self.ui.ctx.pending_key) |k| if (std.meta.eql(k, key)) {
+            self.ui.ctx.next_tick = .clear;
+            return true;
+        };
+
+        return false;
     }
 };
 
@@ -308,21 +317,20 @@ pub const MenuBuilder = struct {
 pub fn tabs(ui: Builder, n: usize, selected: *usize) ?TabBuilder {
     if (n == 0) return null;
     const r = ui.pushEq(@intCast(n), 1) orelse return null;
-    const ctrl = ui.control();
-    ctrl.navigate(.{ .left, .right }, selected, n);
-    return .{ .r = r, .ctrl = ctrl, .selected = selected };
+    const ctrl = ui.control(selected);
+    ctrl.navigate(.{ .left, .right }, n);
+    return .{ .ui = r, .ctrl = ctrl };
 }
 
 pub const TabBuilder = struct {
-    r: Builder,
-    ctrl: Control,
-    selected: *usize,
+    ui: Builder,
+    ctrl: Control(usize),
 
     pub fn item(self: TabBuilder, lab: []const u8) void {
-        const i = self.r.container().index;
-        const f = self.r.next(-1, 1) orelse return;
-        const t = self.r.ctx.theme;
-        if (self.selected.* == i) f.fill(if (self.ctrl.focused()) t.primary else t.base2);
+        const i = self.ui.container().index;
+        const f = self.ui.next(-1, 1) orelse return;
+        const t = self.ui.ctx.theme;
+        if (self.ctrl.value.* == i) f.fill(if (self.ctrl.focused) t.primary else t.base2);
         f.at(1, 0).text(lab);
     }
 };
@@ -337,15 +345,15 @@ pub fn kvRow(ui: Builder, lab: []const u8, value: []const u8) void {
 
 /// Render a tree view with indentation. `depths` gives the nesting level per item.
 pub fn tree(ui: Builder, items: []const []const u8, depths: []const u8, selected: *usize) void {
-    const ctrl = ui.control();
-    ctrl.navigate(.{ .up, .down }, selected, items.len);
+    const ctrl = ui.control(selected);
+    ctrl.navigate(.{ .up, .down }, items.len);
 
     for (items, 0..) |item, i| {
         var f = ui.next(-1, 1) orelse return;
         const depth: i32 = if (i < depths.len) @intCast(depths[i]) else 0;
         const indent = depth * 2;
 
-        if (ctrl.focused() and selected.* == i) f.fg = ui.ctx.theme.primary;
+        if (ctrl.focused and selected.* == i) f.fg = ui.ctx.theme.primary;
         f.draw(indent, 0, if (selected.* == i) "> " else "  ");
         f.at(indent + 2, 0).text(item);
     }

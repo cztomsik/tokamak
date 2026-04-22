@@ -8,18 +8,13 @@ pub fn main() !void {
 
     while (!state.quit) {
         cx.theme = if (state.dark_mode) .nord else .catppuccin_latte;
-        const root = try cx.beginFrame();
-        myapp(root);
-        try cx.endFrame();
 
-        const key = try cx.readKey();
-        cx.last_key = key;
-
-        switch (key) {
-            .ctrl_c, .escape => break,
-            .tab => cx.focus = (cx.focus + 1) % @max(1, cx.n_controls),
-            .shift_tab => cx.focus = (cx.focus + cx.n_controls - 1) % @max(1, cx.n_controls),
-            else => {},
+        switch (try cx.tick()) {
+            .render => |ui| myapp(ui),
+            .key => |k| switch (k) {
+                .ctrl_c, .escape => break,
+                else => cx.pending_key = k,
+            },
         }
     }
 }

@@ -2,6 +2,21 @@ const util = @import("../util.zig");
 const Screen = @import("screen.zig").Screen;
 const Color = @import("color.zig").Color;
 
+pub const Border = struct {
+    parts: [8][]const u8,
+
+    /// Create a border using custom parts (north-west, north, north-east, ...)
+    pub fn nesw(parts: [8][]const u8) Border {
+        return .{ .parts = parts };
+    }
+
+    pub const all = nesw(.{ "┌", "─", "┐", "│", "┘", "─", "└", "│" });
+    pub const top = nesw(.{ "─", "─", "─", "", "", "", "", "" });
+    pub const right = nesw(.{ "", "", "│", "│", "│", "", "", "" });
+    pub const bottom = nesw(.{ "", "", "", "", "─", "─", "─", "" });
+    pub const left = nesw(.{ "│", "", "", "", "", "", "│", "│" });
+};
+
 pub const Frame = struct {
     screen: *Screen,
     rect: [4]i32, // absolute x, y, w, h
@@ -149,41 +164,24 @@ pub const Frame = struct {
         self.sub(x, y, 1, len).splat("│");
     }
 
-    /// Draw the four corner characters.
-    pub fn corners(self: Frame, tl: []const u8, tr: []const u8, bl: []const u8, br: []const u8) void {
-        const w = self.rect[2];
-        const h = self.rect[3];
-        self.draw(0, 0, tl);
-        self.draw(w - 1, 0, tr);
-        self.draw(0, h - 1, bl);
-        self.draw(w - 1, h - 1, br);
-    }
-
-    /// Draw a full single-line box border.
-    pub fn border(self: Frame) void {
+    pub fn border(self: Frame, bord: Border) void {
+        const p = &bord.parts;
         const w = self.rect[2];
         const h = self.rect[3];
 
-        self.hline(1, 0, w - 2);
-        self.hline(1, h - 1, w - 2);
-        self.corners("┌", "┐", "└", "┘");
-        self.vline(0, 1, h - 2);
-        self.vline(w - 1, 1, h - 2);
-    }
+        // Draw corners
+        if (p[0].len > 0) self.draw(0, 0, p[0]);
+        if (p[2].len > 0) self.draw(w - 1, 0, p[2]);
+        if (p[4].len > 0) self.draw(w - 1, h - 1, p[4]);
+        if (p[6].len > 0) self.draw(0, h - 1, p[6]);
 
-    /// Draw top and bottom edges only.
-    pub fn hborder(self: Frame) void {
-        if (self.rect[2] <= 0 or self.rect[3] <= 0) return;
-        self.top(1).splat("─");
-        self.bottom(1).splat("─");
-    }
+        // Draw middle parts for top/bottom
+        if (p[1].len > 0) self.hline(1, 0, w - 2);
+        if (p[5].len > 0) self.hline(1, h - 1, w - 2);
 
-    /// Draw left and right edges only.
-    pub fn vborder(self: Frame) void {
-        const h = self.rect[3];
-        if (self.rect[2] <= 0 or h <= 0) return;
-        self.vline(0, 0, h);
-        self.vline(self.rect[2] - 1, 0, h);
+        // And also for left/right
+        if (p[3].len > 0) self.vline(0, 1, h - 2);
+        if (p[7].len > 0) self.vline(w - 1, 1, h - 2);
     }
 
     /// Draw a drop shadow (1-cell offset, bottom and right).

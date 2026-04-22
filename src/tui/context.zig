@@ -11,6 +11,8 @@ const N_MAX_STATE = 256;
 
 pub const Key = input.Key;
 
+pub const Event = union(enum) { render: Builder, key: Key };
+
 /// Encode a percentage as a fixed-point value below -100_000
 pub fn perc(v: f32) i32 {
     return @intFromFloat(v * -1_000_000);
@@ -137,7 +139,8 @@ pub const Context = struct {
     n_state: u32 = 0,
     n_controls: u32 = 0,
     focus: u32 = 0,
-    last_key: ?Key = null,
+    pending_key: ?Key = null,
+    next_tick: enum { clear, render, flush, read } = .clear,
     frame: u64 = 0,
 
     const State = struct { key: u64 = 0, tid: [*:0]const u8 = @typeName(void), data: u64 = undefined };
@@ -158,27 +161,45 @@ pub const Context = struct {
         gpa.destroy(self);
     }
 
-    pub fn beginFrame(self: *Context) !Builder {
-        try self.screen.refresh(self.gpa);
+    pub fn tick(self: *Context) !Event {
+        next: switch (self.next_tick) {
+            .clear => {
+                self.frame -|= 1;
+                self.pending_key = null;
+                continue :next .render;
+            },
+            .render => {
+                try self.screen.refresh(self.gpa);
 
-        self.stack[0] = .{ .frame = .{ .screen = &self.screen, .rect = .{ 0, 0, self.screen.width, self.screen.height }, .fg = self.theme.text } };
-        self.state_len = self.n_state;
-        self.n_state = 0;
-        self.n_controls = 0;
-        self.frame += 1;
+                if (self.pending_key) |k| switch (k) {
+                    .tab => self.focus = (self.focus + 1) % @max(1, self.n_controls),
+                    .shift_tab => self.focus = (self.focus + @max(1, self.n_controls) - 1) % @max(1, self.n_controls),
+                    else => {},
+                };
 
-        self.screen.clear();
-        self.stack[0].frame.fill(self.theme.base1);
+                self.stack[0] = .{ .frame = .{ .screen = &self.screen, .rect = .{ 0, 0, self.screen.width, self.screen.height }, .fg = self.theme.text } };
+                self.state_len = self.n_state;
+                self.n_state = 0;
+                self.n_controls = 0;
+                self.frame += 1;
 
-        return .{
-            .ctx = self,
-            .frame = &self.stack[0].frame,
-        };
-    }
+                self.screen.clear();
+                self.stack[0].frame.fill(self.theme.base1);
+                self.next_tick = .flush;
 
-    pub fn endFrame(self: *Context) !void {
-        try self.screen.flush();
-        self.last_key = null;
+                return .{
+                    .render = .{ .ctx = self, .frame = &self.stack[0].frame },
+                };
+            },
+            .flush => {
+                try self.screen.flush();
+                continue :next .read;
+            },
+            .read => {
+                self.next_tick = .render;
+                return .{ .key = try input.readKey(self.screen.in) };
+            },
+        }
     }
 
     pub fn getState(self: *Context, key: u64, comptime T: type, default: T) *T {
@@ -206,9 +227,5 @@ pub const Context = struct {
         }
 
         return data;
-    }
-
-    pub fn readKey(self: *Context) !Key {
-        return input.readKey(self.screen.in);
     }
 };

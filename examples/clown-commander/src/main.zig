@@ -58,6 +58,7 @@ const Commander = struct {
     mkdir_buf: [256]u8 = undefined,
     mkdir_len: usize = 0,
     mkdir_active: bool = false,
+    quit: bool = false,
 
     fn init(allocator: std.mem.Allocator, path: []const u8) !Commander {
         var panels = [2]Panel{
@@ -99,7 +100,6 @@ fn app(ui: Builder) void {
     }
 
     if (cmd.mkdir_active) {
-        ui.statusBar("New directory name  (Enter: confirm  Esc: cancel)");
         if (ui.modal(&cmd.mkdir_active, "New directory name", 40, 5)) |m| {
             m.textInput(&cmd.mkdir_buf, &cmd.mkdir_len);
             if (m.row(&.{ 10, 10 })) |r| {
@@ -107,48 +107,71 @@ fn app(ui: Builder) void {
                     confirmMkdir();
                     cmd.mkdir_active = false;
                     cmd.mkdir_len = 0;
-                    ui.ctx.focus = @intCast(cmd.active);
                 }
                 if (r.button("Cancel")) {
                     cmd.mkdir_active = false;
                     cmd.mkdir_len = 0;
-                    ui.ctx.focus = @intCast(cmd.active);
                 }
             }
         }
+
+        ui.statusBar("New directory name  (Enter: confirm  Esc: cancel)");
     } else {
-        ui.statusBar("Tab: switch  Enter: open  F5: copy  F7: mkdir  F8: delete  q: quit");
+        if (ui.menu(6)) |m| {
+            // No handlers, but we still want to render as menu items
+            _ = m.item(.enter, "open"); // handled in fileList()
+            _ = m.item(.tab, "switch"); // fileList() is control, so tab just works
+
+            if (m.item(.f5, "copy")) copyFile();
+            if (m.item(.f7, "mkdir")) {
+                cmd.mkdir_active = true;
+                cmd.mkdir_len = 0;
+                @memset(&cmd.mkdir_buf, 0);
+                ui.ctx.focus = 2;
+            }
+            if (m.item(.f8, "delete")) deleteEntry();
+            if (m.item(.f10, "quit")) cmd.quit = true;
+        }
     }
 }
 
 fn filePanel(ui: Builder, panel: *Panel) void {
     if (ui.panel(-1)) |p| {
+        p.container().layout.spacing = 0;
         p.label(panel.path);
         p.separator();
-        fileList(p, panel.files.items, &panel.selected, -2);
+        fileList(p, panel, -2);
     }
 }
 
-fn fileList(ui: Builder, items: []const DirEntry, selected: *usize, height: i32) void {
+fn fileList(ui: Builder, panel: *Panel, height: i32) void {
     const inner = ui.stack(height) orelse return;
+    inner.container().layout.spacing = 0;
+
     const visible: usize = @intCast(@max(0, inner.frame.height()));
-    const scroll: usize = if (selected.* >= visible) selected.* - visible + 1 else 0;
-    const ctrl = ui.control();
-    ctrl.navigate(.{ .up, .down }, selected, items.len);
+    const scroll: usize = if (panel.selected >= visible) panel.selected - visible + 1 else 0;
+    const ctrl = ui.control(&panel.selected);
+    ctrl.navigate(.{ .up, .down }, panel.files.items.len);
+
+    if (ctrl.pressed()) {
+        openEntry();
+    }
 
     var i: usize = scroll;
-    while (i < items.len and i < scroll + visible) : (i += 1) {
+    while (i < panel.files.items.len and i < scroll + visible) : (i += 1) {
         var f = inner.next(-1, 1) orelse return;
-        const is_sel = i == selected.*;
-        if (ctrl.focused() and is_sel) f.fg = ui.ctx.theme.primary;
-        f.left(2).text(if (is_sel) "> " else "  ");
-        const file = items[i];
+        const is_sel = i == panel.selected;
+        if (ctrl.focused and is_sel) f.fg = ui.ctx.theme.primary;
+        if (is_sel) f.fill(ui.ctx.theme.primary);
+        const file = panel.files.items[i];
         if (file.kind == .directory) {
             var buf: [258]u8 = undefined;
-            const name = std.fmt.bufPrint(&buf, "[{s}]", .{file.name}) catch file.name;
-            f.at(2, 0).text(name);
+            const name = std.fmt.bufPrint(&buf, "/{s}", .{file.name}) catch file.name;
+            if (is_sel) f.fg = ui.ctx.theme.text;
+            f.text(name);
         } else {
-            f.at(2, 0).text(file.name);
+            f.fg = if (is_sel) ui.ctx.theme.text else ui.ctx.theme.secondary;
+            f.text(file.name);
         }
     }
 }
@@ -217,46 +240,13 @@ pub fn main() !void {
     var cx = try tk.tui.Context.init(allocator);
     defer cx.deinit();
 
-    loop: while (true) {
-        const root = try cx.beginFrame();
-        app(root);
-        try cx.endFrame();
-
-        const key = try cx.readKey();
-        cx.last_key = key;
-
-        if (key == .ctrl_c) break :loop;
-
-        if (cmd.mkdir_active) {
-            switch (key) {
-                .escape => {
-                    cmd.mkdir_active = false;
-                    cmd.mkdir_len = 0;
-                    cx.focus = @intCast(cmd.active);
-                },
-                .tab => cx.focus = (cx.focus + 1) % @max(1, cx.n_controls),
-                .shift_tab => cx.focus = (cx.focus + cx.n_controls - 1) % @max(1, cx.n_controls),
-                else => {},
-            }
-        } else {
-            switch (key) {
-                .escape => break :loop,
-                .char => |c| if (c == 'q') break :loop,
-                .tab => {
-                    cmd.active = 1 - cmd.active;
-                    cx.focus = @mod(cx.focus + 1, 2);
-                },
-                .enter => openEntry(),
-                .f5 => copyFile(),
-                .f7 => {
-                    cmd.mkdir_active = true;
-                    cmd.mkdir_len = 0;
-                    @memset(&cmd.mkdir_buf, 0);
-                    cx.focus = 2; // modal textInput is always slot 2
-                },
-                .f8 => deleteEntry(),
-                else => {},
-            }
+    while (!cmd.quit) {
+        switch (try cx.tick()) {
+            .render => |ui| app(ui),
+            .key => |k| switch (k) {
+                .ctrl_c => cmd.quit = true,
+                else => cx.pending_key = k,
+            },
         }
     }
 }

@@ -40,8 +40,8 @@ pub const Builder = struct {
         return self.container().next(width, height);
     }
 
-    pub fn control(self: Builder) Control {
-        return Control.init(self.ctx);
+    pub fn control(self: Builder, ptr: anytype) Control(@TypeOf(ptr.*)) {
+        return .init(self.ctx, ptr);
     }
 
     pub fn inset(self: Builder, sides: [4]i32) ?Builder {
