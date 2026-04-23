@@ -99,12 +99,7 @@ pub fn Return(comptime fun: anytype) type {
 }
 
 pub fn Result(comptime fun: anytype) type {
-    const R = Return(fun);
-
-    return switch (@typeInfo(R)) {
-        .error_union => |r| r.payload,
-        else => R,
-    };
+    return UnwrapErr(Return(fun));
 }
 
 pub fn LastArg(comptime fun: anytype) type {
@@ -159,13 +154,32 @@ pub inline fn isString(comptime T: type) bool {
     };
 }
 
+pub fn deref(val: anytype) Deref(@TypeOf(val)) {
+    return val.*;
+}
+
 pub fn Deref(comptime T: type) type {
     return if (isOnePtr(T)) std.meta.Child(T) else T;
+}
+
+pub fn unwrap(val: anytype) Unwrap(@TypeOf(val)) {
+    return val.?;
 }
 
 pub fn Unwrap(comptime T: type) type {
     return switch (@typeInfo(T)) {
         .optional => |o| o.child,
+        else => T,
+    };
+}
+
+pub fn unwrapErr(val: anytype) UnwrapErr(@TypeOf(val)) {
+    return val catch unreachable;
+}
+
+pub fn UnwrapErr(comptime T: type) type {
+    return switch (@typeInfo(T)) {
+        .error_union => |r| r.payload,
         else => T,
     };
 }
