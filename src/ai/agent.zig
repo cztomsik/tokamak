@@ -191,7 +191,7 @@ pub const AgentTool = struct {
                 .function = .{
                     .name = name,
                     .description = description,
-                    .parameters = .forType(meta.LastArg(handler)),
+                    .parameters = .schema(meta.LastArg(handler)),
                 },
             },
             .handler = H.handleTool,
