@@ -20,7 +20,7 @@ pub const Agent = struct {
     arena: std.mem.Allocator,
     runtime: *AgentRuntime,
     options: AgentOptions,
-    messages: std.ArrayListUnmanaged(chat.Message) = .empty,
+    messages: std.ArrayList(chat.Message) = .empty,
     result: ?[]const u8 = null,
 
     pub fn init(allocator: std.mem.Allocator, runtime: *AgentRuntime, options: AgentOptions) !Agent {
@@ -124,11 +124,15 @@ pub const Agent = struct {
         });
     }
 
-    pub fn retry(self: *Agent) ![]const u8 {
-        while (self.messages.pop()) |msg| {
-            if (msg.role == .assistant) break;
+    pub fn undo(self: *Agent) void {
+        while (self.messages.getLastOrNull()) |msg| {
+            if (msg.role != .assistant and msg.role != .tool) break;
+            _ = self.messages.pop();
         }
+    }
 
+    pub fn retry(self: *Agent) ![]const u8 {
+        self.undo();
         return self.run();
     }
 };
