@@ -10,7 +10,7 @@ const log = std.log.scoped(.ai_agent);
 pub const AgentOptions = struct {
     debug: bool = false,
     model: []const u8,
-    tools: []const []const u8,
+    tools: []const []const u8 = &.{},
     max_completion_tokens: u32 = 4096,
     temperature: ?f32 = null,
     top_p: ?f32 = null,
