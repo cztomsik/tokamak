@@ -25,6 +25,13 @@ pub const Builder = struct {
         };
     }
 
+    pub fn pushWithFrame(self: Builder, widths: []const i32, frame: Frame) ?Builder {
+        return .{
+            .ctx = self.ctx,
+            .frame = &(self.container().pushWithFrame(widths, frame) orelse return null).frame,
+        };
+    }
+
     pub fn pushEq(self: Builder, n: u8, height: i32) ?Builder {
         return .{
             .ctx = self.ctx,

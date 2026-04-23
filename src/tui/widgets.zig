@@ -237,12 +237,7 @@ pub fn progress(ui: Builder, value: f32) void {
 
 /// Render a full-screen overlay with z=100, always on top of other content.
 pub fn overlay(ui: Builder, width: i32, height: i32) ?Builder {
-    // TODO: find a way how to push new container without claiming a cell
-    const old = ui.container().layout;
-    defer ui.container().layout = old;
-
-    const o = ui.stack(1) orelse return null;
-    o.frame.* = ui.ctx.stack[0].frame.center(width, height);
+    const o = ui.pushWithFrame(&.{-1}, ui.ctx.stack[0].frame.center(width, height)) orelse return null;
     o.frame.z = 100;
     return o;
 }
@@ -270,8 +265,7 @@ pub fn modal(ui: Builder, open: *bool, title: []const u8, w: i32, h: i32) ?Build
         ui.ctx.pending_key = null; // prevent instant interactivity
     }
 
-    const m = ui.stack(1) orelse return null;
-    m.frame.* = ui.ctx.stack[0].frame.center(w, h);
+    const m = ui.pushWithFrame(&.{-1}, ui.ctx.stack[0].frame.center(w, h)) orelse return null;
     m.frame.fill(ui.ctx.theme.base3);
     m.frame.border(.all);
     m.frame.top(1).hcenter(@intCast(title.len)).text(title);

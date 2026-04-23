@@ -63,11 +63,17 @@ pub const Container = struct {
     /// valid until the next push() at the same depth overwrites it.
     pub fn push(self: *Container, widths: []const i32, height: i32) ?*Container {
         if ((self.id + 1) >= N_MAX_DEPTH) return null;
+        return self.pushWithFrame(widths, self.next(-1, height) orelse return null);
+    }
+
+    /// Set up a new child container with a specific frame without claiming a cell.
+    pub fn pushWithFrame(self: *Container, widths: []const i32, frame: Frame) ?*Container {
+        if ((self.id + 1) >= N_MAX_DEPTH) return null;
         const new = &@as([*]Container, @ptrCast(self))[1];
 
         new.* = .{
             .id = self.id + 1,
-            .frame = self.next(-1, height) orelse return null,
+            .frame = frame,
             .layout = .{ .n_widths = @intCast(widths.len), .spacing = self.layout.spacing },
         };
         @memcpy(new.layout.widths[0..widths.len], widths);
