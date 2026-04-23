@@ -4,6 +4,12 @@ const meta = @import("meta.zig");
 const serde = @import("serde.zig");
 const testing = @import("testing.zig");
 
+pub const Property = struct {
+    name: []const u8,
+    schema: *const Schema,
+    required: bool,
+};
+
 pub const Schema = union(enum) {
     null,
     boolean,
@@ -46,7 +52,7 @@ pub const Schema = union(enum) {
                     .object = brk: {
                         const fields = std.meta.fields(T);
                         var props: [fields.len]Property = undefined;
-                        for (fields, 0..) |f, i| props[i] = .{ .name = f.name, .schema = &schema(f.type) };
+                        for (fields, 0..) |f, i| props[i] = .{ .name = f.name, .schema = &schema(f.type), .required = f.default_value_ptr == null };
                         const res = props;
                         break :brk &res;
                     },
@@ -89,14 +95,9 @@ pub const Schema = union(enum) {
 
     fn serializeRequired(props: []const Property, writer: anytype) !void {
         var seq = try writer.beginSeq(props.len);
-        for (props) |p| try seq.element(p.name);
+        for (props) |p| if (p.required) try seq.element(p.name);
         try seq.end();
     }
-};
-
-pub const Property = struct {
-    name: []const u8,
-    schema: *const Schema,
 };
 
 fn expectSchema(comptime T: type, schema: Schema) !void {
@@ -110,7 +111,7 @@ test "Schema.schema()" {
     try expectSchema(f32, .number);
     try expectSchema([]const u8, .string);
     try expectSchema(?[]const u8, .{ .oneOf = &.{ .null, .string } });
-    try expectSchema(struct { a: u32 }, .{ .object = &.{.{ .name = "a", .schema = &.integer }} });
+    try expectSchema(struct { a: u32 }, .{ .object = &.{.{ .name = "a", .schema = &.integer, .required = true }} });
     try expectSchema(struct { u32, f32 }, .{ .tuple = &.{ .integer, .number } });
 }
 
@@ -171,6 +172,19 @@ test "schema.serialize()" {
         \\  "required": [
         \\    "a"
         \\  ],
+        \\  "additionalProperties": false
+        \\}
+    );
+
+    try expectJsonSchema(struct { text: []const u8 = "" },
+        \\{
+        \\  "type": "object",
+        \\  "properties": {
+        \\    "text": {
+        \\      "type": "string"
+        \\    }
+        \\  },
+        \\  "required": [],
         \\  "additionalProperties": false
         \\}
     );
