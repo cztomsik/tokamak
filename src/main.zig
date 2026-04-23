@@ -14,6 +14,7 @@ pub const dom = @import("dom.zig");
 pub const entities = @import("entities.zig");
 pub const event = @import("event.zig");
 pub const ext = @import("ext.zig");
+pub const iter = @import("iter.zig");
 pub const html2md = @import("html2md.zig");
 pub const http = @import("http.zig");
 pub const js = @import("js.zig");
