@@ -1,8 +1,21 @@
 const std = @import("std");
 const meta = @import("meta.zig");
 
+// NOTE: I don't have a strong opinion about this (yet). I like FP but I am also
+// using Zig for a reason and Zig is not an FP language and it's always going to
+// be a bit awkward to do FP patterns. That said, lazy iterators are most likely
+// better than collecting everything and then filtering the array list and
+// freeing the unused memory, so there might be some use for this. My original
+// motivation was collecting keys from a hashmap:
+//
+//     var iter = tk.iter.map(xxx.keyIterator(), tk.meta.deref);
+//     const keys = try tk.iter.collect(agent.arena, &iter);
+//
+// Like I said, I'm not yet sure if it's worth it, but I decided to give it a
+// try. Consider this highly experimental.
+
 pub fn collect(allocator: std.mem.Allocator, iter: anytype) ![]const IterItem(@TypeOf(iter)) {
-    const copy = iter;
+    const copy = iter; // TODO: I am not yet sure if we should allow passing iterators by value, but this is what makes it possible
     var buf: std.ArrayList(IterItem(@TypeOf(copy))) = .empty;
     while (if (@typeInfo(@TypeOf(copy.next())) == .error_union) try copy.next() else copy.next()) |it| try buf.append(allocator, it);
     return buf.toOwnedSlice(allocator);
