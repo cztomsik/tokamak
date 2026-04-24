@@ -22,6 +22,7 @@ pub const Agent = struct {
     options: AgentOptions,
     messages: std.ArrayList(chat.Message) = .empty,
     result: ?[]const u8 = null,
+    total_tokens: u32 = 0,
 
     pub fn init(allocator: std.mem.Allocator, runtime: *AgentRuntime, options: AgentOptions) !Agent {
         const arena = try allocator.create(std.heap.ArenaAllocator);
@@ -152,7 +153,7 @@ pub const AgentRuntime = struct {
             // TODO: try bus.dispatch(Xxx);
         }
 
-        return self.client.createChatCompletion(agent.arena, .{
+        const res = try self.client.createChatCompletion(agent.arena, .{
             .model = agent.options.model,
             .max_completion_tokens = agent.options.max_completion_tokens,
             .temperature = agent.options.temperature,
@@ -161,6 +162,10 @@ pub const AgentRuntime = struct {
             .messages = agent.messages.items,
             .tools = try self.toolbox.query(agent.arena, agent.options.tools),
         });
+
+        agent.total_tokens = res.usage.total_tokens;
+
+        return res;
     }
 
     fn execTool(self: *AgentRuntime, agent: *Agent, tool: chat.ToolCall) ![]const u8 {
