@@ -2,6 +2,15 @@ const std = @import("std");
 const ansi = @import("../ansi.zig");
 const Color = @import("color.zig").Color;
 
+pub const Feature = enum(u32) {
+    /// Use a separate screen buffer so the app doesn't overwrite the shell
+    alternate_screen = 1049,
+    /// Allow pasting text safely without it being interpreted as keypresses
+    bracketed_paste = 2004,
+    /// Show the terminal cursor
+    show_cursor = 25,
+};
+
 pub const Cell = struct {
     char: u21 = ' ',
     fg: Color = .white,
@@ -58,16 +67,26 @@ pub const Screen = struct {
         self.cells = try gpa.alloc(Cell, total);
         @memset(self.cells, Cell{});
 
-        try self.out.writeAll("\x1b[?1049h\x1b[?2004h\x1b[?25l");
-        try self.out.flush();
+        // Enable default features
+        try self.set(.alternate_screen, true);
+        try self.set(.bracketed_paste, true);
+        try self.set(.show_cursor, false);
     }
 
     pub fn deinit(self: *Screen, gpa: std.mem.Allocator) void {
-        self.out.writeAll("\x1b[?25h\x1b[?2004l\x1b[?1049l") catch {};
-        self.out.flush() catch {};
+        // Disable features in reverse order
+        self.set(.show_cursor, true) catch {};
+        self.set(.bracketed_paste, false) catch {};
+        self.set(.alternate_screen, false) catch {};
+
         std.posix.tcsetattr(self.fin.file.handle, .FLUSH, self.original_termios) catch {};
         gpa.free(self.cells);
         gpa.free(self.in.buffer.ptr[0 .. 2 * self.in.buffer.len]);
+    }
+
+    pub fn set(self: *Screen, feature: Feature, enabled: bool) !void {
+        try self.out.print("\x1b[?{d}{c}", .{ @intFromEnum(feature), @as(u8, if (enabled) 'h' else 'l') });
+        try self.out.flush();
     }
 
     pub fn refresh(self: *Screen, gpa: std.mem.Allocator) !void {
