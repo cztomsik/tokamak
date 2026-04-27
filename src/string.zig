@@ -219,3 +219,16 @@ test "json" {
     defer p.deinit();
     try std.testing.expectEqual(s, p.value);
 }
+
+test "little-endian layout" {
+    const data: [255]u8 = undefined;
+    const s: String = .initComptime(&data);
+
+    const num: [2]u64 = @bitCast(s);
+    try std.testing.expectEqual(255 << 1, num[0]);
+    try std.testing.expectEqual(@intFromPtr(&data), num[1]);
+
+    const mem: [16]u8 = @bitCast(s);
+    try std.testing.expectEqual(254, mem[0]);
+    try std.testing.expectEqual(1, mem[1]);
+}
