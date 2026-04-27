@@ -45,8 +45,7 @@ pub const label = text;
 
 /// Render any numeric value (int or float) as text.
 pub fn num(ui: Builder, value: anytype) void {
-    var buf: [64]u8 = undefined;
-    ui.text(std.fmt.bufPrint(&buf, "{d}", .{value}) catch "");
+    ui.text(ui.ctx.fmt("{d}", .{value}));
 }
 
 /// Render multiple lines of text, wrapping at width. Reserves the required
@@ -61,28 +60,24 @@ pub fn paragraph(ui: Builder, txt: []const u8, max_height: i32) void {
 pub fn panel(ui: Builder, height: i32) ?Builder {
     const s = ui.stack(height) orelse return null;
     s.frame.border(.all);
-    return s.inset(.{ 1, 1, 1, 1 });
+    return s.pad(.{ 1, 1, 1, 1 });
 }
 
-/// Render a titled separator: ── Title ──────
+/// Render a titled separator: ─ Title ──────
 pub fn header(ui: Builder, title: []const u8) void {
     const f = ui.next(-1, 1) orelse return;
     f.splat("─");
-    const len: i32 = @intCast(title.len + 2);
-    f.sub(1, 0, len, 1).draw(0, 0, " ");
-    f.sub(2, 0, len - 1, 1).text(title);
-    f.sub(2 + @as(i32, @intCast(title.len)), 0, 1, 1).draw(0, 0, " ");
+    f.text(ui.ctx.fmt("─ {s} ", .{title}));
 }
 
 /// Render a collapsible section. Toggles `open` on Enter/Space.
-pub fn collapsible(ui: Builder, lab: []const u8, open: *bool) bool {
+pub fn collapsible(ui: Builder, title: []const u8, open: *bool) bool {
     var f = ui.next(-1, 1) orelse return open.*;
     const ctrl = ui.control(open);
     if (ctrl.pressed()) ctrl.toggle();
 
     if (ctrl.focused) f.fg = ui.ctx.theme.primary;
-    f.draw(0, 0, if (open.*) "▼" else "▶");
-    f.at(2, 0).text(lab);
+    f.text(ui.ctx.fmt("{s} {s}", .{ if (open.*) "▼" else "▶", title }));
 
     return open.*;
 }
@@ -93,13 +88,13 @@ pub fn separator(ui: Builder) void {
 }
 
 /// Render a centered button with a solid background. Returns true when clicked (Enter/Space).
-pub fn button(ui: Builder, lab: []const u8) bool {
+pub fn button(ui: Builder, lbl: []const u8) bool {
     const f = ui.next(-1, 1) orelse return false;
     const ctrl = ui.control(@as(*void, undefined));
     const t = ui.ctx.theme;
 
     f.fill(if (ctrl.focused) t.primary else t.accent);
-    f.hcenter(@intCast(lab.len)).text(lab);
+    f.hcenter(@intCast(lbl.len)).text(lbl);
 
     if (ctrl.pressed()) {
         ui.ctx.next_tick = .clear;
@@ -110,14 +105,13 @@ pub fn button(ui: Builder, lab: []const u8) bool {
 }
 
 /// Render a checkbox. Enter/space toggles the value.
-pub fn checkbox(ui: Builder, lab: []const u8, checked: *bool) void {
+pub fn checkbox(ui: Builder, lbl: []const u8, checked: *bool) void {
     var f = ui.next(-1, 1) orelse return;
     const ctrl = ui.control(checked);
     if (ctrl.pressed()) ctrl.toggle();
 
     if (ctrl.focused) f.fg = ui.ctx.theme.primary;
-    f.left(4).text(if (checked.*) "[x] " else "[ ] ");
-    f.at(4, 0).text(lab);
+    f.text(ui.ctx.fmt("{s} {s}", .{ if (checked.*) "[x]" else "[ ]", lbl }));
 }
 
 /// Render an interactive number input.
@@ -128,8 +122,7 @@ pub fn numberInput(ui: Builder, value: *i32, step: i32) void {
     ctrl.stepNumber(-1000, 1000, step);
 
     if (ctrl.focused) f.fg = ui.ctx.theme.primary;
-    var buf: [64]u8 = undefined;
-    f.text(std.fmt.bufPrint(&buf, "{d}", .{value.*}) catch "");
+    f.text(ui.ctx.fmt("{d}", .{value.*}));
 }
 
 /// Render an editable single-line text field.
@@ -151,7 +144,7 @@ pub fn textInput(ui: Builder, buf: []u8, len: *usize) void {
     // Find byte offset corresponding to scroll_cols display columns.
     const scroll = utf8ColToByteOffset(content, scroll_cols);
     f.text(content[scroll..]);
-    if (ctrl.focused) f.sub(@intCast(cur_col - scroll_cols), 0, 1, 1).fill(ui.ctx.theme.text);
+    if (ctrl.focused) f.sub(@intCast(cur_col - scroll_cols), 0, 1, 1).fill(f.fg);
 }
 
 /// Count the number of display columns in a UTF-8 byte slice (1 codepoint = 1 column).
@@ -187,12 +180,12 @@ pub const SelectBuilder = struct {
     ui: Builder,
     ctrl: Control(usize),
 
-    pub fn item(self: SelectBuilder, lab: []const u8) void {
+    pub fn item(self: SelectBuilder, lbl: []const u8) void {
         const i = self.ui.container().index;
         var f = self.ui.next(-1, 1) orelse return;
+
         if (self.ctrl.focused and self.ctrl.value.* == i) f.fg = self.ui.ctx.theme.primary;
-        f.left(4).text(if (self.ctrl.value.* == i) "(*) " else "( ) ");
-        f.at(4, 0).text(lab);
+        f.text(self.ui.ctx.fmt("{s} {s}", .{ if (self.ctrl.value.* == i) "(*)" else "( )", lbl }));
     }
 };
 
@@ -209,20 +202,6 @@ pub fn slider(ui: Builder, value: *f32, step: f32) void {
     const track = f.hcenter(f.width() - 4);
     track.hline(0, 0, track.width());
     track.draw(@intFromFloat(value.* * @as(f32, @floatFromInt(track.width()))), 0, "●");
-}
-
-/// Render a colored alert with a single line of text.
-pub fn alert(ui: Builder, msg: []const u8, level: enum { info, warn, err }) void {
-    const f = ui.next(-1, 1) orelse return;
-
-    const color, const icon = switch (level) {
-        .info => @as(struct { Color, []const u8 }, .{ .blue, "i" }),
-        .warn => .{ .yellow, "!" },
-        .err => .{ .red, "x" },
-    };
-
-    f.left(1).with("fg", color).text(icon);
-    f.at(2, 0).text(msg);
 }
 
 /// Render an animated spinner character.
@@ -270,7 +249,7 @@ pub fn modal(ui: Builder, open: *bool, title: []const u8, w: i32, h: i32) ?Build
     m.frame.border(.all);
     m.frame.top(1).hcenter(@intCast(title.len)).text(title);
     m.frame.shadow();
-    return m.inset(.{ 1, 1, 1, 1 });
+    return m.pad(.{ 1, 1, 1, 1 });
 }
 
 /// Render text pinned to the bottom row of the screen, outside the layout.
@@ -320,20 +299,20 @@ pub const TabBuilder = struct {
     ui: Builder,
     ctrl: Control(usize),
 
-    pub fn item(self: TabBuilder, lab: []const u8) void {
+    pub fn item(self: TabBuilder, lbl: []const u8) void {
         const i = self.ui.container().index;
         const f = self.ui.next(-1, 1) orelse return;
         const t = self.ui.ctx.theme;
         if (self.ctrl.value.* == i) f.fill(if (self.ctrl.focused) t.primary else t.base2);
-        f.at(1, 0).text(lab);
+        f.at(1, 0).text(lbl);
     }
 };
 
 /// Render a key-value pair: "label: value" with the label dimmed.
-pub fn kvRow(ui: Builder, lab: []const u8, value: []const u8) void {
+pub fn kvRow(ui: Builder, lbl: []const u8, value: []const u8) void {
     const f = ui.next(-1, 1) orelse return;
-    const lw: i32 = @intCast(lab.len + 2);
-    f.with("fg", ui.ctx.theme.accent).left(lw).text(lab);
+    const lw: i32 = @intCast(lbl.len + 2);
+    f.with("fg", ui.ctx.theme.accent).left(lw).text(lbl);
     f.at(lw, 0).draw(0, 0, value);
 }
 
@@ -348,7 +327,6 @@ pub fn tree(ui: Builder, items: []const []const u8, depths: []const u8, selected
         const indent = depth * 2;
 
         if (ctrl.focused and selected.* == i) f.fg = ui.ctx.theme.primary;
-        f.draw(indent, 0, if (selected.* == i) "> " else "  ");
-        f.at(indent + 2, 0).text(item);
+        f.at(indent, 0).text(ui.ctx.fmt("{s} {s}", .{ if (selected.* == i) ">" else " ", item }));
     }
 }

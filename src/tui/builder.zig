@@ -51,8 +51,8 @@ pub const Builder = struct {
         return .init(self.ctx, ptr);
     }
 
-    pub fn inset(self: Builder, sides: [4]i32) ?Builder {
-        self.frame.* = self.frame.inset(sides);
+    pub fn pad(self: Builder, sides: [4]i32) ?Builder {
+        self.frame.* = self.frame.pad(sides);
         if (self.frame.empty()) return null;
         return self;
     }
@@ -91,7 +91,6 @@ pub const Builder = struct {
     pub const statusBar = widgets.statusBar;
     pub const tabs = widgets.tabs;
     pub const menu = widgets.menu;
-    pub const menuItem = widgets.menuItem;
     pub const kvRow = widgets.kvRow;
     pub const tree = widgets.tree;
 };

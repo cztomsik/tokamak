@@ -66,13 +66,8 @@ pub const Frame = struct {
 
     /// Adjust all four sides; positive = shrink, negative = grow.
     /// sides = [top, right, bottom, left]
-    pub fn inset(self: Frame, sides: [4]i32) Frame {
-        return self.with("rect", .{
-            self.rect[0] + sides[3],
-            self.rect[1] + sides[0],
-            self.rect[2] - sides[1] - sides[3],
-            self.rect[3] - sides[0] - sides[2],
-        });
+    pub fn pad(self: Frame, sides: [4]i32) Frame {
+        return self.with("rect", .{ self.rect[0] + sides[3], self.rect[1] + sides[0], self.rect[2] - sides[1] - sides[3], self.rect[3] - sides[0] - sides[2] });
     }
 
     /// Narrow to width `w`, anchored to the left edge.
@@ -107,12 +102,7 @@ pub const Frame = struct {
 
     /// Narrow to `w`×`h`, centered on both axes.
     pub fn center(self: Frame, w: i32, h: i32) Frame {
-        return self.sub(
-            @divTrunc(self.rect[2] - w, 2),
-            @divTrunc(self.rect[3] - h, 2),
-            w,
-            h,
-        );
+        return self.sub(@divTrunc(self.rect[2] - w, 2), @divTrunc(self.rect[3] - h, 2), w, h);
     }
 
     /// Draw a chunk once at (x, y).

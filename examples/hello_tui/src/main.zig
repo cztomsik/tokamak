@@ -77,10 +77,6 @@ fn sidebar(ui: Builder) void {
             &.{ 0, 1, 2, 2, 1, 2 },
             &state.tree_sel,
         );
-        p.spacer(1);
-        p.alert("Connected", .info);
-        p.alert("Disk 90% full", .warn);
-        p.alert("Service down", .err);
     }
 }
 
@@ -140,10 +136,7 @@ fn resetmodal(ui: Builder) void {
         m.label("Do you want to reset all values?");
 
         if (m.row(&.{ 10, 10 })) |r| {
-            if (r.button("Reset")) {
-                state = .{};
-            }
-
+            if (r.button("Reset")) state = .{};
             if (r.button("Cancel")) state.confirm_reset = false;
         }
     }

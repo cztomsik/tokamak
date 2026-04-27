@@ -137,6 +137,7 @@ pub const Theme = extern struct {
 
 pub const Context = struct {
     gpa: std.mem.Allocator,
+    arena: std.mem.Allocator,
     screen: Screen,
     stack: [N_MAX_DEPTH]Container,
     theme: Theme = .nord,
@@ -155,7 +156,11 @@ pub const Context = struct {
         const ctx = try gpa.create(Context);
         errdefer gpa.destroy(ctx);
 
-        ctx.* = .{ .gpa = gpa, .screen = undefined, .stack = undefined };
+        const arena = try gpa.create(std.heap.ArenaAllocator);
+        errdefer gpa.destroy(arena);
+        arena.* = std.heap.ArenaAllocator.init(gpa);
+
+        ctx.* = .{ .gpa = gpa, .arena = arena.allocator(), .screen = undefined, .stack = undefined };
         try ctx.screen.init(gpa);
 
         return ctx;
@@ -163,8 +168,20 @@ pub const Context = struct {
 
     pub fn deinit(self: *Context) void {
         const gpa = self.gpa;
+        const arena_impl: *std.heap.ArenaAllocator = @ptrCast(@alignCast(self.arena.ptr));
+
         self.screen.deinit(gpa);
+        arena_impl.deinit();
+        gpa.destroy(arena_impl);
         gpa.destroy(self);
+    }
+
+    pub fn fmt(self: *Context, comptime format: []const u8, args: anytype) []u8 {
+        const H = struct {
+            var OOM = "OOM".*;
+        };
+
+        return std.fmt.allocPrint(self.arena, format, args) catch &H.OOM;
     }
 
     pub fn tick(self: *Context) !Event {
@@ -175,6 +192,9 @@ pub const Context = struct {
                 continue :next .render;
             },
             .render => {
+                const arena_impl: *std.heap.ArenaAllocator = @ptrCast(@alignCast(self.arena.ptr));
+                _ = arena_impl.reset(.retain_capacity);
+
                 try self.screen.refresh(self.gpa);
 
                 if (self.pending_key) |k| switch (k) {

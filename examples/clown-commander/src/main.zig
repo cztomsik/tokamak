@@ -95,8 +95,8 @@ var cmd: Commander = undefined;
 
 fn app(ui: Builder) void {
     if (ui.pushEq(2, -1)) |g| {
-        filePanel(g, &cmd.panels[0]);
-        filePanel(g, &cmd.panels[1]);
+        filePanel(g, &cmd, &cmd.panels[0]);
+        filePanel(g, &cmd, &cmd.panels[1]);
     }
 
     if (cmd.mkdir_active) {
@@ -118,8 +118,7 @@ fn app(ui: Builder) void {
         ui.statusBar("New directory name  (Enter: confirm  Esc: cancel)");
     } else {
         if (ui.menu(6)) |m| {
-            // No handlers, but we still want to render as menu items
-            _ = m.item(.enter, "open"); // handled in fileList()
+            if (m.item(.enter, "open")) openEntry();
             _ = m.item(.tab, "switch"); // fileList() is control, so tab just works
 
             if (m.item(.f5, "copy")) copyFile();
@@ -135,16 +134,16 @@ fn app(ui: Builder) void {
     }
 }
 
-fn filePanel(ui: Builder, panel: *Panel) void {
+fn filePanel(ui: Builder, commander: *Commander, panel: *Panel) void {
     if (ui.panel(-1)) |p| {
         p.container().layout.spacing = 0;
         p.label(panel.path);
         p.separator();
-        fileList(p, panel, -2);
+        fileList(p, commander, panel, -2);
     }
 }
 
-fn fileList(ui: Builder, panel: *Panel, height: i32) void {
+fn fileList(ui: Builder, commander: *Commander, panel: *Panel, height: i32) void {
     const inner = ui.stack(height) orelse return;
     inner.container().layout.spacing = 0;
 
@@ -153,8 +152,8 @@ fn fileList(ui: Builder, panel: *Panel, height: i32) void {
     const ctrl = ui.control(&panel.selected);
     ctrl.navigate(.{ .up, .down }, panel.files.items.len);
 
-    if (ctrl.pressed()) {
-        openEntry();
+    if (ctrl.focused) {
+        commander.active = if (panel == &commander.panels[0]) 0 else 1;
     }
 
     var i: usize = scroll;
@@ -165,10 +164,8 @@ fn fileList(ui: Builder, panel: *Panel, height: i32) void {
         if (is_sel) f.fill(ui.ctx.theme.primary);
         const file = panel.files.items[i];
         if (file.kind == .directory) {
-            var buf: [258]u8 = undefined;
-            const name = std.fmt.bufPrint(&buf, "/{s}", .{file.name}) catch file.name;
             if (is_sel) f.fg = ui.ctx.theme.text;
-            f.text(name);
+            f.text(ui.ctx.fmt("/{s}", .{file.name}));
         } else {
             f.fg = if (is_sel) ui.ctx.theme.text else ui.ctx.theme.secondary;
             f.text(file.name);
