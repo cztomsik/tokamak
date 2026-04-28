@@ -1,5 +1,4 @@
 const std = @import("std");
-const ansi = @import("../ansi.zig");
 const Color = @import("color.zig").Color;
 
 pub const Feature = enum(u32) {
@@ -7,6 +6,10 @@ pub const Feature = enum(u32) {
     alternate_screen = 1049,
     /// Allow pasting text safely without it being interpreted as keypresses
     bracketed_paste = 2004,
+    /// Report mouse button press/release events
+    mouse_buttons = 1000,
+    /// Use SGR mouse encoding so coordinates are unbounded and explicit
+    mouse_sgr = 1006,
     /// Show the terminal cursor
     show_cursor = 25,
 };
@@ -70,12 +73,16 @@ pub const Screen = struct {
         // Enable default features
         try self.set(.alternate_screen, true);
         try self.set(.bracketed_paste, true);
+        try self.set(.mouse_buttons, true);
+        try self.set(.mouse_sgr, true);
         try self.set(.show_cursor, false);
     }
 
     pub fn deinit(self: *Screen, gpa: std.mem.Allocator) void {
         // Disable features in reverse order
         self.set(.show_cursor, true) catch {};
+        self.set(.mouse_sgr, false) catch {};
+        self.set(.mouse_buttons, false) catch {};
         self.set(.bracketed_paste, false) catch {};
         self.set(.alternate_screen, false) catch {};
 
@@ -156,7 +163,7 @@ pub const Screen = struct {
 
         for (0..h) |row| {
             // Move cursor to start of row to contain wide-char layout damage (single emoji ruining layout for the whole app)
-            try self.out.print(ansi.csi ++ "{d};1H", .{row + 1});
+            try self.out.print("\x1B[{d};1H", .{row + 1});
 
             const row_start = row * w;
             for (0..w) |col| {
@@ -165,9 +172,9 @@ pub const Screen = struct {
                 // Emit color changes only when needed
                 if (cell.fg != cur_fg or cell.bg != cur_bg) {
                     if (self.truecolor) {
-                        try self.out.print(ansi.csi ++ "38;2;{d};{d};{d};48;2;{d};{d};{d}m", .{ cell.fg.r(), cell.fg.g(), cell.fg.b(), cell.bg.r(), cell.bg.g(), cell.bg.b() });
+                        try self.out.print("\x1B[38;2;{d};{d};{d};48;2;{d};{d};{d}m", .{ cell.fg.r(), cell.fg.g(), cell.fg.b(), cell.bg.r(), cell.bg.g(), cell.bg.b() });
                     } else {
-                        try self.out.print(ansi.csi ++ "38;5;{d};48;5;{d}m", .{ cell.fg.to256(), cell.bg.to256() });
+                        try self.out.print("\x1B[38;5;{d};48;5;{d}m", .{ cell.fg.to256(), cell.bg.to256() });
                     }
                     cur_fg = cell.fg;
                     cur_bg = cell.bg;
@@ -181,7 +188,7 @@ pub const Screen = struct {
         }
 
         // Reset colors
-        try self.out.writeAll(ansi.csi ++ "39;49m");
+        try self.out.writeAll("\x1B[39;49m");
         try self.out.flush();
     }
 

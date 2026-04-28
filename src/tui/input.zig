@@ -1,5 +1,4 @@
 const std = @import("std");
-const ansi = @import("../ansi.zig");
 
 pub const Key = union(enum) {
     // zig fmt: off
@@ -9,6 +8,7 @@ pub const Key = union(enum) {
     tab, shift_tab, enter, backspace, delete, escape,
     ctrl_c, ctrl_d,
     paste_start, paste_end,
+    scroll_up, scroll_down,
     f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12,
     // zig fmt: on
 };
@@ -44,7 +44,7 @@ pub fn readKey(stdin: *std.fs.File.Reader) Error!Key {
     return switch (ch) {
         0x03 => .ctrl_c,
         0x04 => .ctrl_d,
-        ansi.esc[0] => try readCSI(stdin),
+        0x1B => try readCSI(stdin),
         '\t' => .tab,
         '\r', '\n' => .enter,
         0x7F, 0x08 => .backspace,
@@ -52,9 +52,31 @@ pub fn readKey(stdin: *std.fs.File.Reader) Error!Key {
     };
 }
 
-fn readMore(stdin: *std.fs.File.Reader) Error!u8 {
-    while (!try pollReadable(stdin, 1_000)) {}
-    return (try stdin.interface.take(1))[0];
+fn readCSI(stdin: *std.fs.File.Reader) Error!Key {
+    switch (try readMore(stdin)) {
+        // macOS terminal app
+        'O' => switch (try readMore(stdin)) {
+            'P' => return .f1,
+            'Q' => return .f2,
+            'R' => return .f3,
+            'S' => return .f4,
+            else => return .escape,
+        },
+        '[' => {}, // read & decode
+        else => return .escape,
+    }
+
+    var seq: [32]u8 = undefined;
+    var i: u5 = 0;
+
+    while (i < seq.len) {
+        const ch = try readMore(stdin);
+        seq[i] = ch;
+        i += 1;
+        if (ch >= 0x40 and ch <= 0x7E) break;
+    }
+
+    return decodeCSI(seq[0..i]);
 }
 
 fn readUtf8(stdin: *std.fs.File.Reader, first: u8) Error!u21 {
@@ -65,91 +87,70 @@ fn readUtf8(stdin: *std.fs.File.Reader, first: u8) Error!u21 {
     return std.unicode.utf8Decode(buf[0..seq_len]) catch first;
 }
 
-fn readCSI(stdin: *std.fs.File.Reader) Error!Key {
-    const ch = try readMore(stdin);
-    const reader = &stdin.interface;
+fn readMore(stdin: *std.fs.File.Reader) Error!u8 {
+    while (!try pollReadable(stdin, 1_000)) {}
+    return (try stdin.interface.take(1))[0];
+}
 
-    // SS3 sequences (\x1bO.): macOS terminals send F1-F4 this way
-    if (ch == 'O') return switch (try readMore(stdin)) {
-        'P' => .f1,
-        'Q' => .f2,
-        'R' => .f3,
-        'S' => .f4,
+fn decodeCSI(seq: []const u8) Key {
+    const params = seq[0 .. seq.len - 1];
+    const final = seq[seq.len - 1];
+
+    if (final >= 'A' and final <= 'F') {
+        return switch (final) {
+            'A' => .up,
+            'B' => .down,
+            'C' => .right,
+            'D' => .left,
+            'H' => .home,
+            'F' => .end,
+            else => unreachable,
+        };
+    }
+
+    if (final == 'Z' and params.len == 0) {
+        return .shift_tab;
+    }
+
+    if (final == 'M' or final == 'm') {
+        // TODO: decodeMouse()
+        if (std.mem.startsWith(u8, params, "<64")) return .scroll_up;
+        if (std.mem.startsWith(u8, params, "<65")) return .scroll_down;
+        return .escape;
+    }
+
+    if (final != '~') return .escape;
+
+    return switch (std.fmt.parseInt(u8, params, 10) catch 0) {
+        1, 7 => .home,
+        3 => .delete,
+        4, 8 => .end,
+        5 => .page_up,
+        6 => .page_down,
+        11 => .f1,
+        12 => .f2,
+        13 => .f3,
+        14 => .f4,
+        15 => .f5,
+        17 => .f6,
+        18 => .f7,
+        19 => .f8,
+        20 => .f9,
+        21 => .f10,
+        23 => .f11,
+        24 => .f12,
+        200 => .paste_start,
+        201 => .paste_end,
         else => .escape,
     };
+}
 
-    if (ch != '[') return .escape; // Not a CSI
+test decodeCSI {
+    try std.testing.expectEqual(.up, decodeCSI("A"));
+    try std.testing.expectEqual(.delete, decodeCSI("3~"));
+    try std.testing.expectEqual(.paste_start, decodeCSI("200~"));
+    try std.testing.expectEqual(.f12, decodeCSI("24~"));
 
-    return switch (try readMore(stdin)) {
-        'A' => .up,
-        'B' => .down,
-        'C' => .right,
-        'D' => .left,
-        'H' => .home,
-        'F' => .end,
-        'Z' => .shift_tab,
-        '1' => {
-            const fkey: Key = switch (try readMore(stdin)) {
-                '~' => .home,
-                '1' => .f1,
-                '2' => .f2,
-                '3' => .f3,
-                '4' => .f4,
-                '5' => .f5,
-                '7' => .f6,
-                '8' => .f7,
-                '9' => .f8,
-                else => return .escape,
-            };
-
-            reader.toss(1); // ~
-            return fkey;
-        },
-        '2' => {
-            const b = try readMore(stdin);
-            switch (b) {
-                '0' => {
-                    const b2 = try readMore(stdin);
-                    if (b2 == '~') return .f9; // \x1b[20~
-                    // \x1b[200~ or \x1b[201~
-                    reader.toss(1); // ~
-                    return switch (b2) {
-                        '0' => .paste_start,
-                        '1' => .paste_end,
-                        else => .escape,
-                    };
-                },
-                '1' => {
-                    reader.toss(1);
-                    return .f10;
-                },
-                '3' => {
-                    reader.toss(1);
-                    return .f11;
-                },
-                '4' => {
-                    reader.toss(1);
-                    return .f12;
-                },
-                else => return .escape,
-            }
-        },
-        '3' => {
-            reader.toss(1); // ~
-            return .delete;
-        },
-        '4' => {
-            reader.toss(1);
-            return .end;
-        },
-        '5' => {
-            reader.toss(1);
-            return .page_up;
-        },
-        '6' => {
-            reader.toss(1);
-            return .page_down;
-        },
-        else => .escape,
-    };
+    try std.testing.expectEqual(.scroll_up, decodeCSI("<64;15;15M"));
+    try std.testing.expectEqual(.scroll_down, decodeCSI("<65;15;15M"));
 }

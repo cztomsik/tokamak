@@ -13,6 +13,8 @@ pub fn main() !void {
             .render => |ui| myapp(ui),
             .key => |k| switch (k) {
                 .ctrl_c, .escape => break,
+                .scroll_up => state.slider_val -= 0.01,
+                .scroll_down => state.slider_val += 0.01,
                 else => cx.pending_key = k,
             },
             else => cx.next_tick = .render, // animate spinner

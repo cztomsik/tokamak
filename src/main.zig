@@ -3,7 +3,6 @@ const httpz = @import("httpz");
 
 // Stand-alone namespaces
 pub const ai = @import("ai.zig");
-pub const ansi = @import("ansi.zig");
 pub const app = @import("app.zig");
 // pub const cdp = @import("cdp.zig");
 pub const cli = @import("cli.zig");
