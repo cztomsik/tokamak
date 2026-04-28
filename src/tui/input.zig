@@ -10,6 +10,7 @@ pub const Key = union(enum) {
     paste_start, paste_end,
     scroll_up, scroll_down,
     f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12,
+    unknown,
     // zig fmt: on
 };
 
@@ -44,7 +45,7 @@ pub fn readKey(stdin: *std.fs.File.Reader) Error!Key {
     return switch (ch) {
         0x03 => .ctrl_c,
         0x04 => .ctrl_d,
-        0x1B => try readCSI(stdin),
+        0x1B => if (try pollReadable(stdin, 1000)) try readCSI(stdin) else .escape,
         '\t' => .tab,
         '\r', '\n' => .enter,
         0x7F, 0x08 => .backspace,
@@ -60,10 +61,10 @@ fn readCSI(stdin: *std.fs.File.Reader) Error!Key {
             'Q' => return .f2,
             'R' => return .f3,
             'S' => return .f4,
-            else => return .escape,
+            else => return .unknown,
         },
         '[' => {}, // read & decode
-        else => return .escape,
+        else => return .unknown,
     }
 
     var seq: [32]u8 = undefined;
@@ -73,7 +74,7 @@ fn readCSI(stdin: *std.fs.File.Reader) Error!Key {
         const ch = try readMore(stdin);
         seq[i] = ch;
         i += 1;
-        if (ch >= 0x40 and ch <= 0x7E) break;
+        if (ch >= 0x40 and ch <= 0x7E) break; // this was final byte
     }
 
     return decodeCSI(seq[0..i]);
@@ -116,10 +117,10 @@ fn decodeCSI(seq: []const u8) Key {
         // TODO: decodeMouse()
         if (std.mem.startsWith(u8, params, "<64")) return .scroll_up;
         if (std.mem.startsWith(u8, params, "<65")) return .scroll_down;
-        return .escape;
+        return .unknown;
     }
 
-    if (final != '~') return .escape;
+    if (final != '~') return .unknown;
 
     return switch (std.fmt.parseInt(u8, params, 10) catch 0) {
         1, 7 => .home,
@@ -141,7 +142,7 @@ fn decodeCSI(seq: []const u8) Key {
         24 => .f12,
         200 => .paste_start,
         201 => .paste_end,
-        else => .escape,
+        else => .unknown,
     };
 }
 

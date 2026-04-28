@@ -8,6 +8,8 @@ pub const Feature = enum(u32) {
     bracketed_paste = 2004,
     /// Report mouse button press/release events
     mouse_buttons = 1000,
+    /// Report all mouse movement events, even if no button is pressed
+    mouse_any = 1003,
     /// Use SGR mouse encoding so coordinates are unbounded and explicit
     mouse_sgr = 1006,
     /// Show the terminal cursor
@@ -74,6 +76,7 @@ pub const Screen = struct {
         try self.set(.alternate_screen, true);
         try self.set(.bracketed_paste, true);
         try self.set(.mouse_buttons, true);
+        try self.set(.mouse_any, true);
         try self.set(.mouse_sgr, true);
         try self.set(.show_cursor, false);
     }
@@ -82,6 +85,7 @@ pub const Screen = struct {
         // Disable features in reverse order
         self.set(.show_cursor, true) catch {};
         self.set(.mouse_sgr, false) catch {};
+        self.set(.mouse_any, false) catch {};
         self.set(.mouse_buttons, false) catch {};
         self.set(.bracketed_paste, false) catch {};
         self.set(.alternate_screen, false) catch {};
