@@ -8,6 +8,8 @@ pub const Feature = enum(u32) {
     bracketed_paste = 2004,
     /// Report mouse button press/release events
     mouse_buttons = 1000,
+    /// Report mouse drag events (movement while button is held)
+    mouse_drag = 1002,
     /// Report all mouse movement events, even if no button is pressed
     mouse_any = 1003,
     /// Use SGR mouse encoding so coordinates are unbounded and explicit
@@ -73,30 +75,32 @@ pub const Screen = struct {
         @memset(self.cells, Cell{});
 
         // Enable default features
-        try self.set(.alternate_screen, true);
-        try self.set(.bracketed_paste, true);
-        try self.set(.mouse_buttons, true);
-        try self.set(.mouse_any, true);
-        try self.set(.mouse_sgr, true);
-        try self.set(.show_cursor, false);
+        try self.setFeature(.alternate_screen, true);
+        try self.setFeature(.bracketed_paste, true);
+        try self.setFeature(.mouse_buttons, true);
+        try self.setFeature(.mouse_drag, true);
+        try self.setFeature(.mouse_any, true);
+        try self.setFeature(.mouse_sgr, true);
+        try self.setFeature(.show_cursor, false);
     }
 
     pub fn deinit(self: *Screen, gpa: std.mem.Allocator) void {
         // Disable features in reverse order
-        self.set(.show_cursor, true) catch {};
-        self.set(.mouse_sgr, false) catch {};
-        self.set(.mouse_any, false) catch {};
-        self.set(.mouse_buttons, false) catch {};
-        self.set(.bracketed_paste, false) catch {};
-        self.set(.alternate_screen, false) catch {};
+        self.setFeature(.show_cursor, true) catch {};
+        self.setFeature(.mouse_sgr, false) catch {};
+        self.setFeature(.mouse_any, false) catch {};
+        self.setFeature(.mouse_drag, false) catch {};
+        self.setFeature(.mouse_buttons, false) catch {};
+        self.setFeature(.bracketed_paste, false) catch {};
+        self.setFeature(.alternate_screen, false) catch {};
 
         std.posix.tcsetattr(self.fin.file.handle, .FLUSH, self.original_termios) catch {};
         gpa.free(self.cells);
         gpa.free(self.in.buffer.ptr[0 .. 2 * self.in.buffer.len]);
     }
 
-    pub fn set(self: *Screen, feature: Feature, enabled: bool) !void {
-        try self.out.print("\x1b[?{d}{c}", .{ @intFromEnum(feature), @as(u8, if (enabled) 'h' else 'l') });
+    pub fn setFeature(self: *Screen, feat: Feature, enabled: bool) !void {
+        try self.out.print("\x1b[?{d}{c}", .{ @intFromEnum(feat), @as(u8, if (enabled) 'h' else 'l') });
         try self.out.flush();
     }
 

@@ -8,7 +8,7 @@ pub const Key = union(enum) {
     tab, shift_tab, enter, backspace, delete, escape,
     ctrl_c, ctrl_d,
     paste_start, paste_end,
-    scroll_up, scroll_down,
+    scroll_up, scroll_down, drag_start, drag_end,
     f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12,
     unknown,
     // zig fmt: on
@@ -117,6 +117,8 @@ fn decodeCSI(seq: []const u8) Key {
         // TODO: decodeMouse()
         if (std.mem.startsWith(u8, params, "<64")) return .scroll_up;
         if (std.mem.startsWith(u8, params, "<65")) return .scroll_down;
+        if (std.mem.startsWith(u8, params, "<16")) return .drag_start;
+        if (std.mem.startsWith(u8, params, "<17")) return .drag_end;
         return .unknown;
     }
 
