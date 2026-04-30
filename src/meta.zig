@@ -162,6 +162,10 @@ pub fn Deref(comptime T: type) type {
     return if (isOnePtr(T)) std.meta.Child(T) else T;
 }
 
+pub fn optional(val: anytype) ?Unwrap(@TypeOf(val)) {
+    return val;
+}
+
 pub fn unwrap(val: anytype) Unwrap(@TypeOf(val)) {
     return val.?;
 }
