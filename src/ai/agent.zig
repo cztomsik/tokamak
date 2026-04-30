@@ -21,7 +21,6 @@ pub const Agent = struct {
     runtime: *AgentRuntime,
     options: AgentOptions,
     messages: std.ArrayList(chat.Message) = .empty,
-    result: ?[]const u8 = null,
     total_tokens: u32 = 0,
 
     pub fn init(allocator: std.mem.Allocator, runtime: *AgentRuntime, options: AgentOptions) !Agent {
@@ -55,50 +54,12 @@ pub const Agent = struct {
         try self.messages.append(self.arena, msg);
     }
 
-    pub fn run(self: *Agent) ![]const u8 {
-        self.result = null;
-
-        while (try self.next()) |tcs| {
-            try self.acceptAll(tcs);
-        }
-
-        return self.result orelse error.NoResult;
-    }
-
     pub fn next(self: *Agent) !?[]const chat.ToolCall {
-        if (self.result != null) {
-            return null;
-        }
-
         const res = try self.runtime.createCompletion(self);
-
         const choice = res.singleChoice() orelse return error.NoChoice;
         try self.addMessage(choice.message);
 
-        if (choice.message.tool_calls) |tcs| {
-            for (tcs) |tc| {
-                if (std.mem.eql(u8, tc.function.name, "final_result")) {
-                    self.finish(tc.function.arguments);
-                    return null;
-                }
-            }
-
-            return tcs;
-        }
-
-        if (choice.finish_reason == .length) {
-            return error.MaxLen;
-        }
-
-        if (choice.text()) |text| {
-            self.finish(text);
-        }
-
-        return null;
-    }
-
-    pub fn finish(self: *Agent, result: []const u8) void {
-        self.result = result;
+        return if (choice.message.tool_calls) |tcs| tcs else null;
     }
 
     pub fn acceptAll(self: *Agent, tcs: []const chat.ToolCall) !void {
@@ -108,16 +69,14 @@ pub const Agent = struct {
     }
 
     pub fn accept(self: *Agent, tc: chat.ToolCall) !void {
-        try self.respond(tc, try self.runtime.execTool(self, tc));
+        try self.respond(tc, self.runtime.execTool(self, tc));
     }
 
     pub fn reject(self: *Agent, tc: chat.ToolCall) !void {
-        try self.respond(tc, error.ToolCallRejected);
+        try self.respond(tc, "Tool call rejected.");
     }
 
-    pub fn respond(self: *Agent, tc: chat.ToolCall, res: anytype) !void {
-        const content = try stringifyAlloc(self.arena, res);
-
+    pub fn respond(self: *Agent, tc: chat.ToolCall, content: []const u8) !void {
         try self.addMessage(.{
             .role = .tool,
             .content = .{ .text = content },
@@ -131,15 +90,9 @@ pub const Agent = struct {
             _ = self.messages.pop();
         }
     }
-
-    pub fn retry(self: *Agent) ![]const u8 {
-        self.undo();
-        return self.run();
-    }
 };
 
 pub const AgentRuntime = struct {
-    event_bus: ?event.Bus = null,
     client: *Client,
     toolbox: *AgentToolbox,
 
@@ -148,11 +101,6 @@ pub const AgentRuntime = struct {
     }
 
     fn createCompletion(self: *AgentRuntime, agent: *Agent) !chat.Response {
-        if (self.event_bus) |bus| {
-            _ = .{ bus, agent };
-            // TODO: try bus.dispatch(Xxx);
-        }
-
         const res = try self.client.createChatCompletion(agent.arena, .{
             .model = agent.options.model,
             .max_completion_tokens = agent.options.max_completion_tokens,
@@ -168,15 +116,10 @@ pub const AgentRuntime = struct {
         return res;
     }
 
-    fn execTool(self: *AgentRuntime, agent: *Agent, tool: chat.ToolCall) ![]const u8 {
-        if (self.event_bus) |bus| {
-            _ = .{ bus, agent };
-            // TODO: try bus.dispatch(Xxx);
-        }
-
+    fn execTool(self: *AgentRuntime, agent: *Agent, tool: chat.ToolCall) []const u8 {
         var inj = Injector.init(&.{ .ref(&agent.arena), .ref(agent) }, self.toolbox.injector);
         const res = self.toolbox.execTool(&inj, agent.arena, tool.function.name, tool.function.arguments);
-        return try stringifyAlloc(agent.arena, res);
+        return stringifyAlloc(agent.arena, res) catch |e| @errorName(e);
     }
 };
 

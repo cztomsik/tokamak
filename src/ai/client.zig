@@ -32,6 +32,16 @@ pub const Client = struct {
         return res.json(chat.Response);
     }
 
+    pub fn createEmbeddings(self: *Client, arena: std.mem.Allocator, params: embedding.Request) !embedding.Response {
+        const res = try self.request(arena, .{
+            .method = .POST,
+            .url = "embeddings",
+            .body = .json(&params),
+        });
+
+        return res.json(embedding.Response);
+    }
+
     pub fn listModels(self: *Client, arena: std.mem.Allocator) ![]const models.Model {
         const base_url = self.config.base_url;
 
@@ -45,16 +55,6 @@ pub const Client = struct {
 
         const list = try res.json(models.ListResponse);
         return list.data;
-    }
-
-    pub fn createEmbeddings(self: *Client, arena: std.mem.Allocator, params: embedding.Request) !embedding.Response {
-        const res = try self.request(arena, .{
-            .method = .POST,
-            .url = "embeddings",
-            .body = .json(&params),
-        });
-
-        return res.json(embedding.Response);
     }
 
     fn request(self: *Client, arena: std.mem.Allocator, options: http.RequestOptions) !http.ClientResponse {

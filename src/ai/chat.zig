@@ -123,11 +123,7 @@ pub const Response = struct {
     system_fingerprint: ?[]const u8,
 
     pub fn singleChoice(self: Response) ?Choice {
-        if (self.choices.len != 1) {
-            return null;
-        }
-
-        return self.choices[0];
+        return if (self.choices.len == 1) self.choices[0] else null;
     }
 };
 
@@ -138,13 +134,11 @@ pub const Choice = struct {
     finish_reason: FinishReason,
 
     pub fn text(self: Choice) ?[]const u8 {
-        if (self.finish_reason == .stop) {
-            switch (self.message.content orelse return null) {
-                .text => |t| return t,
-                .contents => |cs| for (cs) |c| if (c.type == .text) return c.text,
-            }
-        }
-
-        return null;
+        return switch (self.message.content orelse return null) {
+            .text => |t| t,
+            .contents => |cs| for (cs) |c| {
+                if (c.type == .text) return c.text;
+            } else null,
+        };
     }
 };
