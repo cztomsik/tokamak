@@ -1,4 +1,5 @@
 const std = @import("std");
+const meta = @import("../meta.zig");
 const schema = @import("../schema.zig");
 const serde = @import("../serde.zig");
 const util = @import("../util.zig");
@@ -59,12 +60,12 @@ pub const Message = struct {
     tool_call_id: ?[]const u8 = null,
 
     pub fn serialize(self: Message, w: anytype) !void {
-        // Only emit fields that are non-null (omit fields whose default is null)
         var st = try w.beginStruct(Message, 4);
-        try st.field("role", self.role);
-        if (self.content) |v| try st.field("content", v);
-        if (self.tool_calls) |v| try st.field("tool_calls", v);
-        if (self.tool_call_id) |v| try st.field("tool_call_id", v);
+        inline for (std.meta.fields(@This())) |f| {
+            if (meta.optional(@field(self, f.name))) |v| {
+                try st.field(f.name, v);
+            }
+        }
         try st.end();
     }
 };
@@ -142,14 +143,6 @@ pub const Choice = struct {
                 .text => |t| return t,
                 .contents => |cs| for (cs) |c| if (c.type == .text) return c.text,
             }
-        }
-
-        return null;
-    }
-
-    pub fn toolCalls(self: Choice) ?[]const ToolCall {
-        if (self.finish_reason == .tool_calls) {
-            return self.message.tool_calls;
         }
 
         return null;

@@ -75,7 +75,7 @@ pub const Agent = struct {
         const choice = res.singleChoice() orelse return error.NoChoice;
         try self.addMessage(choice.message);
 
-        if (choice.toolCalls()) |tcs| {
+        if (choice.message.tool_calls) |tcs| {
             for (tcs) |tc| {
                 if (std.mem.eql(u8, tc.function.name, "final_result")) {
                     self.finish(tc.function.arguments);
