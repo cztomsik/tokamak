@@ -14,6 +14,8 @@ pub const AgentOptions = struct {
     max_completion_tokens: u32 = 4096,
     temperature: ?f32 = null,
     top_p: ?f32 = null,
+    auto_retry: u8 = 1,
+    // auto_dedupe: bool = true,
 };
 
 pub const Agent = struct {
@@ -55,11 +57,21 @@ pub const Agent = struct {
     }
 
     pub fn next(self: *Agent) !?[]const chat.ToolCall {
-        const res = try self.runtime.createCompletion(self);
-        const choice = res.singleChoice() orelse return error.NoChoice;
-        try self.addMessage(choice.message);
+        var retries = self.options.auto_retry +| 1;
+        while (retries > 0) : (retries -= 1) {
+            const res = try self.runtime.createCompletion(self);
+            const choice = res.singleChoice() orelse return error.NoChoice;
+            const is_empty = if (choice.text()) |t| t.len == 0 else true;
 
-        return if (choice.message.tool_calls) |tcs| tcs else null;
+            if (choice.message.tool_calls == null and is_empty) {
+                continue;
+            }
+
+            try self.addMessage(choice.message);
+            return choice.message.tool_calls;
+        }
+
+        return null;
     }
 
     pub fn acceptAll(self: *Agent, tcs: []const chat.ToolCall) !void {
