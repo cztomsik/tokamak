@@ -71,7 +71,7 @@ pub const Agent = struct {
             return choice.message.tool_calls;
         }
 
-        return null;
+        return error.RetryFailed;
     }
 
     pub fn acceptAll(self: *Agent, tcs: []const chat.ToolCall) !void {
