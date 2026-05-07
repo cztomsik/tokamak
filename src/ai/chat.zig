@@ -8,6 +8,16 @@ const Content = struct {
     type: enum { text, image_url },
     text: ?[]const u8 = null,
     image_url: ?ImageUrl = null,
+
+    pub fn serialize(self: Content, w: anytype) !void {
+        var st = try w.beginStruct(Content, 3);
+        inline for (std.meta.fields(@This())) |f| {
+            if (meta.optional(@field(self, f.name))) |v| {
+                try st.field(f.name, v);
+            }
+        }
+        try st.end();
+    }
 };
 
 const ImageUrl = struct {
@@ -37,13 +47,23 @@ pub const TextOrContents = union(enum) {
 pub const Request = struct {
     model: []const u8,
     messages: []const Message,
-    tools: []const Tool = &.{},
+    tools: ?[]const Tool = null,
     response_format: ?struct {
         type: []const u8,
     } = null,
     max_completion_tokens: u32 = 256,
     temperature: ?f32 = null,
     top_p: ?f32 = null,
+
+    pub fn serialize(self: Request, w: anytype) !void {
+        var st = try w.beginStruct(Content, 3);
+        inline for (std.meta.fields(@This())) |f| {
+            if (meta.optional(@field(self, f.name))) |v| {
+                try st.field(f.name, v);
+            }
+        }
+        try st.end();
+    }
 };
 
 pub const Role = enum {
@@ -142,3 +162,129 @@ pub const Choice = struct {
         };
     }
 };
+
+test "serde" {
+    const msgs: []const Message = &.{
+        .{
+            .role = .user,
+            .content = .{ .text = "Hello" },
+        },
+        .{
+            .role = .user,
+            .content = .{
+                .contents = &.{.{
+                    .type = .image_url,
+                    .image_url = .{
+                        .url = "data:image/png;base64,abc",
+                        .detail = .low,
+                    },
+                }},
+            },
+        },
+        .{
+            .role = .assistant,
+            .tool_calls = &.{.{
+                .id = "call_1",
+                .type = .function,
+                .function = .{
+                    .name = "get_stock_price",
+                    .arguments = "{\"symbol\": \"AAPL\"}",
+                },
+            }},
+        },
+        .{
+            .role = .tool,
+            .content = .{ .text = "" },
+            .tool_call_id = "call_1",
+        },
+    };
+
+    try serde.json.expectJson(Request{
+        .model = "gpt-4",
+        .messages = msgs[0..1],
+    },
+        \\{
+        \\  "model": "gpt-4",
+        \\  "messages": [
+        \\    {
+        \\      "role": "user",
+        \\      "content": "Hello"
+        \\    }
+        \\  ],
+        \\  "max_completion_tokens": 256
+        \\}
+    );
+
+    try serde.json.expectJson(Request{
+        .model = "gpt-4-turbo",
+        .messages = msgs[1..],
+        .tools = &.{.{
+            .function = .{
+                .name = "get_stock_price",
+                .description = "Get the current stock price for a symbol",
+                .parameters = .schema(struct { symbol: []const u8 }),
+            },
+        }},
+        .temperature = 0.0,
+    },
+        \\{
+        \\  "model": "gpt-4-turbo",
+        \\  "messages": [
+        \\    {
+        \\      "role": "user",
+        \\      "content": [
+        \\        {
+        \\          "type": "image_url",
+        \\          "image_url": {
+        \\            "url": "data:image/png;base64,abc",
+        \\            "detail": "low"
+        \\          }
+        \\        }
+        \\      ]
+        \\    },
+        \\    {
+        \\      "role": "assistant",
+        \\      "tool_calls": [
+        \\        {
+        \\          "id": "call_1",
+        \\          "type": "function",
+        \\          "function": {
+        \\            "name": "get_stock_price",
+        \\            "arguments": "{\"symbol\": \"AAPL\"}"
+        \\          }
+        \\        }
+        \\      ]
+        \\    },
+        \\    {
+        \\      "role": "tool",
+        \\      "content": "",
+        \\      "tool_call_id": "call_1"
+        \\    }
+        \\  ],
+        \\  "tools": [
+        \\    {
+        \\      "type": "function",
+        \\      "function": {
+        \\        "name": "get_stock_price",
+        \\        "description": "Get the current stock price for a symbol",
+        \\        "parameters": {
+        \\          "type": "object",
+        \\          "properties": {
+        \\            "symbol": {
+        \\              "type": "string"
+        \\            }
+        \\          },
+        \\          "required": [
+        \\            "symbol"
+        \\          ],
+        \\          "additionalProperties": false
+        \\        },
+        \\        "strict": true
+        \\      }
+        \\    }
+        \\  ],
+        \\  "max_completion_tokens": 256,
+        \\  "temperature": 0
+        \\}
+    );
+}
