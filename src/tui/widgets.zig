@@ -147,6 +147,25 @@ pub fn textInput(ui: Builder, buf: []u8, len: *usize) void {
     if (ctrl.focused) f.sub(@intCast(cur_col - scroll_cols), 0, 1, 1).fill(f.fg);
 }
 
+/// Render an editable multi-line text field with wrapping.
+pub fn textArea(ui: Builder, buf: []u8, len: *usize, height: i32) void {
+    var f = ui.next(-1, height) orelse return;
+    const ctrl = ui.control(len);
+    const cur = ui.state(usize, len.*);
+    ctrl.editTextArea(buf, len, cur);
+
+    if (ctrl.focused) f.fg = ui.ctx.theme.primary;
+    const content = buf[0..len.*];
+    f.text(content);
+
+    if (ctrl.focused) {
+        const pos = textAreaCursorPos(content[0..cur.*], @intCast(f.width()));
+        if (pos[1] < @as(usize, @intCast(f.height()))) {
+            f.sub(@intCast(pos[0]), @intCast(pos[1]), 1, 1).fill(f.fg);
+        }
+    }
+}
+
 /// Count the number of display columns in a UTF-8 byte slice (1 codepoint = 1 column).
 fn utf8ColCount(bytes: []const u8) usize {
     const view: std.unicode.Utf8View = .initUnchecked(bytes);
@@ -165,6 +184,20 @@ fn utf8ColToByteOffset(bytes: []const u8, cols: usize) usize {
         if (it.nextCodepoint() == null) break;
     }
     return @intFromPtr(it.peek(1).ptr) - @intFromPtr(bytes.ptr);
+}
+
+fn textAreaCursorPos(bytes: []const u8, width: usize) [2]usize {
+    var col: usize = 0;
+    var line: usize = 0;
+    var it = util.wordWrap(bytes, @max(1, width));
+
+    while (it.next()) |chunk| {
+        col = utf8ColCount(chunk);
+        line += 1;
+    }
+
+    if (bytes.len > 0 and bytes[bytes.len - 1] == '\n') col = 0;
+    return .{ col, line -| 1 };
 }
 
 /// Render a radio-style picker. Up/down moves selection.

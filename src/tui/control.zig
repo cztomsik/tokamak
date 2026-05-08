@@ -1,7 +1,10 @@
 const std = @import("std");
 const Context = @import("context.zig").Context;
 const Frame = @import("frame.zig").Frame;
-const Key = @import("input.zig").Key;
+const input = @import("input.zig");
+const Key = input.Key;
+
+const PasteMode = enum { single_line, preserve_newlines };
 
 pub fn Control(comptime T: type) type {
     return struct {
@@ -58,14 +61,9 @@ pub fn Control(comptime T: type) type {
 
             switch (self.pending_key orelse return) {
                 .char => |ch| {
-                    var enc: [4]u8 = undefined;
-                    const n = std.unicode.utf8Encode(ch, &enc) catch return;
-                    if (len.* + n > buf.len) return;
-                    std.mem.copyBackwards(u8, buf[cur.* + n .. len.* + n], buf[cur.*..len.*]);
-                    @memcpy(buf[cur.* .. cur.* + n], enc[0..n]);
-                    cur.* += n;
-                    len.* += n;
+                    if (!insertCodepoint(buf, len, cur, ch)) return;
                 },
+                .paste_start => if (!self.pasteText(buf, len, cur, .single_line)) return,
                 .backspace => if (cur.* > 0) {
                     const n = prevCodepointLen(buf[0..cur.*]);
                     std.mem.copyForwards(u8, buf[cur.* - n .. len.* - n], buf[cur.*..len.*]);
@@ -91,6 +89,60 @@ pub fn Control(comptime T: type) type {
             }
 
             self.ctx.next_tick = .clear;
+        }
+
+        pub fn editTextArea(self: Ctrl, buf: []u8, len: *usize, cur: *usize) void {
+            cur.* = @min(cur.*, len.*);
+
+            switch (self.pending_key orelse return) {
+                .enter => if (!insertCodepoint(buf, len, cur, '\n')) return,
+                .paste_start => if (!self.pasteText(buf, len, cur, .preserve_newlines)) return,
+                else => {
+                    self.editText(buf, len, cur);
+                    return;
+                },
+            }
+
+            self.ctx.next_tick = .clear;
+        }
+
+        fn pasteText(self: Ctrl, buf: []u8, len: *usize, cur: *usize, mode: PasteMode) bool {
+            var inserted = false;
+
+            while (true) {
+                const maybe_key = input.pollKey(&self.ctx.screen.fin, 1000) catch return inserted;
+                const key = maybe_key orelse return inserted;
+
+                switch (key) {
+                    .paste_end => return inserted,
+                    .char => |ch| if (isPasteCodepoint(ch)) {
+                        inserted = insertCodepoint(buf, len, cur, ch) or inserted;
+                    },
+                    .enter => {
+                        const ch: u21 = if (mode == .preserve_newlines) '\n' else ' ';
+                        inserted = insertCodepoint(buf, len, cur, ch) or inserted;
+                    },
+                    .tab => {
+                        inserted = insertCodepoint(buf, len, cur, ' ') or inserted;
+                    },
+                    else => {},
+                }
+            }
+        }
+
+        fn insertCodepoint(buf: []u8, len: *usize, cur: *usize, ch: u21) bool {
+            var enc: [4]u8 = undefined;
+            const n = std.unicode.utf8Encode(ch, &enc) catch return false;
+            if (len.* + n > buf.len) return false;
+            std.mem.copyBackwards(u8, buf[cur.* + n .. len.* + n], buf[cur.*..len.*]);
+            @memcpy(buf[cur.* .. cur.* + n], enc[0..n]);
+            cur.* += n;
+            len.* += n;
+            return true;
+        }
+
+        fn isPasteCodepoint(ch: u21) bool {
+            return ch >= 0x20 and ch != 0x7F;
         }
 
         /// Return the byte length of the codepoint just before `pos` in `text`.

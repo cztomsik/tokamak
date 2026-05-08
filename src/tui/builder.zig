@@ -77,6 +77,7 @@ pub const Builder = struct {
     pub const checkbox = widgets.checkbox;
     pub const numberInput = widgets.numberInput;
     pub const textInput = widgets.textInput;
+    pub const textArea = widgets.textArea;
     pub const select = widgets.select;
     pub const slider = widgets.slider;
 

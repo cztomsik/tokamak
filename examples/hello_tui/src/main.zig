@@ -27,6 +27,8 @@ const State = struct {
     number_val: i32 = 123,
     text_buf: [64]u8 = ("hello" ++ std.mem.zeroes([59]u8)).*,
     text_len: usize = 5,
+    textarea_buf: [256]u8 = ("hello\nmulti-line text area" ++ std.mem.zeroes([230]u8)).*,
+    textarea_len: usize = 26,
     flags: [5]bool = @splat(true),
     confirm_reset: bool = false,
     tab_sel: usize = 0,
@@ -98,6 +100,7 @@ fn mainarea(ui: Builder) void {
 
                 if (col.collapsible("Inputs", &state.flags[4])) {
                     col.textInput(&state.text_buf, &state.text_len);
+                    col.textArea(&state.textarea_buf, &state.textarea_len, 4);
                     col.numberInput(&state.number_val, 1);
                     col.spinner();
                 }
