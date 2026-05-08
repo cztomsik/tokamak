@@ -80,48 +80,79 @@ pub fn serialize(writer: anytype, value: anytype) Error!void {
         return map.end();
     }
 
-    // Normalize everything into scalar writes or container callbacks
+    // Normalize everything into scalar writes or delegate to shape-specific calls
     return switch (@typeInfo(T)) {
         inline .void, .null, .bool, .int, .float => |_, t| writer.write(@field(Kind, @tagName(t)), value),
         .comptime_int => writer.write(.int, value),
         .comptime_float => writer.write(.float, value),
         .enum_literal => writer.write(.string, @tagName(value)),
-        .@"enum" => |e| if (e.is_exhaustive) writer.write(.string, @tagName(value)) else writer.write(.int, @intFromEnum(value)),
         .error_set => writer.write(.string, @errorName(value)),
         .optional => if (value) |v| serialize(writer, v) else writer.write(.null, null),
         .error_union => if (value) |v| serialize(writer, v) else |e| serialize(writer, e),
-        .array => |a| serialize(writer, @as([]const a.child, &value)),
-        .@"struct" => |s| if (s.is_tuple) {
-            var tuple = try writer.beginTuple(s.fields.len);
-            inline for (0..s.fields.len) |i| try tuple.element(value[i]);
-            return tuple.end();
-        } else {
-            var st = try writer.beginStruct(T, s.fields.len);
-            inline for (s.fields) |f| {
-                try st.field(f.name, @field(value, f.name));
-            }
-            return st.end();
-        },
-        .@"union" => |u| if (u.tag_type) |_| {
-            switch (value) {
-                inline else => |v, t| {
-                    var st = try writer.beginStruct(void, 1);
-                    try st.field(@tagName(t), v);
-                    return st.end();
-                },
-            }
-        } else @compileError("unsupported type: " ++ @typeName(T)),
+        .@"enum" => serializeEnum(writer, value),
+        .array => |a| serializeSlice(writer, @as([]const a.child, &value)),
+        .@"struct" => |s| if (s.is_tuple) serializeTuple(writer, value) else serializeStruct(writer, value, .{}),
+        .@"union" => |u| if (u.tag_type != null) serializeUnion(writer, value) else @compileError("unsupported type: " ++ @typeName(T)),
         .pointer => |p| switch (p.size) {
             .one => serialize(writer, if (@typeInfo(p.child) == .array) @as([]const std.meta.Elem(p.child), value) else value.*),
-            .slice => {
-                var seq = try writer.beginSeq(value.len);
-                for (value) |item| try seq.element(item);
-                return seq.end();
-            },
+            .slice => serializeSlice(writer, value),
             else => @compileError("unsupported type: " ++ @typeName(T)),
         },
         .type, .noreturn, .undefined, .@"fn", .@"opaque", .frame, .@"anyframe", .vector => @compileError("unsupported type: " ++ @typeName(T)),
     };
+}
+
+pub fn serializeEnum(writer: anytype, value: anytype) Error!void {
+    if (@typeInfo(@TypeOf(value)).@"enum".is_exhaustive) {
+        return writer.write(.string, @tagName(value));
+    }
+
+    return writer.write(.int, @intFromEnum(value));
+}
+
+pub fn serializeSlice(writer: anytype, value: anytype) Error!void {
+    var seq = try writer.beginSeq(value.len);
+    for (value) |item| try seq.element(item);
+    return seq.end();
+}
+
+pub fn serializeTuple(writer: anytype, value: anytype) Error!void {
+    const fields = std.meta.fields(@TypeOf(value));
+    var tuple = try writer.beginTuple(fields.len);
+    inline for (0..fields.len) |i| try tuple.element(value[i]);
+    return tuple.end();
+}
+
+pub const SerializeStructOptions = struct {
+    omit_null: enum { never, auto, always } = .auto,
+};
+
+pub fn serializeStruct(writer: anytype, value: anytype, comptime options: SerializeStructOptions) Error!void {
+    const T = @TypeOf(value);
+    const fields = std.meta.fields(T);
+    var st = try writer.beginStruct(T, fields.len);
+    inline for (fields) |f| {
+        if (!meta.isOptional(f.type) or options.omit_null == .never) {
+            try st.field(f.name, @field(value, f.name));
+        } else {
+            if (@field(value, f.name)) |v| {
+                try st.field(f.name, v);
+            } else if (options.omit_null == .auto and (f.defaultValue() == null or f.defaultValue().? != null)) {
+                try st.field(f.name, @field(value, f.name));
+            }
+        }
+    }
+    return st.end();
+}
+
+pub fn serializeUnion(writer: anytype, value: anytype) Error!void {
+    switch (value) {
+        inline else => |v, t| {
+            var st = try writer.beginStruct(void, 1);
+            try st.field(@tagName(t), v);
+            return st.end();
+        },
+    }
 }
 
 pub fn serializer(cx: anytype, comptime fun: anytype) Serializer(@TypeOf(cx), fun) {

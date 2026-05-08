@@ -8,16 +8,6 @@ const Content = struct {
     type: enum { text, image_url },
     text: ?[]const u8 = null,
     image_url: ?ImageUrl = null,
-
-    pub fn serialize(self: Content, w: anytype) !void {
-        var st = try w.beginStruct(Content, 3);
-        inline for (std.meta.fields(@This())) |f| {
-            if (meta.optional(@field(self, f.name))) |v| {
-                try st.field(f.name, v);
-            }
-        }
-        try st.end();
-    }
 };
 
 const ImageUrl = struct {
@@ -54,16 +44,6 @@ pub const Request = struct {
     max_completion_tokens: u32 = 256,
     temperature: ?f32 = null,
     top_p: ?f32 = null,
-
-    pub fn serialize(self: Request, w: anytype) !void {
-        var st = try w.beginStruct(Content, 3);
-        inline for (std.meta.fields(@This())) |f| {
-            if (meta.optional(@field(self, f.name))) |v| {
-                try st.field(f.name, v);
-            }
-        }
-        try st.end();
-    }
 };
 
 pub const Role = enum {
@@ -78,16 +58,6 @@ pub const Message = struct {
     content: ?TextOrContents = null,
     tool_calls: ?[]const ToolCall = null,
     tool_call_id: ?[]const u8 = null,
-
-    pub fn serialize(self: Message, w: anytype) !void {
-        var st = try w.beginStruct(Message, 4);
-        inline for (std.meta.fields(@This())) |f| {
-            if (meta.optional(@field(self, f.name))) |v| {
-                try st.field(f.name, v);
-            }
-        }
-        try st.end();
-    }
 };
 
 pub const ToolType = enum { function };
