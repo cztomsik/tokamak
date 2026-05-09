@@ -22,6 +22,7 @@ pub const Agent = struct {
     options: AgentOptions,
     messages: std.ArrayListUnmanaged(chat.Message) = .empty,
     result: ?[]const u8 = null,
+    total_tokens: u32,
 
     pub fn init(allocator: std.mem.Allocator, runtime: *AgentRuntime, options: AgentOptions) !Agent {
         const arena = try allocator.create(std.heap.ArenaAllocator);
@@ -31,6 +32,7 @@ pub const Agent = struct {
             .arena = arena.allocator(),
             .runtime = runtime,
             .options = options,
+	    .total_tokens = 0,
         };
     }
 
