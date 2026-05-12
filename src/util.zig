@@ -39,9 +39,10 @@ pub fn wordWrap(str: []const u8, max_width: usize) WordWrapIterator {
     };
 }
 
-// TODO: This will NOT work for multi-codepoint emojis, but I'm not sure there's
-// anything we can do here without some grapheme-cluster segmentation and I'm
-// not sure if it's not even font-specific and... I'm not going to do that.
+// TODO: wcwidth(), wcswidth() but we're likely going to need real grapheme
+// cluster segmentation anyway because we should wrap at word boundaries.
+// it looks like it's not font-specific, but **it is** term specific :-/
+// https://github.com/ratatui/ratatui/discussions/1438
 pub const WordWrapIterator = struct {
     inner: std.unicode.Utf8Iterator,
     max_width: usize,
@@ -59,9 +60,12 @@ pub const WordWrapIterator = struct {
             }
 
             if (self.col == self.max_width) {
-                const line = trim(self.inner.bytes[start..self.inner.i]);
+                const line = self.inner.bytes[start..self.inner.i];
+                const rest = self.inner.bytes[self.inner.i..];
                 self.col = 0;
-                self.inner.bytes = trim(self.inner.bytes[self.inner.i..]);
+                // Skip only the first whitespace character at the boundary
+                // to preserve additional whitespace for the next line.
+                self.inner.bytes = if (rest.len > 0 and std.ascii.isWhitespace(rest[0])) rest[1..] else rest;
                 self.inner.i = 0;
                 return line;
             }
@@ -87,6 +91,8 @@ test wordWrap {
     // TODO: word-boundaries, preserve indentation?
     try expectWrap("a\n\nb", 80, &.{ "a", "", "b" });
     try expectWrap("hi there", 5, &.{ "hi th", "ere" });
+    try expectWrap("hello  world", 5, &.{ "hello", " worl", "d" });
+    try expectWrap("   ", 3, &.{"   "});
 }
 
 pub fn countLines(str: []const u8, max_width: usize) usize {

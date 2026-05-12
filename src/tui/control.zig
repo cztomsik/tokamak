@@ -110,12 +110,11 @@ pub fn Control(comptime T: type) type {
             var inserted = false;
 
             while (true) {
-                const maybe_key = input.pollKey(&self.ctx.screen.fin, 1000) catch return inserted;
-                const key = maybe_key orelse return inserted;
+                const maybe_key = input.pollKey(&self.ctx.screen.fin, 1000) catch null;
 
-                switch (key) {
-                    .paste_end => return inserted,
-                    .char => |ch| if (isPasteCodepoint(ch)) {
+                switch (maybe_key orelse break) {
+                    .paste_end => break,
+                    .char => |ch| if (ch >= 0x20 and ch != 0x7F) {
                         inserted = insertCodepoint(buf, len, cur, ch) or inserted;
                     },
                     .enter => {
@@ -128,6 +127,8 @@ pub fn Control(comptime T: type) type {
                     else => {},
                 }
             }
+
+            return inserted;
         }
 
         fn insertCodepoint(buf: []u8, len: *usize, cur: *usize, ch: u21) bool {
@@ -139,10 +140,6 @@ pub fn Control(comptime T: type) type {
             cur.* += n;
             len.* += n;
             return true;
-        }
-
-        fn isPasteCodepoint(ch: u21) bool {
-            return ch >= 0x20 and ch != 0x7F;
         }
 
         /// Return the byte length of the codepoint just before `pos` in `text`.
