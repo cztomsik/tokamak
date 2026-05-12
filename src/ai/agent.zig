@@ -64,6 +64,7 @@ pub const Agent = struct {
             const is_empty = if (choice.text()) |t| t.len == 0 else true;
 
             if (choice.message.tool_calls == null and is_empty) {
+                log.debug("empty choice: {f}", .{std.json.fmt(res, .{})});
                 continue;
             }
 
