@@ -45,7 +45,7 @@ pub fn readKey(stdin: *std.fs.File.Reader) Error!Key {
     return switch (ch) {
         0x03 => .ctrl_c,
         0x04 => .ctrl_d,
-        0x1B => if (try pollReadable(stdin, 1000)) try readCSI(stdin) else .escape,
+        0x1B => if (try pollReadable(stdin, 100)) try readCSI(stdin) else .escape,
         '\t' => .tab,
         '\r', '\n' => .enter,
         0x7F, 0x08 => .backspace,
