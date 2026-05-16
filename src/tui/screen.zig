@@ -201,9 +201,14 @@ pub const Screen = struct {
     }
 
     fn querySizeIoctl(self: *Screen) ![2]i32 {
+        const TIOCGWINSZ: c_int = switch (@import("builtin").os.tag) {
+            .macos, .ios, .tvos, .watchos => 0x40087468,
+            .linux => 0x00005413,
+            else => @compileError("unsupported OS for TIOCGWINSZ"),
+        };
+
         const Winsize = extern struct { ws_row: u16, ws_col: u16, ws_xpixel: u16, ws_ypixel: u16 };
         var ws: Winsize = undefined;
-        const TIOCGWINSZ: c_int = 0x40087468;
         if (std.c.ioctl(self.fout.file.handle, TIOCGWINSZ, &ws) != 0) return error.IoctlFailed;
         return .{ @intCast(ws.ws_col), @intCast(ws.ws_row) };
     }
