@@ -38,20 +38,20 @@ A terminal-based file manager inspired by Norton Commander and Midnight Commande
 Each panel manages its own state:
 
 ```zig
-@include examples/clown-commander/src/main.zig#L12-L25
+@include examples/clown-commander/src/main.zig#L8-L53
 ```
 
 ### Commander
 Manages both panels:
 
 ```zig
-@include examples/clown-commander/src/main.zig#L99-L115
+@include examples/clown-commander/src/main.zig#L55-L88
 ```
 
 ## Main Loop
 
 ```zig
-@include examples/clown-commander/src/main.zig#L150-L177
+@include examples/clown-commander/src/main.zig#L240-L249
 ```
 
 ## TUI Context
@@ -59,19 +59,19 @@ Manages both panels:
 The `tk.tui.Context` provides terminal control:
 
 ```zig
-@include examples/clown-commander/src/main.zig#L146-L154
+@include examples/clown-commander/src/main.zig#L237-L238
 ```
 
 ## File Operations
 
 ### Copy File
 ```zig
-@include examples/clown-commander/src/main.zig#L251-L273
+@include examples/clown-commander/src/main.zig#L185-L198
 ```
 
 ### Create Directory
 ```zig
-@include examples/clown-commander/src/main.zig#L303-L327
+@include examples/clown-commander/src/main.zig#L214-L222
 ```
 
 ## Display Layout
