@@ -27,10 +27,16 @@ A comprehensive CLI application demonstrating various commands and integrations.
 ### [clown-commander](../examples/clown-commander.md)
 A terminal-based file manager inspired by Norton Commander / Midnight Commander.
 
-## AI Examples
+## Other Examples
 
-### [hello_ai](../examples/hello_ai.md)
-Demonstrates AI agent integration with function calling capabilities.
+### hello_tui
+A simple terminal UI application demonstrating the TUI framework.
+
+### hello_ssr
+Demonstrates server-side rendering capabilities.
+
+### hello_objc
+Demonstrates Objective-C interop on macOS.
 
 ## Building Examples
 

@@ -23,7 +23,7 @@ const cx = {
     },
     examples: {
       title: 'Examples',
-      order: ['hello', 'hello_app', 'hello_cli', 'hello_ai', 'blog', 'todos_orm_sqlite', 'webview_app', 'clown-commander'],
+      order: ['hello', 'hello_app', 'hello_cli', 'blog', 'todos_orm_sqlite', 'webview_app', 'clown-commander'],
     },
   },
   pages: [],
