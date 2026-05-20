@@ -25,21 +25,43 @@ pub const Cell = struct {
     z: i32 = 0,
 };
 
+pub const Buffer = struct {
+    size: [2]i32,
+    cells: []Cell,
+
+    pub fn init(gpa: std.mem.Allocator, size: [2]i32) !Buffer {
+        const cells = try gpa.alloc(Cell, @intCast(size[0] * size[1]));
+        @memset(cells, .{});
+        return .{ .size = size, .cells = cells };
+    }
+
+    pub fn deinit(self: *Buffer, gpa: std.mem.Allocator) void {
+        gpa.free(self.cells);
+    }
+
+    pub fn resize(self: *Buffer, gpa: std.mem.Allocator, new_size: [2]i32) !void {
+        const old_n: usize = @intCast(self.size[0] * self.size[1]);
+        const new_n: usize = @intCast(new_size[0] * new_size[1]);
+        self.cells = try gpa.realloc(self.cells, new_n);
+        if (new_n > old_n) {
+            @memset(self.cells[old_n..new_n], .{});
+        }
+        self.size = new_size;
+    }
+
+    pub fn clear(self: *Buffer) void {
+        @memset(self.cells, .{});
+    }
+};
+
 pub const Screen = struct {
-    in: *std.io.Reader,
-    out: *std.io.Writer,
+    buffer: Buffer,
     fin: std.fs.File.Reader,
     fout: std.fs.File.Writer,
     original_termios: std.posix.termios,
-    cells: []Cell,
-    width: i32,
-    height: i32,
     truecolor: bool = false,
 
     pub fn init(self: *Screen, gpa: std.mem.Allocator) !void {
-        const io_buf = try gpa.alloc(u8, 2 * 4096);
-        errdefer gpa.free(io_buf);
-
         const stdin = std.fs.File.stdin();
         if (!stdin.isTty()) return error.NotATty;
 
@@ -60,19 +82,13 @@ pub const Screen = struct {
         else
             false;
 
-        self.fin = stdin.reader(io_buf[0 .. io_buf.len / 2]);
-        self.fout = std.fs.File.stdout().writer(io_buf[io_buf.len / 2 ..]);
-        self.in = &self.fin.interface;
-        self.out = &self.fout.interface;
+        self.fin = stdin.readerStreaming(&.{});
+        self.fout = std.fs.File.stdout().writerStreaming(&.{});
         self.original_termios = original;
 
         // Query initial terminal size and allocate cell buffer
         const size = try self.querySizeIoctl();
-        self.width = size[0];
-        self.height = size[1];
-        const total: usize = @intCast(self.width * self.height);
-        self.cells = try gpa.alloc(Cell, total);
-        @memset(self.cells, Cell{});
+        self.buffer = try .init(gpa, size);
 
         // Enable default features
         try self.setFeature(.alternate_screen, true);
@@ -95,43 +111,41 @@ pub const Screen = struct {
         self.setFeature(.alternate_screen, false) catch {};
 
         std.posix.tcsetattr(self.fin.file.handle, .FLUSH, self.original_termios) catch {};
-        gpa.free(self.cells);
-        gpa.free(self.in.buffer.ptr[0 .. 2 * self.in.buffer.len]);
+        self.buffer.deinit(gpa);
     }
 
     pub fn setFeature(self: *Screen, feat: Feature, enabled: bool) !void {
-        try self.out.print("\x1b[?{d}{c}", .{ @intFromEnum(feat), @as(u8, if (enabled) 'h' else 'l') });
-        try self.out.flush();
+        const w = &self.fout.interface;
+        try w.print("\x1b[?{d}{c}", .{ @intFromEnum(feat), @as(u8, if (enabled) 'h' else 'l') });
+        try w.flush();
     }
 
     pub fn refresh(self: *Screen, gpa: std.mem.Allocator) !void {
         const size = try self.querySizeIoctl();
-        if (size[0] != self.width or size[1] != self.height) {
-            self.width = size[0];
-            self.height = size[1];
-            const total: usize = @intCast(self.width * self.height);
-            self.cells = try gpa.realloc(self.cells, total);
+        if (size[0] != self.buffer.size[0] or size[1] != self.buffer.size[1]) {
+            try self.buffer.resize(gpa, size);
         }
     }
 
     pub fn clear(self: *Screen) void {
-        @memset(self.cells, Cell{});
+        self.buffer.clear();
     }
 
     pub fn draw(self: *Screen, x: i32, y: i32, z: i32, bytes: []const u8, fg: Color) void {
-        if (y < 0 or y >= self.height) return;
+        const w, const h = self.buffer.size;
+        if (y < 0 or y >= h) return;
 
         var col = x;
         const view: std.unicode.Utf8View = .initUnchecked(bytes);
         var it = view.iterator();
 
         while (it.nextCodepoint()) |cp| : (col += 1) {
-            if (col >= self.width) break;
-            const idx: usize = @intCast(y * self.width + col);
-            if (z < self.cells[idx].z) continue;
-            self.cells[idx].char = cp;
-            self.cells[idx].fg = fg;
-            self.cells[idx].z = z;
+            if (col >= w) break;
+            const idx: usize = @intCast(y * w + col);
+            if (z < self.buffer.cells[idx].z) continue;
+            self.buffer.cells[idx].char = cp;
+            self.buffer.cells[idx].fg = fg;
+            self.buffer.cells[idx].z = z;
         }
     }
 
@@ -149,40 +163,43 @@ pub const Screen = struct {
     }
 
     pub fn fill(self: *Screen, x: i32, y: i32, z: i32, w: i32, bg: Color) void {
-        if (y < 0 or y >= self.height or w <= 0) return;
+        const bw, const bh = self.buffer.size;
+        if (y < 0 or y >= bh or w <= 0) return;
 
-        const row_start: usize = @intCast(y * self.width);
+        const row_start: usize = @intCast(y * bw);
         const start = @max(x, 0);
-        const end = @min(x + w, self.width);
+        const end = @min(x + w, bw);
         if (start >= end) return;
 
         for (@as(usize, @intCast(start))..@as(usize, @intCast(end))) |col| {
-            if (z < self.cells[row_start + col].z) continue;
-            self.cells[row_start + col] = .{ .bg = bg, .z = z };
+            if (z < self.buffer.cells[row_start + col].z) continue;
+            self.buffer.cells[row_start + col] = .{ .bg = bg, .z = z };
         }
     }
 
     pub fn flush(self: *Screen) !void {
-        const w: usize = @intCast(self.width);
-        const h: usize = @intCast(self.height);
+        const width: usize = @intCast(self.buffer.size[0]);
+        const height: usize = @intCast(self.buffer.size[1]);
 
         var cur_fg: Color = .white;
         var cur_bg: Color = .black;
 
-        for (0..h) |row| {
-            // Move cursor to start of row to contain wide-char layout damage (single emoji ruining layout for the whole app)
-            try self.out.print("\x1B[{d};1H", .{row + 1});
+        const w = &self.fout.interface;
 
-            const row_start = row * w;
-            for (0..w) |col| {
-                const cell = self.cells[row_start + col];
+        for (0..height) |row| {
+            // Move cursor to start of row to contain wide-char layout damage (single emoji ruining layout for the whole app)
+            try w.print("\x1B[{d};1H", .{row + 1});
+
+            const row_start = row * width;
+            for (0..width) |col| {
+                const cell = self.buffer.cells[row_start + col];
 
                 // Emit color changes only when needed
                 if (cell.fg != cur_fg or cell.bg != cur_bg) {
                     if (self.truecolor) {
-                        try self.out.print("\x1B[38;2;{d};{d};{d};48;2;{d};{d};{d}m", .{ cell.fg.r(), cell.fg.g(), cell.fg.b(), cell.bg.r(), cell.bg.g(), cell.bg.b() });
+                        try w.print("\x1B[38;2;{d};{d};{d};48;2;{d};{d};{d}m", .{ cell.fg.r(), cell.fg.g(), cell.fg.b(), cell.bg.r(), cell.bg.g(), cell.bg.b() });
                     } else {
-                        try self.out.print("\x1B[38;5;{d};48;5;{d}m", .{ cell.fg.to256(), cell.bg.to256() });
+                        try w.print("\x1B[38;5;{d};48;5;{d}m", .{ cell.fg.to256(), cell.bg.to256() });
                     }
                     cur_fg = cell.fg;
                     cur_bg = cell.bg;
@@ -191,13 +208,13 @@ pub const Screen = struct {
                 // Encode u21 codepoint to UTF-8
                 var buf: [4]u8 = undefined;
                 const len = std.unicode.utf8Encode(cell.char, &buf) catch 1;
-                try self.out.writeAll(buf[0..len]);
+                try w.writeAll(buf[0..len]);
             }
         }
 
         // Reset colors
-        try self.out.writeAll("\x1B[39;49m");
-        try self.out.flush();
+        try w.writeAll("\x1B[39;49m");
+        try w.flush();
     }
 
     fn querySizeIoctl(self: *Screen) ![2]i32 {

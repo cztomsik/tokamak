@@ -24,23 +24,20 @@ pub fn pollKey(stdin: *std.fs.File.Reader, timeout_ms: i32) Error!?Key {
 }
 
 pub fn pollReadable(stdin: *std.fs.File.Reader, timeout_ms: i32) Error!bool {
-    if (stdin.interface.bufferedLen() > 0) {
-        return true;
-    }
-
     var pfd: [1]std.posix.pollfd = .{.{
         .fd = stdin.file.handle,
         .events = std.posix.POLL.IN,
         .revents = 0,
     }};
     const rc = std.posix.poll(&pfd, timeout_ms) catch return error.PollFailed;
-    if (rc == 0) return false;
-    try stdin.interface.fill(1);
-    return true;
+    return rc > 0;
 }
 
 pub fn readKey(stdin: *std.fs.File.Reader) Error!Key {
-    const ch = (try stdin.interface.take(1))[0];
+    // TODO: This was already buffered once but I really don't like the Zig IO design and I might just fix this during tk.Io refactor
+    var buf: [1]u8 = undefined;
+    try stdin.interface.readSliceAll(&buf);
+    const ch = buf[0];
 
     return switch (ch) {
         0x03 => .ctrl_c,
@@ -90,7 +87,11 @@ fn readUtf8(stdin: *std.fs.File.Reader, first: u8) Error!u21 {
 
 fn readMore(stdin: *std.fs.File.Reader) Error!u8 {
     while (!try pollReadable(stdin, 1_000)) {}
-    return (try stdin.interface.take(1))[0];
+
+    // TODO: same as above
+    var buf: [1]u8 = undefined;
+    try stdin.interface.readSliceAll(&buf);
+    return buf[0];
 }
 
 fn decodeCSI(seq: []const u8) Key {
