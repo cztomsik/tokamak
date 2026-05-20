@@ -16,21 +16,19 @@ pub const Color = enum(u32) {
         return @enumFromInt(@as(u32, red) << 16 | @as(u32, green) << 8 | blue);
     }
 
-    pub fn r(self: Color) u8 {
-        return @truncate(@intFromEnum(self) >> 16);
+    pub fn toRGB(self: Color) [3]u8 {
+        const v = @intFromEnum(self);
+        return .{ @truncate(v >> 16), @truncate(v >> 8), @truncate(v) };
     }
 
-    pub fn g(self: Color) u8 {
-        return @truncate(@intFromEnum(self) >> 8);
-    }
-
-    pub fn b(self: Color) u8 {
-        return @truncate(@intFromEnum(self));
+    pub fn format(self: Color, writer: anytype) !void {
+        const r, const g, const b = self.toRGB();
+        try writer.print("{d};{d};{d}", .{ r, g, b });
     }
 
     /// Map to nearest 256-color index (6×6×6 cube or grayscale ramp)
     pub fn to256(self: Color) u8 {
-        const cr, const cg, const cb = .{ self.r(), self.g(), self.b() };
+        const cr, const cg, const cb = self.toRGB();
 
         // Nearest in the 6×6×6 color cube
         const qr, const qg, const qb = .{ cubeLevel(cr), cubeLevel(cg), cubeLevel(cb) };

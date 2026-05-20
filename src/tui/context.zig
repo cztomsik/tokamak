@@ -203,7 +203,7 @@ pub const Context = struct {
                     else => {},
                 };
 
-                self.stack[0] = .{ .frame = .{ .screen = &self.screen, .rect = .{ 0, 0, self.screen.buffer.size[0], self.screen.buffer.size[1] }, .fg = self.theme.text } };
+                self.stack[0] = .{ .frame = .{ .screen = &self.screen, .rect = .{ 0, 0, self.screen.back_buffer.size[0], self.screen.back_buffer.size[1] }, .fg = self.theme.text } };
                 self.state_len = self.n_state;
                 self.n_state = 0;
                 self.n_controls = 0;

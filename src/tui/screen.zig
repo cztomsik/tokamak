@@ -23,6 +23,10 @@ pub const Cell = struct {
     fg: Color = .white,
     bg: Color = .black,
     z: i32 = 0,
+
+    pub inline fn eq(a: Cell, b: Cell) bool {
+        return a.char == b.char and a.fg == b.fg and a.bg == b.bg;
+    }
 };
 
 pub const Buffer = struct {
@@ -37,6 +41,11 @@ pub const Buffer = struct {
 
     pub fn deinit(self: *Buffer, gpa: std.mem.Allocator) void {
         gpa.free(self.cells);
+    }
+
+    pub fn row(self: *Buffer, y: usize) []Cell {
+        const w: usize = @intCast(self.size[0]);
+        return self.cells[y * w .. (y + 1) * w];
     }
 
     pub fn resize(self: *Buffer, gpa: std.mem.Allocator, new_size: [2]i32) !void {
@@ -55,7 +64,8 @@ pub const Buffer = struct {
 };
 
 pub const Screen = struct {
-    buffer: Buffer,
+    back_buffer: Buffer, // drawing target
+    front_buffer: Buffer, // last flushed state (what is currently displayed)
     fin: std.fs.File.Reader,
     fout: std.fs.File.Writer,
     original_termios: std.posix.termios,
@@ -86,9 +96,10 @@ pub const Screen = struct {
         self.fout = std.fs.File.stdout().writerStreaming(&.{});
         self.original_termios = original;
 
-        // Query initial terminal size and allocate cell buffer
+        // Query initial terminal size and allocate both buffers
         const size = try self.querySizeIoctl();
-        self.buffer = try .init(gpa, size);
+        self.back_buffer = try Buffer.init(gpa, size);
+        self.front_buffer = try Buffer.init(gpa, size); // all defaults = empty screen
 
         // Enable default features
         try self.setFeature(.alternate_screen, true);
@@ -111,7 +122,9 @@ pub const Screen = struct {
         self.setFeature(.alternate_screen, false) catch {};
 
         std.posix.tcsetattr(self.fin.file.handle, .FLUSH, self.original_termios) catch {};
-        self.buffer.deinit(gpa);
+
+        self.front_buffer.deinit(gpa);
+        self.back_buffer.deinit(gpa);
     }
 
     pub fn setFeature(self: *Screen, feat: Feature, enabled: bool) !void {
@@ -122,17 +135,22 @@ pub const Screen = struct {
 
     pub fn refresh(self: *Screen, gpa: std.mem.Allocator) !void {
         const size = try self.querySizeIoctl();
-        if (size[0] != self.buffer.size[0] or size[1] != self.buffer.size[1]) {
-            try self.buffer.resize(gpa, size);
+
+        if (!std.meta.eql(self.back_buffer.size, size)) {
+            try self.back_buffer.resize(gpa, size);
+            try self.front_buffer.resize(gpa, size);
+
+            // Always re-render.
+            self.front_buffer.clear();
         }
     }
 
     pub fn clear(self: *Screen) void {
-        self.buffer.clear();
+        self.back_buffer.clear();
     }
 
     pub fn draw(self: *Screen, x: i32, y: i32, z: i32, bytes: []const u8, fg: Color) void {
-        const w, const h = self.buffer.size;
+        const w, const h = self.back_buffer.size;
         if (y < 0 or y >= h) return;
 
         var col = x;
@@ -142,10 +160,10 @@ pub const Screen = struct {
         while (it.nextCodepoint()) |cp| : (col += 1) {
             if (col >= w) break;
             const idx: usize = @intCast(y * w + col);
-            if (z < self.buffer.cells[idx].z) continue;
-            self.buffer.cells[idx].char = cp;
-            self.buffer.cells[idx].fg = fg;
-            self.buffer.cells[idx].z = z;
+            if (z < self.back_buffer.cells[idx].z) continue;
+            self.back_buffer.cells[idx].char = cp;
+            self.back_buffer.cells[idx].fg = fg;
+            self.back_buffer.cells[idx].z = z;
         }
     }
 
@@ -163,7 +181,7 @@ pub const Screen = struct {
     }
 
     pub fn fill(self: *Screen, x: i32, y: i32, z: i32, w: i32, bg: Color) void {
-        const bw, const bh = self.buffer.size;
+        const bw, const bh = self.back_buffer.size;
         if (y < 0 or y >= bh or w <= 0) return;
 
         const row_start: usize = @intCast(y * bw);
@@ -172,48 +190,45 @@ pub const Screen = struct {
         if (start >= end) return;
 
         for (@as(usize, @intCast(start))..@as(usize, @intCast(end))) |col| {
-            if (z < self.buffer.cells[row_start + col].z) continue;
-            self.buffer.cells[row_start + col] = .{ .bg = bg, .z = z };
+            if (z < self.back_buffer.cells[row_start + col].z) continue;
+            self.back_buffer.cells[row_start + col] = .{ .bg = bg, .z = z };
         }
     }
 
     pub fn flush(self: *Screen) !void {
-        const width: usize = @intCast(self.buffer.size[0]);
-        const height: usize = @intCast(self.buffer.size[1]);
-
-        var cur_fg: Color = .white;
-        var cur_bg: Color = .black;
+        const width: usize = @intCast(self.back_buffer.size[0]);
+        const height: usize = @intCast(self.back_buffer.size[1]);
+        if (width == 0 or height == 0) return;
 
         const w = &self.fout.interface;
 
         for (0..height) |row| {
-            // Move cursor to start of row to contain wide-char layout damage (single emoji ruining layout for the whole app)
-            try w.print("\x1B[{d};1H", .{row + 1});
+            for (self.back_buffer.row(row), self.front_buffer.row(row), 0..) |back, front, col| {
+                if (!back.eq(front)) {
+                    // Always position cursor absolutely at the target cell
+                    try w.print("\x1B[{d};{d}H", .{ row + 1, col + 1 });
 
-            const row_start = row * width;
-            for (0..width) |col| {
-                const cell = self.buffer.cells[row_start + col];
-
-                // Emit color changes only when needed
-                if (cell.fg != cur_fg or cell.bg != cur_bg) {
+                    // Emit color for every changed cell (cursor jumps absolutely,
+                    // so tracking "current" color across non-contiguous cells is incorrect).
                     if (self.truecolor) {
-                        try w.print("\x1B[38;2;{d};{d};{d};48;2;{d};{d};{d}m", .{ cell.fg.r(), cell.fg.g(), cell.fg.b(), cell.bg.r(), cell.bg.g(), cell.bg.b() });
+                        try w.print("\x1B[38;2;{f};48;2;{f}m", .{ back.fg, back.bg });
                     } else {
-                        try w.print("\x1B[38;5;{d};48;5;{d}m", .{ cell.fg.to256(), cell.bg.to256() });
+                        try w.print("\x1B[38;5;{d};48;5;{d}m", .{ back.fg.to256(), back.bg.to256() });
                     }
-                    cur_fg = cell.fg;
-                    cur_bg = cell.bg;
-                }
 
-                // Encode u21 codepoint to UTF-8
-                var buf: [4]u8 = undefined;
-                const len = std.unicode.utf8Encode(cell.char, &buf) catch 1;
-                try w.writeAll(buf[0..len]);
+                    // Encode u21 codepoint to UTF-8
+                    var buf: [4]u8 = undefined;
+                    const len = std.unicode.utf8Encode(back.char, &buf) catch 1;
+                    try w.writeAll(buf[0..len]);
+                }
             }
         }
 
-        // Reset colors
-        try w.writeAll("\x1B[39;49m");
+        // Swap buffers
+        const tmp = self.back_buffer;
+        self.back_buffer = self.front_buffer;
+        self.front_buffer = tmp;
+
         try w.flush();
     }
 
