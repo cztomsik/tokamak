@@ -133,11 +133,11 @@ You can also provide your own (global) dependencies by passing your own
 ```zig
 pub fn main() !void {
     var db = try sqlite.open("my.db");
-    var inj = tk.Injector.init(&.{ .ref(&db) }, null)
+    var inj = tk.Injector.init(&.{ .ref(&db) }, null);
 
     var server = try tk.Server.init(allocator, routes, .{
         .injector = &inj,
-        .port = 8080
+        .listen = .{ .port = 8080 },
     });
 
     try server.start();
@@ -158,10 +158,10 @@ middleware patterns.
 Here's how to create a simple logging middleware:
 
 ```zig
-fn logger(children: []const Route) tk.Route {
+fn logger(children: []const tk.Route) tk.Route {
     const H = struct {
-        fn handleLogger(ctx: *Context) anyerror!void {
-            log.debug("{s} {s}", .{ @tagName(ctx.req.method), ctx.req.url });
+        fn handleLogger(ctx: *tk.Context) anyerror!void {
+            std.log.debug("{s} {s}", .{ @tagName(ctx.req.method), ctx.req.url.path });
 
             return ctx.next();
         }
@@ -189,9 +189,9 @@ scope. Instead, Tokamak allows you to add request-scoped dependencies that will
 be available to downstream handlers:
 
 ```zig
-fn auth(ctx: *Context) anyerror!void {
-    const db = ctx.injector.get(*Db);
-    const token = try jwt.parse(ctx.req.getHeader("Authorization"));
+fn auth(ctx: *tk.Context) anyerror!void {
+    const db = try ctx.injector.get(*Db);
+    const token = try jwt.parse(ctx.req.header("authorization") orelse "");
     const user = db.find(User, token.id) catch null;
 
     return ctx.nextScoped(&.{ user });
@@ -227,9 +227,10 @@ struct:
 
 ```zig
 const routes: []const tk.Route = &.{
-    tk.logger(.{}),
-    .get("/", tk.send("Hello")),        // Classic Express-style routing
-    .group("/api", &.{ .router(api) }), // Structured routing with a module
+    tk.logger(.{}, &.{
+        .get("/", tk.send("Hello")),        // Classic Express-style routing
+        .group("/api", &.{ .router(api) }), // Structured routing with a module
+    }),
     .send(error.NotFound),
 };
 
@@ -277,7 +278,7 @@ Use with wildcard routes for more flexibility:
 
 ```zig
 const routes: []const tk.Route = &.{
-    tk.get("/assets/*", tk.static.dir("assets", .{ .index = null })),
+    .get("/assets/*", tk.static.dir("assets", .{ .index = null })),
 };
 ```
 
@@ -389,6 +390,7 @@ The Bundle API provides compile-time dependency configuration:
 - `expose(T, field)` - Expose a reference to a struct field as dependency
 - `addInitHook(fn)` - Add runtime initialization callback
 - `addDeinitHook(fn)` - Add runtime cleanup callback
+- `addCompileHook(fn)` - Add comptime callback (runs after all modules are configured)
 
 Initialization strategies:
 - `.auto` - Automatic initialization (uses `T.init()` if available, otherwise autowires struct fields)
@@ -429,7 +431,8 @@ const TestModule = struct {
 
 // Run test with mocked dependencies
 const ct = try Container.init(test_allocator, &.{AppModule, TestModule});
-ct.injector.call(myTestFun)
+defer ct.deinit();
+try ct.injector.call(myTestFun);
 ```
 
 ## License
