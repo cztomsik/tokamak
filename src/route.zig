@@ -195,7 +195,7 @@ fn route(comptime method: httpz.Method, comptime path: []const u8, comptime has_
         return copy;
     }
 
-    const metadata: Route.Metadata = comptime routeMetadata(
+    const metadata = comptime routeMetadata(
         path,
         path[path.len - 1] == '?',
         has_body,
@@ -205,47 +205,49 @@ fn route(comptime method: httpz.Method, comptime path: []const u8, comptime has_
     return .{
         .method = method,
         .path = path[0 .. path.len - @intFromBool(metadata.query != null)],
-        .metadata = &metadata,
+        .metadata = metadata,
         .handler = routeHandler(metadata, handler),
     };
 }
 
-fn routeMetadata(comptime path: []const u8, comptime has_query: bool, comptime has_body: bool, comptime handler: anytype) Route.Metadata {
-    const fields = std.meta.fields(std.meta.ArgsTuple(@TypeOf(handler)));
-    const n_params = comptime util.countScalar(u8, path, ':');
-    const n_deps = comptime fields.len - n_params - @intFromBool(has_query) - @intFromBool(has_body);
+fn routeMetadata(comptime path: []const u8, comptime has_query: bool, comptime has_body: bool, comptime handler: anytype) *const Route.Metadata {
+    comptime {
+        const fields = std.meta.fields(std.meta.ArgsTuple(@TypeOf(handler)));
+        const n_params = util.countScalar(u8, path, ':');
+        const n_deps = fields.len - n_params - @intFromBool(has_query) - @intFromBool(has_body);
 
-    return .{
-        .deps = meta.tids(meta.fieldTypes(std.meta.ArgsTuple(@TypeOf(handler)))[0..n_deps]),
-        .params = comptime brk: {
-            var params: [n_params]Schema = undefined;
-            for (0..n_params, n_deps..) |i, j| params[i] = Schema.forType(fields[j].type);
-            const res = params;
-            break :brk &res;
-        },
-        .query = if (has_query) Schema.forType(fields[n_deps + n_params].type) else null,
-        .body = if (has_body) Schema.forType(fields[fields.len - 1].type) else null,
-        .result = switch (meta.Result(handler)) {
-            void => null,
-            else => |R| Schema.forType(R),
-        },
-        .errors = comptime brk: {
-            switch (@typeInfo(meta.Return(handler))) {
-                .error_union => |r| {
-                    if (@typeInfo(r.error_set).error_set == null) break :brk &.{};
-                    const names = std.meta.fieldNames(r.error_set);
-                    var errors: [names.len]anyerror = undefined;
-                    for (names, 0..) |e, i| errors[i] = @field(anyerror, e);
-                    const res = errors;
-                    break :brk &res;
-                },
-                else => break :brk &.{},
-            }
-        },
-    };
+        return &.{
+            .deps = meta.tids(meta.fieldTypes(std.meta.ArgsTuple(@TypeOf(handler)))[0..n_deps]),
+            .params = brk: {
+                var params: [n_params]Schema = undefined;
+                for (0..n_params, n_deps..) |i, j| params[i] = .schema(fields[j].type);
+                const res = params;
+                break :brk &res;
+            },
+            .query = if (has_query) .schema(fields[n_deps + n_params].type) else null,
+            .body = if (has_body) .schema(fields[fields.len - 1].type) else null,
+            .result = switch (meta.Result(handler)) {
+                void => null,
+                else => |R| .schema(R),
+            },
+            .errors = brk: {
+                switch (@typeInfo(meta.Return(handler))) {
+                    .error_union => |r| {
+                        if (@typeInfo(r.error_set).error_set == null) break :brk &.{};
+                        const names = std.meta.fieldNames(r.error_set);
+                        var errors: [names.len]anyerror = undefined;
+                        for (names, 0..) |e, i| errors[i] = @field(anyerror, e);
+                        const res = errors;
+                        break :brk &res;
+                    },
+                    else => break :brk &.{},
+                }
+            },
+        };
+    }
 }
 
-fn routeHandler(comptime m: Route.Metadata, comptime handler: anytype) *const Handler {
+fn routeHandler(comptime m: *const Route.Metadata, comptime handler: anytype) *const Handler {
     const n_deps = m.deps.len;
     const n_params = m.params.len;
 

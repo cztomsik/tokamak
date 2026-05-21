@@ -1,5 +1,6 @@
 const builtin = @import("builtin");
 const std = @import("std");
+const serde = @import("serde.zig");
 
 /// A simple string type with SSO optimization. Strings up to 15 bytes are
 /// stored inline, longer strings are stored as a pointer+length pair.
@@ -71,8 +72,8 @@ pub const String = extern union {
         return initShort(s) orelse initLong(s);
     }
 
-    pub fn jsonStringify(self: *const String, w: anytype) !void {
-        try w.write(self.str());
+    pub fn serialize(self: *const String, writer: anytype) !void {
+        try writer.write(.string, self.str());
     }
 
     pub fn eq(a: String, b: String) bool {
@@ -126,8 +127,8 @@ pub const ShortString = extern struct {
         return init(s) orelse error.Overflow;
     }
 
-    pub fn jsonStringify(self: *const ShortString, w: anytype) !void {
-        try w.write(self.str());
+    pub fn serialize(self: *const ShortString, writer: anytype) !void {
+        try writer.write(.string, self.str());
     }
 
     pub fn eq(a: ShortString, b: ShortString) bool {
@@ -212,9 +213,22 @@ test "format" {
 
 test "json" {
     const s: String = .initComptime("foo");
-    try std.testing.expectFmt("\"foo\"", "{f}", .{std.json.fmt(s, .{})});
+    try serde.json.expectJson(s, "\"foo\"");
 
     const p = try std.json.parseFromSlice(String, std.testing.allocator, "\"foo\"", .{});
     defer p.deinit();
     try std.testing.expectEqual(s, p.value);
+}
+
+test "little-endian layout" {
+    const data: [255]u8 = undefined;
+    const s: String = .initComptime(&data);
+
+    const num: [2]u64 = @bitCast(s);
+    try std.testing.expectEqual(255 << 1, num[0]);
+    try std.testing.expectEqual(@intFromPtr(&data), num[1]);
+
+    const mem: [16]u8 = @bitCast(s);
+    try std.testing.expectEqual(254, mem[0]);
+    try std.testing.expectEqual(1, mem[1]);
 }

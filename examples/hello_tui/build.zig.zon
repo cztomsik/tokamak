@@ -1,7 +1,8 @@
 .{
-    .name = .hello_ai,
-    .fingerprint = 0xd07b5f8a7c0999c3,
+    .name = .hello_tui,
+    .fingerprint = 0x174b1bd68fa6a584,
     .version = "0.0.0",
+    .minimum_zig_version = "0.15.2",
     .dependencies = .{
         .tokamak = .{
             .path = "../..",

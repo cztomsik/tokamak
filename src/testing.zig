@@ -1,7 +1,8 @@
 const std = @import("std");
 const meta = @import("meta.zig");
-const util = @import("util.zig");
+const serde = @import("serde.zig");
 const http = @import("http.zig");
+const util = @import("util.zig");
 
 // re-export
 pub const allocator = std.testing.allocator;
@@ -57,8 +58,9 @@ pub fn expectTable(items: anytype, comptime expected: []const u8) !void {
     comptime std.debug.assert(meta.isSlice(@TypeOf(items)));
 
     const header = comptime expected[0..std.mem.indexOfScalar(u8, expected, '\n').?];
+
     const cols = comptime blk: {
-        var cols: [util.countScalar(u8, header, '|') - 1]Col = undefined;
+        var cols: [util.countScalar(u8, header, '|') - 1]serde.table.Col = undefined;
         var it = std.mem.tokenizeScalar(u8, header, '|');
         for (0..cols.len) |i| {
             const cell = it.next().?;
@@ -74,107 +76,11 @@ pub fn expectTable(items: anytype, comptime expected: []const u8) !void {
     defer wb.deinit();
 
     var buf: [header.len]u8 = undefined;
-    var w = TableWriter.init(&buf, &wb.writer);
-
-    try w.writeHeader(&cols);
-    try w.writeSeparator(&cols);
-
-    for (items) |it| {
-        try w.writeRow(it, &cols);
-    }
+    var w = serde.table.Writer.init(&buf, &wb.writer, .{ .columns = &cols });
+    try serde.serialize(&w, items);
 
     try std.testing.expectEqualStrings(expected, wb.written());
 }
-
-const Col = struct {
-    name: []const u8,
-    width: u32,
-};
-
-const TableWriter = struct {
-    buf: []u8,
-    inner: *std.io.Writer,
-    row: usize = 0,
-    col: usize = 0,
-
-    pub fn init(buf: []u8, writer: *std.io.Writer) TableWriter {
-        return .{
-            .buf = buf,
-            .inner = writer,
-        };
-    }
-
-    pub fn writeHeader(self: *TableWriter, comptime cols: []const Col) !void {
-        try self.beginRow();
-
-        inline for (cols) |col| {
-            try self.writeValue(col.name, col.width);
-        }
-
-        try self.endRow();
-    }
-
-    pub fn writeSeparator(self: *TableWriter, comptime cols: []const Col) !void {
-        try self.inner.writeAll("\n|");
-
-        inline for (cols) |col| {
-            try self.inner.writeAll(("-" ** (col.width + 2)) ++ "|");
-        }
-    }
-
-    pub fn writeRow(self: *TableWriter, it: anytype, comptime cols: []const Col) !void {
-        try self.beginRow();
-
-        inline for (cols) |col| {
-            try self.writeValue(@field(it, col.name), col.width);
-        }
-
-        try self.endRow();
-    }
-
-    pub fn beginRow(self: *TableWriter) !void {
-        if (self.row > 0) try self.inner.writeByte('\n');
-        try self.inner.writeAll("| ");
-    }
-
-    pub fn endRow(self: *TableWriter) !void {
-        try self.inner.writeAll(" |");
-        self.col = 0;
-        self.row += 1;
-    }
-
-    pub fn writeValue(self: *TableWriter, value: anytype, width: usize) !void {
-        if (width > self.buf.len) return error.BufferTooSmall;
-
-        if (self.col > 0) try self.inner.writeAll(" | ");
-        defer self.col += 1;
-
-        const chunk = try self.bufPrint(value);
-
-        if (chunk.len > width) {
-            try self.inner.writeAll(chunk[0 .. width - 1]);
-            try self.inner.writeByte('.');
-        } else {
-            try self.inner.writeAll(chunk[0..@min(chunk.len, width)]);
-
-            if (chunk.len < width) {
-                try self.inner.splatByteAll(' ', width - chunk.len);
-            }
-        }
-    }
-
-    fn bufPrint(self: *TableWriter, value: anytype) ![]const u8 {
-        if (meta.isString(@TypeOf(value))) {
-            return value;
-        }
-
-        return switch (@typeInfo(@TypeOf(value))) {
-            .optional => if (value) |v| self.bufPrint(v) else "",
-            .@"enum" => @tagName(value),
-            else => std.fmt.bufPrint(self.buf, "{}", .{value}),
-        };
-    }
-};
 
 test expectTable {
     const Person = struct { name: []const u8, age: u32, salary: ?u32 };

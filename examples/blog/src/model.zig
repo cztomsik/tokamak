@@ -10,10 +10,10 @@ pub const BlogService = struct {
     posts: std.AutoArrayHashMap(u32, Post),
     next: std.atomic.Value(u32) = .init(1),
 
-    pub fn init(allocator: std.mem.Allocator) !BlogService {
-        var posts = std.AutoArrayHashMap(u32, Post).init(allocator);
-        try posts.put(1, .{ .id = 1, .title = "Hello, World!", .body = "This is a test post." });
-        try posts.put(2, .{ .id = 2, .title = "Goodbye, World!", .body = "This is another test post." });
+    pub fn init(gpa: std.mem.Allocator) !BlogService {
+        var posts = std.AutoArrayHashMap(u32, Post).init(gpa);
+        try posts.put(1, try dupe(gpa, .{ .id = 1, .title = "Hello, World!", .body = "This is a test post." }));
+        try posts.put(2, try dupe(gpa, .{ .id = 2, .title = "Goodbye, World!", .body = "This is another test post." }));
 
         return .{ .posts = posts };
     }

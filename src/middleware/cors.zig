@@ -12,7 +12,7 @@ pub fn cors() Route {
                 ctx.res.header("access-control-allow-methods", "GET, POST, PUT, DELETE, OPTIONS");
                 ctx.res.header("access-control-allow-headers", "content-type");
                 ctx.res.header("access-control-allow-private-network", "true");
-                return ctx.send(void{});
+                return ctx.send({});
             }
         }
     };

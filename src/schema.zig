@@ -1,15 +1,14 @@
 const std = @import("std");
 const string = @import("string.zig");
 const meta = @import("meta.zig");
+const serde = @import("serde.zig");
 const testing = @import("testing.zig");
 
-/// Returns a formatter which will print a JSON-schema for the given type.
-pub fn fmt(comptime T: type) std.json.Formatter(Schema) {
-    return .{
-        .value = .forType(T),
-        .options = .{ .whitespace = .indent_2 },
-    };
-}
+pub const Property = struct {
+    name: []const u8,
+    schema: *const Schema,
+    required: bool,
+};
 
 pub const Schema = union(enum) {
     null,
@@ -22,12 +21,18 @@ pub const Schema = union(enum) {
     oneOf: []const Schema, // intentional camelCase (ident)
     tuple: []const Schema,
 
-    pub fn forType(comptime T: type) Schema {
+    pub fn schema(comptime T: type) Schema {
         if (meta.hasDecl(T, "jsonSchema")) {
             return T.jsonSchema;
         }
 
-        return switch (T) {
+        // NOTE: This is because we want to return Schema as value but we can
+        // only enforce comptime with pointers, so we need an extra indirection.
+        return comptimeSchema(T).*;
+    }
+
+    fn comptimeSchema(comptime T: type) *const Schema {
+        return comptime &switch (T) {
             []const u8, string.String, string.ShortString => .string,
             else => switch (@typeInfo(T)) {
                 .null => .null,
@@ -35,27 +40,27 @@ pub const Schema = union(enum) {
                 .int => .integer,
                 .float => .number,
                 .@"enum" => .string,
-                .optional => |o| .{ .oneOf = &.{ .null, Schema.forType(o.child) } },
+                .optional => |o| .{ .oneOf = &.{ .null, schema(o.child) } },
                 .@"union" => .{ .object = &.{} }, // TODO
-                .@"struct" => |s| if (s.is_tuple) .{ .tuple = comptime brk: {
+                .@"struct" => |s| if (s.is_tuple) .{ .tuple = brk: {
                     const fields = std.meta.fields(T);
                     var kinds: [fields.len]Schema = undefined;
-                    for (fields, 0..) |f, i| kinds[i] = Schema.forType(f.type);
+                    for (fields, 0..) |f, i| kinds[i] = schema(f.type);
                     const res = kinds;
                     break :brk &res;
                 } } else .{
-                    .object = comptime brk: {
+                    .object = brk: {
                         const fields = std.meta.fields(T);
                         var props: [fields.len]Property = undefined;
-                        for (fields, 0..) |f, i| props[i] = .{ .name = f.name, .schema = &Schema.forType(f.type) };
+                        for (fields, 0..) |f, i| props[i] = .{ .name = f.name, .schema = &schema(f.type), .required = f.default_value_ptr == null };
                         const res = props;
                         break :brk &res;
                     },
                 },
-                .array => |a| .{ .array = &Schema.forType(a.child) },
-                .pointer => |p| {
+                .array => |a| .{ .array = comptimeSchema(a.child) },
+                .pointer => |p| blk: {
                     if (p.size == .slice) {
-                        return .{ .array = &Schema.forType(p.child) };
+                        break :blk .{ .array = comptimeSchema(p.child) };
                     } else {
                         @compileError("Unsupported ptr type " ++ @typeName(T));
                     }
@@ -65,66 +70,69 @@ pub const Schema = union(enum) {
         };
     }
 
-    pub fn jsonStringify(self: Schema, w: anytype) !void {
+    pub fn serialize(self: Schema, w: anytype) !void {
         switch (self) {
-            .oneOf => |schemas| try w.write(.{ .oneOf = schemas }),
-            .array => |schema| try w.write(.{ .type = .array, .items = schema }),
-            .tuple => |items| try w.write(.{ .type = .array, .items = items }),
+            .oneOf => |oneOf| try serde.serialize(w, .{ .oneOf = oneOf }),
+            .array => |items| try serde.serialize(w, .{ .type = .array, .items = items }),
+            .tuple => |items| try serde.serialize(w, .{ .type = .array, .items = items }),
             .object => |props| {
-                try w.beginObject();
-
-                try w.objectField("type");
-                try w.write(.object);
-
-                try w.objectField("properties");
-                try w.beginObject();
-                for (props) |p| {
-                    try w.objectField(p.name);
-                    try w.write(p.schema);
-                }
-                try w.endObject();
-
-                try w.objectField("required");
-                try w.beginArray();
-                for (props) |p| {
-                    try w.write(p.name);
-                }
-                try w.endArray();
-
-                try w.objectField("additionalProperties");
-                try w.write(false);
-
-                try w.endObject();
+                var st = try w.beginStruct(struct {}, 4);
+                try st.field("type", "object");
+                try st.field("properties", serde.serializer(props, serializeProperties));
+                try st.field("required", serde.serializer(props, serializeRequired));
+                try st.field("additionalProperties", false);
+                try st.end();
             },
-            inline else => |_, t| try w.write(.{ .type = t }),
+            inline else => |_, t| try serde.serialize(w, .{ .type = t }),
         }
+    }
+
+    fn serializeProperties(props: []const Property, writer: anytype) !void {
+        var st = try writer.beginStruct(void, props.len);
+        for (props) |p| try st.field(p.name, p.schema);
+        try st.end();
+    }
+
+    fn serializeRequired(props: []const Property, writer: anytype) !void {
+        var seq = try writer.beginSeq(props.len);
+        for (props) |p| if (p.required) try seq.element(p.name);
+        try seq.end();
     }
 };
 
-pub const Property = struct {
-    name: []const u8,
-    schema: *const Schema,
-};
-
 fn expectSchema(comptime T: type, schema: Schema) !void {
-    try std.testing.expectEqualDeep(schema, Schema.forType(T));
+    try std.testing.expectEqualDeep(schema, Schema.schema(T));
 }
 
-test "Schema.forType()" {
+test "Schema.schema()" {
     try expectSchema(bool, .boolean);
     try expectSchema(u32, .integer);
     try expectSchema(i32, .integer);
     try expectSchema(f32, .number);
     try expectSchema([]const u8, .string);
-    try expectSchema(struct { a: u32 }, .{ .object = &.{.{ .name = "a", .schema = &.integer }} });
+    try expectSchema(?[]const u8, .{ .oneOf = &.{ .null, .string } });
+    try expectSchema(struct { a: u32 }, .{ .object = &.{.{ .name = "a", .schema = &.integer, .required = true }} });
     try expectSchema(struct { u32, f32 }, .{ .tuple = &.{ .integer, .number } });
 }
 
 fn expectJsonSchema(comptime T: type, expected: []const u8) !void {
-    try testing.expectFmt(fmt(T), expected);
+    try serde.json.expectJson(Schema.schema(T), expected);
 }
 
-test "schema.jsonStringify()" {
+test "schema.serialize()" {
+    try expectJsonSchema(?[]const u8,
+        \\{
+        \\  "oneOf": [
+        \\    {
+        \\      "type": "null"
+        \\    },
+        \\    {
+        \\      "type": "string"
+        \\    }
+        \\  ]
+        \\}
+    );
+
     try expectJsonSchema(u32,
         \\{
         \\  "type": "integer"
@@ -164,6 +172,19 @@ test "schema.jsonStringify()" {
         \\  "required": [
         \\    "a"
         \\  ],
+        \\  "additionalProperties": false
+        \\}
+    );
+
+    try expectJsonSchema(struct { text: []const u8 = "" },
+        \\{
+        \\  "type": "object",
+        \\  "properties": {
+        \\    "text": {
+        \\      "type": "string"
+        \\    }
+        \\  },
+        \\  "required": [],
         \\  "additionalProperties": false
         \\}
     );

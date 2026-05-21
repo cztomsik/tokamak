@@ -1,5 +1,6 @@
 const std = @import("std");
 const meta = @import("../meta.zig");
+const serde = @import("../serde.zig");
 
 pub const RequestOptions = struct {
     base_url: ?[]const u8 = null,
@@ -22,15 +23,16 @@ pub const RequestBody = struct {
 
     pub fn json(ptr: anytype) RequestBody {
         const H = struct {
-            fn stringify(ctx: @TypeOf(ptr), writer: *std.io.Writer) anyerror!void {
-                try std.json.fmt(ctx, .{}).format(writer);
+            fn render(ctx: @TypeOf(ptr), writer: *std.io.Writer) anyerror!void {
+                var jw = serde.json.Writer.init(writer, .{});
+                try serde.serialize(&jw, ctx);
             }
         };
 
         return .{
             .ctx = @ptrCast(ptr),
             .content_type = "application/json",
-            .render = @ptrCast(&H.stringify),
+            .render = @ptrCast(&H.render),
         };
     }
 };
@@ -113,6 +115,8 @@ pub const StdClient = struct {
                 .content_type = if (options.body) |b| .{ .override = b.content_type } else .default,
             },
             .extra_headers = options.headers,
+            // TODO: fix this later, it looks like there's some std.http.Client pooling but we don't handle it properly
+            .keep_alive = false,
         });
         defer req.deinit();
 
@@ -156,7 +160,7 @@ test {
         // .post("/echo", tk.meta.dupe),
     };
 
-    var server = try tk.Server.init(std.testing.allocator, routes, .{});
+    var server = try tk.Server.init(std.testing.allocator, routes, .{ .listen = .{ .port = 8081 } });
     defer server.deinit();
 
     var thread = try std.Thread.spawn(.{}, tk.Server.start, .{&server});
@@ -171,7 +175,7 @@ test {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
 
-    const res1 = try client.request(arena.allocator(), .{ .url = "http://localhost:8080/ping" });
+    const res1 = try client.request(arena.allocator(), .{ .url = "http://localhost:8081/ping" });
     try std.testing.expectEqual(.ok, res1.status);
     try std.testing.expectEqualStrings("pong", res1.body);
 }

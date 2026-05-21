@@ -8,20 +8,22 @@ const stringifyAlloc = @import("fmt.zig").stringifyAlloc;
 const log = std.log.scoped(.ai_agent);
 
 pub const AgentOptions = struct {
-    debug: bool = true,
+    debug: bool = false,
     model: []const u8,
-    tools: []const []const u8,
+    tools: []const []const u8 = &.{},
     max_completion_tokens: u32 = 4096,
     temperature: ?f32 = null,
     top_p: ?f32 = null,
+    auto_retry: u8 = 1,
+    // auto_dedupe: bool = true,
 };
 
 pub const Agent = struct {
     arena: std.mem.Allocator,
     runtime: *AgentRuntime,
     options: AgentOptions,
-    messages: std.ArrayListUnmanaged(chat.Message) = .empty,
-    result: ?[]const u8 = null,
+    messages: std.ArrayList(chat.Message) = .empty,
+    total_tokens: u32 = 0,
 
     pub fn init(allocator: std.mem.Allocator, runtime: *AgentRuntime, options: AgentOptions) !Agent {
         const arena = try allocator.create(std.heap.ArenaAllocator);
@@ -54,48 +56,23 @@ pub const Agent = struct {
         try self.messages.append(self.arena, msg);
     }
 
-    pub fn run(self: *Agent) ![]const u8 {
-        while (try self.next()) |tcs| {
-            try self.acceptAll(tcs);
-        }
-
-        return self.result orelse error.NoResult;
-    }
-
     pub fn next(self: *Agent) !?[]const chat.ToolCall {
-        if (self.result != null) {
-            return null;
-        }
+        var retries = self.options.auto_retry +| 1;
+        while (retries > 0) : (retries -= 1) {
+            const res = try self.runtime.createCompletion(self);
+            const choice = res.singleChoice() orelse return error.NoChoice;
+            const is_empty = if (choice.text()) |t| t.len == 0 else true;
 
-        const res = try self.runtime.createCompletion(self);
-
-        const choice = res.singleChoice() orelse return error.NoChoice;
-        try self.addMessage(choice.message);
-
-        if (choice.toolCalls()) |tcs| {
-            for (tcs) |tc| {
-                if (std.mem.eql(u8, tc.function.name, "final_result")) {
-                    self.finish(tc.function.arguments);
-                    return null;
-                }
+            if (choice.message.tool_calls == null and is_empty) {
+                log.debug("empty choice: {f}", .{std.json.fmt(res, .{})});
+                continue;
             }
 
-            return tcs;
+            try self.addMessage(choice.message);
+            return choice.message.tool_calls;
         }
 
-        if (choice.finish_reason == .length) {
-            return error.MaxLen;
-        }
-
-        if (choice.text()) |text| {
-            self.finish(text);
-        }
-
-        return null;
-    }
-
-    pub fn finish(self: *Agent, result: []const u8) void {
-        self.result = result;
+        return error.RetryFailed;
     }
 
     pub fn acceptAll(self: *Agent, tcs: []const chat.ToolCall) !void {
@@ -105,16 +82,14 @@ pub const Agent = struct {
     }
 
     pub fn accept(self: *Agent, tc: chat.ToolCall) !void {
-        try self.respond(tc, try self.runtime.execTool(self, tc));
+        try self.respond(tc, self.runtime.execTool(self, tc));
     }
 
     pub fn reject(self: *Agent, tc: chat.ToolCall) !void {
-        try self.respond(tc, error.ToolCallRejected);
+        try self.respond(tc, "Tool call rejected.");
     }
 
-    pub fn respond(self: *Agent, tc: chat.ToolCall, res: anytype) !void {
-        const content = try stringifyAlloc(self.arena, res);
-
+    pub fn respond(self: *Agent, tc: chat.ToolCall, content: []const u8) !void {
         try self.addMessage(.{
             .role = .tool,
             .content = .{ .text = content },
@@ -122,15 +97,25 @@ pub const Agent = struct {
         });
     }
 
-    pub fn retry(self: *Agent) void {
-        while (self.messages.pop()) |msg| {
-            if (msg.role == .assistant) return;
+    pub fn undo(self: *Agent) ?chat.Message {
+        // Remove trailing assistant/tool messages
+        while (self.messages.getLastOrNull()) |msg| {
+            if (msg.role != .assistant and msg.role != .tool) break;
+            _ = self.messages.pop();
         }
+
+        // Remove the preceding user message to allow re-prompting
+        if (self.messages.getLastOrNull()) |msg| {
+            if (msg.role == .user) {
+                return self.messages.pop();
+            }
+        }
+
+        return null;
     }
 };
 
 pub const AgentRuntime = struct {
-    event_bus: ?event.Bus = null,
     client: *Client,
     toolbox: *AgentToolbox,
 
@@ -139,12 +124,7 @@ pub const AgentRuntime = struct {
     }
 
     fn createCompletion(self: *AgentRuntime, agent: *Agent) !chat.Response {
-        if (self.event_bus) |bus| {
-            _ = .{ bus, agent };
-            // TODO: try bus.dispatch(Xxx);
-        }
-
-        return self.client.createChatCompletion(agent.arena, .{
+        const res = try self.client.createChatCompletion(agent.arena, .{
             .model = agent.options.model,
             .max_completion_tokens = agent.options.max_completion_tokens,
             .temperature = agent.options.temperature,
@@ -153,16 +133,16 @@ pub const AgentRuntime = struct {
             .messages = agent.messages.items,
             .tools = try self.toolbox.query(agent.arena, agent.options.tools),
         });
+
+        agent.total_tokens = res.usage.total_tokens;
+
+        return res;
     }
 
-    fn execTool(self: *AgentRuntime, agent: *Agent, tool: chat.ToolCall) ![]const u8 {
-        if (self.event_bus) |bus| {
-            _ = .{ bus, agent };
-            // TODO: try bus.dispatch(Xxx);
-        }
-
-        const res = self.toolbox.execTool(agent.arena, tool.function.name, tool.function.arguments);
-        return try stringifyAlloc(agent.arena, res);
+    fn execTool(self: *AgentRuntime, agent: *Agent, tool: chat.ToolCall) []const u8 {
+        var inj = Injector.init(&.{ .ref(&agent.arena), .ref(agent) }, self.toolbox.injector);
+        const res = self.toolbox.execTool(&inj, agent.arena, tool.function.name, tool.function.arguments);
+        return stringifyAlloc(agent.arena, res) catch |e| @errorName(e);
     }
 };
 
@@ -186,7 +166,7 @@ pub const AgentTool = struct {
                 .function = .{
                     .name = name,
                     .description = description,
-                    .parameters = .forType(meta.LastArg(handler)),
+                    .parameters = .schema(meta.LastArg(handler)),
                 },
             },
             .handler = H.handleTool,
@@ -246,14 +226,14 @@ pub const AgentToolbox = struct {
         return buf.toOwnedSlice(arena);
     }
 
-    fn execTool(self: *AgentToolbox, arena: std.mem.Allocator, name: []const u8, args: []const u8) ![]const u8 {
+    fn execTool(self: *AgentToolbox, inj: *Injector, arena: std.mem.Allocator, name: []const u8, args: []const u8) ![]const u8 {
         // NOTE: we assume that tool handlers are always comptime
         //       so we can just copy the pointer and release the lock
         self.mutex.lock();
 
         if (self.tools.get(name)) |tool| {
             self.mutex.unlock();
-            return tool.handler(self.injector, arena, args);
+            return tool.handler(inj, arena, args);
         }
 
         self.mutex.unlock();
@@ -278,6 +258,6 @@ test AgentToolbox {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
 
-    const res = try tbox.execTool(arena.allocator(), "add", "{\"a\":1,\"b\":2}");
+    const res = try tbox.execTool(&inj, arena.allocator(), "add", "{\"a\":1,\"b\":2}");
     try std.testing.expectEqualStrings("3", res);
 }

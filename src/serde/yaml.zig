@@ -2,60 +2,48 @@
 // https://yaml.org/spec/1.2.2/
 
 const std = @import("std");
-const meta = @import("meta.zig");
-const String = @import("string.zig").String;
-const ShortString = @import("string.zig").ShortString;
+const meta = @import("../meta.zig");
+const serde = @import("../serde.zig");
+const testing = @import("../testing.zig");
+
+pub const WriterOptions = struct {};
 
 // TODO: this is still WIP, do not use it for anything important
 pub const Writer = struct {
     writer: *std.io.Writer,
+    options: WriterOptions,
     indent: usize = 0,
     after_dash: bool = false,
 
-    pub fn init(writer: *std.io.Writer) Writer {
-        return .{ .writer = writer };
+    pub fn init(writer: *std.io.Writer, options: WriterOptions) Writer {
+        return .{ .writer = writer, .options = options };
     }
 
-    pub fn writeValue(self: *Writer, value: anytype) !void {
-        const T = @TypeOf(value);
-
-        if (T == String or T == ShortString) {
-            return self.writeString(value.str());
+    pub fn write(self: *Writer, comptime k: serde.Kind, value: anytype) !void {
+        switch (k) {
+            .void, .null => try self.writer.writeAll("null"),
+            .bool, .int => try self.writer.print("{}", .{value}),
+            .float => try self.writer.print("!!float {d}", .{value}),
+            .string => try self.writeString(value),
         }
-
-        if (meta.isString(T)) {
-            return self.writeString(value);
-        }
-
-        if (meta.isSlice(T)) {
-            return self.writeSlice(value);
-        }
-
-        try switch (@typeInfo(T)) {
-            .void, .null => self.writer.writeAll("null"),
-            .bool => self.writer.print("{}", .{value}),
-            .int, .comptime_int => self.writer.print("{}", .{value}),
-            .float, .comptime_float => self.writer.print("!!float {d}", .{value}),
-            .enum_literal => self.writeString(@tagName(value)),
-            .@"enum" => |e| if (e.is_exhaustive) self.writeString(@tagName(value)) else self.writeValue(@intFromEnum(value)),
-            .error_set => self.writeString(@errorName(value)),
-            .array => self.writeSlice(&value),
-            .pointer => |p| {
-                if (@typeInfo(p.child) == .array) {
-                    return self.writeSlice(value[0..]);
-                } else {
-                    return self.writeValue(value.*);
-                }
-            },
-            .optional => if (value) |v| self.writeValue(v) else self.writeValue(null),
-            .@"struct" => self.writeStruct(value),
-
-            // TODO
-            else => self.writer.print("<{s}>", .{@typeName(T)}),
-        };
     }
 
-    pub fn writeString(self: *Writer, value: []const u8) !void {
+    pub fn beginSeq(self: *Writer, len: usize) !Seq {
+        if (len == 0) try self.writer.writeAll("[]");
+        return .{ .writer = self };
+    }
+
+    pub fn beginTuple(self: *Writer, len: usize) !Tuple {
+        if (len == 0) try self.writer.writeAll("[]");
+        return .{ .writer = self };
+    }
+
+    pub fn beginStruct(self: *Writer, comptime _: type, len: usize) !Struct {
+        if (len == 0) try self.writer.writeAll("{}");
+        return .{ .writer = self };
+    }
+
+    fn writeString(self: *Writer, value: []const u8) !void {
         // TODO: Is this enough? Is it also enough for keys?
         const needs_escape = value.len == 0 or
             std.mem.eql(u8, value, "true") or
@@ -68,63 +56,6 @@ pub const Writer = struct {
             try self.writer.print("{f}", .{std.json.fmt(value, .{})});
         } else {
             try self.writer.writeAll(value);
-        }
-    }
-
-    pub fn writeSlice(self: *Writer, items: anytype) !void {
-        if (items.len == 0) {
-            return self.writer.writeAll("[]");
-        }
-
-        for (items, 0..) |it, i| {
-            if (i > 0) {
-                try self.writer.writeAll(if (shouldInline(it)) "\n" else "\n\n");
-            }
-
-            if (!self.after_dash or i > 0) {
-                try self.writeIndent();
-            }
-
-            try self.writer.writeAll("- ");
-            self.after_dash = true;
-
-            self.indent += 1;
-            defer self.indent -= 1;
-            try self.writeValue(it);
-        }
-    }
-
-    pub fn writeStruct(self: *Writer, value: anytype) !void {
-        const fields = std.meta.fields(@TypeOf(value));
-
-        if (fields.len == 0) {
-            return self.writer.writeAll("{}");
-        }
-
-        inline for (fields, 0..) |f, i| {
-            if (i > 0) {
-                try self.writer.writeByte('\n');
-            }
-
-            if (!self.after_dash) {
-                try self.writeIndent();
-            } else {
-                self.after_dash = false;
-            }
-
-            try self.writeValue(f.name);
-            try self.writer.writeAll(": ");
-
-            const val = @field(value, f.name);
-
-            if (shouldInline(val)) {
-                try self.writeValue(val);
-            } else {
-                try self.writer.writeByte('\n');
-                self.indent += 1;
-                try self.writeValue(val);
-                self.indent -= 1;
-            }
         }
     }
 
@@ -148,7 +79,88 @@ pub const Writer = struct {
     }
 };
 
-const testing = @import("testing.zig");
+const Seq = struct {
+    writer: *Writer,
+    index: usize = 0,
+
+    pub fn element(self: *Seq, value: anytype) !void {
+        if (self.index > 0) {
+            try self.writer.writer.writeAll(if (Writer.shouldInline(value)) "\n" else "\n\n");
+        }
+
+        if (!self.writer.after_dash or self.index > 0) {
+            try self.writer.writeIndent();
+        }
+
+        try self.writer.writer.writeAll("- ");
+        self.writer.after_dash = true;
+
+        self.writer.indent += 1;
+        defer self.writer.indent -= 1;
+        try serde.serialize(self.writer, value);
+        self.index += 1;
+    }
+
+    pub fn end(_: *Seq) !void {}
+};
+
+const Tuple = struct {
+    writer: *Writer,
+    index: usize = 0,
+
+    pub fn element(self: *Tuple, value: anytype) !void {
+        if (self.index > 0) {
+            try self.writer.writer.writeAll(if (Writer.shouldInline(value)) "\n" else "\n\n");
+        }
+
+        if (!self.writer.after_dash or self.index > 0) {
+            try self.writer.writeIndent();
+        }
+
+        try self.writer.writer.writeAll("- ");
+        self.writer.after_dash = true;
+
+        self.writer.indent += 1;
+        defer self.writer.indent -= 1;
+        try serde.serialize(self.writer, value);
+        self.index += 1;
+    }
+
+    pub fn end(_: *Tuple) !void {}
+};
+
+const Struct = struct {
+    writer: *Writer,
+    index: usize = 0,
+
+    pub fn field(self: *Struct, key: []const u8, value: anytype) !void {
+        if (self.index > 0) {
+            try self.writer.writer.writeByte('\n');
+        }
+
+        if (!self.writer.after_dash) {
+            try self.writer.writeIndent();
+        } else {
+            self.writer.after_dash = false;
+        }
+
+        try self.writer.write(.string, key);
+        try self.writer.writer.writeAll(": ");
+
+        if (Writer.shouldInline(value)) {
+            try serde.serialize(self.writer, value);
+        } else {
+            try self.writer.writer.writeByte('\n');
+            self.writer.indent += 1;
+            defer self.writer.indent -= 1;
+            try serde.serialize(self.writer, value);
+        }
+
+        self.index += 1;
+    }
+
+    pub fn end(_: *Struct) !void {}
+};
 
 const User = struct { name: []const u8, age: u32 };
 const Address = struct { street: []const u8, city: []const u8, zip: u32 };
@@ -168,8 +180,8 @@ fn expectYaml(val: anytype, expected: []const u8) !void {
     var bw = std.io.Writer.Allocating.init(std.testing.allocator);
     defer bw.deinit();
 
-    var w = Writer.init(&bw.writer);
-    try w.writeValue(val);
+    var w = Writer.init(&bw.writer, .{});
+    try serde.serialize(&w, val);
 
     return testing.expectEqual(bw.written(), expected);
 }
@@ -181,8 +193,6 @@ test "scalars" {
     try expectYaml(123, "123");
     try expectYaml(12.3, "!!float 12.3");
     try expectYaml("bar", "bar");
-    try expectYaml(String.initComptime("bar"), "bar");
-    try expectYaml(ShortString.initComptime("bar"), "bar");
     try expectYaml(.foo, "foo");
 }
 
@@ -254,7 +264,14 @@ test "escaping" {
     try expectYaml("foo:bar", "\"foo:bar\"");
 }
 
+test "tuples" {
+    try expectYaml(.{}, "[]");
+    try expectYaml(.{1}, "- 1");
+    try expectYaml(.{ 1, "foo" }, "- 1\n- foo");
+}
+
 test "empty" {
-    try expectYaml(.{}, "{}");
+    const Empty = struct {};
+    try expectYaml(Empty{}, "{}");
     try expectYaml(users[0..0], "[]");
 }

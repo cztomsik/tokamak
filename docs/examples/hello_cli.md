@@ -98,4 +98,3 @@ zig build run -- <command> [args...]
 ## Next Steps
 
 - See [clown-commander](./clown-commander.md) for a TUI application
-- Check out [hello_ai](./hello_ai.md) for AI agent integration
