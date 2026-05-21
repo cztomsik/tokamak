@@ -12,7 +12,7 @@ fn logger(children: []const tk.Route) tk.Route {
         fn handleLogger(ctx: *tk.Context) anyerror!void {
             log.debug("{s} {s}", .{
                 @tagName(ctx.req.method),
-                ctx.req.url
+                ctx.req.url.path,
             });
 
             return ctx.next();
@@ -51,8 +51,8 @@ Since Zig doesn't have closures, use `ctx.nextScoped()` to pass data to downstre
 
 ```zig
 fn auth(ctx: *tk.Context) anyerror!void {
-    const db = ctx.injector.get(*Database);
-    const token = ctx.req.getHeader("Authorization") orelse
+    const db = try ctx.injector.get(*Database);
+    const token = ctx.req.header("Authorization") orelse
         return error.Unauthorized;
 
     const user = try jwt.parse(token);
@@ -77,7 +77,7 @@ fn getProfile(user: User) !Profile {
 fn requireAuth(children: []const tk.Route) tk.Route {
     const H = struct {
         fn handle(ctx: *tk.Context) anyerror!void {
-            const token = ctx.req.getHeader("Authorization") orelse
+            const token = ctx.req.header("Authorization") orelse
                 return error.Unauthorized;
 
             const user = try validateToken(token);
@@ -100,12 +100,11 @@ const routes: []const tk.Route = &.{
 
 ```zig
 fn cors(ctx: *tk.Context) anyerror!void {
-    try ctx.res.setHeader("Access-Control-Allow-Origin", "*");
-    try ctx.res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE");
+    ctx.res.header("access-control-allow-origin", "*");
+    ctx.res.header("access-control-allow-methods", "GET, POST, PUT, DELETE");
 
-    if (ctx.req.method == .OPTIONS) {
-        try ctx.res.send("", .{});
-        return;
+    if (ctx.req.method == .OPTIONS and ctx.req.header("access-control-request-method") != null) {
+        return ctx.send({});
     }
 
     try ctx.next();
@@ -119,16 +118,14 @@ fn errorHandler(ctx: *tk.Context) anyerror!void {
     ctx.next() catch |err| {
         log.err("Request failed: {}", .{err});
 
-        const status: u16 = switch (err) {
+        ctx.res.status = switch (err) {
             error.Unauthorized => 401,
             error.NotFound => 404,
             error.ValidationError => 400,
             else => 500,
         };
 
-        try ctx.res.status(status).json(.{
-            .error = @errorName(err)
-        }, .{});
+        try ctx.send(.{ .error = @errorName(err) });
     };
 }
 ```
