@@ -7,6 +7,12 @@ pub const json = @import("serde/json.zig");
 pub const table = @import("serde/table.zig");
 pub const yaml = @import("serde/yaml.zig");
 
+////////////////////////////////////////////////////////////////////////////////
+// TODO: I think I have much better design where S.begin() accepts tagged-union
+//       with comptime information available in runtime, but it's currently
+//       blocked with Zig 0.16 migration, so I'm going to merge this unfinished
+////////////////////////////////////////////////////////////////////////////////
+
 // NOTE: I am not sure if this is the final design, but I am 100% sure about two
 // things:
 //
