@@ -66,14 +66,14 @@ pub const Buffer = struct {
 pub const Screen = struct {
     back_buffer: Buffer, // drawing target
     front_buffer: Buffer, // last flushed state (what is currently displayed)
-    fin: std.fs.File.Reader,
-    fout: std.fs.File.Writer,
+    fin: std.Io.File.Reader,
+    fout: std.Io.File.Writer,
     original_termios: std.posix.termios,
     truecolor: bool = false,
 
-    pub fn init(self: *Screen, gpa: std.mem.Allocator) !void {
-        const stdin = std.fs.File.stdin();
-        if (!stdin.isTty()) return error.NotATty;
+    pub fn init(self: *Screen, io: std.Io, gpa: std.mem.Allocator) !void {
+        const stdin = std.Io.File.stdin();
+        if (!try stdin.isTty(io)) return error.NotATty;
 
         const original = try std.posix.tcgetattr(stdin.handle);
         errdefer std.posix.tcsetattr(stdin.handle, .FLUSH, original) catch {};
@@ -92,8 +92,8 @@ pub const Screen = struct {
         else
             false;
 
-        self.fin = stdin.readerStreaming(&.{});
-        self.fout = std.fs.File.stdout().writerStreaming(&.{});
+        self.fin = stdin.readerStreaming(io, &.{});
+        self.fout = std.Io.File.stdout().writerStreaming(io, &.{});
         self.original_termios = original;
 
         // Query initial terminal size and allocate both buffers

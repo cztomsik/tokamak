@@ -1,7 +1,7 @@
 const std = @import("std");
 const util = @import("util.zig");
 const testing = @import("testing.zig");
-
+const Time = @import("time.zig").Time;
 const Shm = util.Shm;
 const ShmMutex = util.ShmMutex;
 
@@ -89,6 +89,7 @@ pub const ShmQueueConfig = struct {
 /// crashes mid-operation, atomics with release/acquire semantics ensure other
 /// processes see either a fully-written slot or FREE but NEVER partial state.
 pub const ShmQueue = struct {
+    io: std.Io,
     mutex: ShmMutex,
     shm: Shm,
     time: *const fn () i64,
@@ -135,8 +136,15 @@ pub const ShmQueue = struct {
 
     /// Initialize the queue in place. The caller must ensure `self` is at a
     /// stable memory location that won't be moved after this call.
-    pub fn init(self: *ShmQueue, config: ShmQueueConfig) !void {
-        self.time = std.time.timestamp;
+    pub fn init(self: *ShmQueue, io: std.Io, config: ShmQueueConfig) !void {
+        const H = struct {
+            fn timestamp() i64 {
+                return Time.now().epoch;
+            }
+        };
+
+        self.io = io;
+        self.time = &H.timestamp;
         self.job_timeout = config.job_timeout;
         self.interface = .{
             .vtable = &.{
@@ -157,11 +165,11 @@ pub const ShmQueue = struct {
             .{ config.name, VERSION, config.capacity },
         );
 
-        self.mutex = try ShmMutex.init(shm_name);
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex = try ShmMutex.init(io, shm_name);
+        self.mutex.lock(io);
+        defer self.mutex.unlock(io);
 
-        self.shm = try Shm.open(shm_name, std.mem.alignForward(usize, @sizeOf(Header) + config.capacity * @sizeOf(Slot), std.heap.page_size_min));
+        self.shm = try Shm.open(io, shm_name, std.mem.alignForward(usize, @sizeOf(Header) + config.capacity * @sizeOf(Slot), std.heap.page_size_min));
 
         self.header = @ptrCast(@alignCast(self.shm.data.ptr));
         self.slots = @as([*]Slot, @ptrCast(@alignCast(self.shm.data.ptr[@sizeOf(Header)..])))[0..config.capacity];
@@ -178,14 +186,14 @@ pub const ShmQueue = struct {
     }
 
     pub fn deinit(self: *ShmQueue) void {
-        self.mutex.deinit();
-        self.shm.deinit();
+        self.mutex.deinit(self.io);
+        self.shm.deinit(self.io);
     }
 
     fn len(queue: *Queue) !usize {
         const self: *ShmQueue = @fieldParentPtr("interface", queue);
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lock(self.io);
+        defer self.mutex.unlock(self.io);
 
         var n: usize = 0;
         for (self.slots) |*s| {
@@ -196,8 +204,8 @@ pub const ShmQueue = struct {
 
     fn submit(queue: *Queue, job: JobInfo) !?JobId {
         const self: *ShmQueue = @fieldParentPtr("interface", queue);
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lock(self.io);
+        defer self.mutex.unlock(self.io);
 
         const key_len = job.key.len;
         const total_len = job.name.len + key_len + job.data.len;
@@ -236,8 +244,8 @@ pub const ShmQueue = struct {
 
     fn claim(queue: *Queue, arena: std.mem.Allocator) !?JobInfo {
         const self: *ShmQueue = @fieldParentPtr("interface", queue);
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lock(self.io);
+        defer self.mutex.unlock(self.io);
 
         const now = self.time();
         var match: ?*Slot = null;
@@ -288,8 +296,8 @@ pub const ShmQueue = struct {
 
     fn finish(queue: *Queue, id: JobId) !bool {
         const self: *ShmQueue = @fieldParentPtr("interface", queue);
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lock(self.io);
+        defer self.mutex.unlock(self.io);
 
         for (self.slots) |*s| {
             if (s.id.load(.acquire) == id) {
@@ -303,8 +311,8 @@ pub const ShmQueue = struct {
 
     fn clear(queue: *Queue) !void {
         const self: *ShmQueue = @fieldParentPtr("interface", queue);
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lock(self.io);
+        defer self.mutex.unlock(self.io);
 
         for (self.slots) |*s| {
             s.id.store(FREE, .release);
@@ -313,10 +321,10 @@ pub const ShmQueue = struct {
 
     fn list(queue: *Queue, arena: std.mem.Allocator) ![]JobInfo {
         const self: *ShmQueue = @fieldParentPtr("interface", queue);
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lock(self.io);
+        defer self.mutex.unlock(self.io);
 
-        var jobs: std.ArrayList(JobInfo) = .{};
+        var jobs: std.ArrayList(JobInfo) = .empty;
 
         for (self.slots) |*s| {
             const id = s.id.load(.acquire);
@@ -340,8 +348,8 @@ pub const ShmQueue = struct {
 
     fn stats(queue: *Queue) !Stats {
         const self: *ShmQueue = @fieldParentPtr("interface", queue);
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lock(self.io);
+        defer self.mutex.unlock(self.io);
 
         return .{
             .submitted = self.header.stats.submitted.load(.acquire),
@@ -360,7 +368,7 @@ fn expectJobs(q: *Queue, comptime expected: []const u8) !void {
 
 test Queue {
     var shm_queue: ShmQueue = undefined;
-    try shm_queue.init(.{ .name = "test", .job_timeout = 60 });
+    try shm_queue.init(std.testing.io, .{ .name = "test", .job_timeout = 60 });
     defer shm_queue.deinit();
 
     const queue = &shm_queue.interface;

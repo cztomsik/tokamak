@@ -11,7 +11,7 @@ pub const Options = struct {
 };
 
 pub fn html2md(allocator: std.mem.Allocator, node: *dom.Node, options: Options) ![]const u8 {
-    var aw = std.io.Writer.Allocating.init(allocator);
+    var aw: std.Io.Writer.Allocating = .init(allocator);
     defer aw.deinit();
 
     var md = try Html2Md.init(&aw.writer, options);
@@ -24,13 +24,13 @@ pub fn html2md(allocator: std.mem.Allocator, node: *dom.Node, options: Options) 
 /// to the provided writer.
 pub const Html2Md = struct {
     options: Options,
-    out: *std.io.Writer,
+    out: *std.Io.Writer,
     in_line: u8 = 0, // Replace line breaks with spaces if we are in <h1>, <tr>, ...
     indent: u8 = 0, // Nesting depth of <ul> and/or <ol>
     empty: bool = true, // True until we've pushed any content (skip leading whitespace) OR when we've just started new <li>
     pending: union(enum) { nop, sp, br: u2 } = .nop, // Whitespace to be written before next content
 
-    pub fn init(out: *std.io.Writer, options: Options) !Html2Md {
+    pub fn init(out: *std.Io.Writer, options: Options) !Html2Md {
         return .{
             .options = options,
             .out = out,

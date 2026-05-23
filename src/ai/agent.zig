@@ -1,6 +1,5 @@
 const std = @import("std");
 const meta = @import("../meta.zig");
-const event = @import("../event.zig");
 const chat = @import("chat.zig");
 const Injector = @import("../injector.zig").Injector;
 const Client = @import("client.zig").Client;
@@ -175,47 +174,49 @@ pub const AgentTool = struct {
 };
 
 pub const AgentToolbox = struct {
-    mutex: std.Thread.Mutex = .{},
-    allocator: std.mem.Allocator,
+    mutex: std.Io.Mutex = .init,
+    io: std.Io,
+    gpa: std.mem.Allocator,
     injector: *Injector,
     tools: std.StringHashMapUnmanaged(AgentTool) = .empty,
 
-    pub fn init(allocator: std.mem.Allocator, injector: *Injector) AgentToolbox {
+    pub fn init(io: std.Io, gpa: std.mem.Allocator, injector: *Injector) AgentToolbox {
         return .{
-            .allocator = allocator,
+            .io = io,
+            .gpa = gpa,
             .injector = injector,
         };
     }
 
     pub fn deinit(self: *AgentToolbox) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
 
         // TODO: free duped strings
-        self.tools.deinit(self.allocator);
+        self.tools.deinit(self.gpa);
     }
 
     // TODO: remove comptime, but we need to dupe strings then (meta.dupe? meta.free?)
     pub fn addTool(self: *AgentToolbox, comptime name: []const u8, comptime description: []const u8, comptime handler: anytype) !void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
 
         const tool = AgentTool.init(name, description, handler);
-        try self.tools.putNoClobber(self.allocator, name, tool);
+        try self.tools.putNoClobber(self.gpa, name, tool);
     }
 
     pub fn removeTool(self: *AgentToolbox, name: []const u8) bool {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
 
         return self.tools.remove(name);
     }
 
     fn query(self: *AgentToolbox, arena: std.mem.Allocator, names: []const []const u8) ![]const chat.Tool {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
 
-        var buf = std.ArrayList(chat.Tool){};
+        var buf = std.ArrayList(chat.Tool).empty;
 
         for (names) |name| {
             const tool = self.tools.get(name) orelse continue;
@@ -229,21 +230,21 @@ pub const AgentToolbox = struct {
     fn execTool(self: *AgentToolbox, inj: *Injector, arena: std.mem.Allocator, name: []const u8, args: []const u8) ![]const u8 {
         // NOTE: we assume that tool handlers are always comptime
         //       so we can just copy the pointer and release the lock
-        self.mutex.lock();
+        self.mutex.lockUncancelable(self.io);
 
         if (self.tools.get(name)) |tool| {
-            self.mutex.unlock();
+            self.mutex.unlock(self.io);
             return tool.handler(inj, arena, args);
         }
 
-        self.mutex.unlock();
+        self.mutex.unlock(self.io);
         return error.NotFound;
     }
 };
 
 test AgentToolbox {
     var inj = Injector.empty;
-    var tbox = AgentToolbox{ .allocator = std.testing.allocator, .injector = &inj };
+    var tbox = AgentToolbox{ .gpa = std.testing.allocator, .io = std.testing.io, .injector = &inj };
     defer tbox.deinit();
 
     const H = struct {

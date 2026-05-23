@@ -81,17 +81,17 @@ pub const Context = struct {
     /// Sets a cookie.
     pub fn setCookie(self: *Context, name: []const u8, value: []const u8, options: CookieOptions) !void {
         // TODO: start with current header?
-        var buf = std.ArrayList(u8){};
-        const writer = buf.writer(self.req.arena);
+        var bw: std.Io.Writer.Allocating = .init(self.req.arena);
+        const w = &bw.writer;
 
-        try writer.print("{s}={s}", .{ name, value });
+        try w.print("{s}={s}", .{ name, value });
 
-        if (options.max_age) |age| try writer.print("; Max-Age={d}", .{age});
-        if (options.domain) |domain| try writer.print("; Domain={s}", .{domain});
-        if (options.http_only) try writer.writeAll("; HttpOnly");
-        if (options.secure) try writer.writeAll("; Secure");
+        if (options.max_age) |age| try w.print("; Max-Age={d}", .{age});
+        if (options.domain) |domain| try w.print("; Domain={s}", .{domain});
+        if (options.http_only) try w.writeAll("; HttpOnly");
+        if (options.secure) try w.writeAll("; Secure");
 
-        self.res.header("set-cookie", buf.items);
+        self.res.header("set-cookie", bw.written());
     }
 
     /// Send a response. Accepts strings, JSON-serializable values, errors, or

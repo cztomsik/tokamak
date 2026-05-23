@@ -23,34 +23,36 @@ pub const Job = struct {
 pub const Cron = struct {
     config: Config,
     queue: *Queue,
+    io: std.Io,
     allocator: std.mem.Allocator,
     jobs: std.ArrayList(Job),
     time: *const fn () Time = Time.now,
-    mutex: std.Thread.Mutex = .{},
-    wait: std.Thread.Condition = .{},
+    mutex: std.Io.Mutex = .init,
+    wait: std.Io.Condition = .init,
 
     // NOTE: global & shared
     var next_id: std.atomic.Value(usize) = .init(1);
 
-    pub fn init(allocator: std.mem.Allocator, queue: *Queue, config: Config) Cron {
+    pub fn init(io: std.Io, allocator: std.mem.Allocator, queue: *Queue, config: Config) Cron {
         return .{
             .config = config,
             .queue = queue,
+            .io = io,
             .allocator = allocator,
-            .jobs = .{},
+            .jobs = .empty,
         };
     }
 
     pub fn deinit(self: *Cron) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lock(self.io) catch unreachable;
+        defer self.mutex.unlock(self.io);
 
         self.jobs.deinit(self.allocator);
     }
 
     pub fn schedule(self: *Cron, expr: []const u8, name: []const u8, data: []const u8) !JobId {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        try self.mutex.lock(self.io);
+        defer self.mutex.unlock(self.io);
 
         const id: JobId = @enumFromInt(next_id.fetchAdd(1, .monotonic));
         const exp = try Expr.parse(expr);
@@ -68,8 +70,8 @@ pub const Cron = struct {
     }
 
     pub fn unschedule(self: *Cron, id: JobId) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lock(self.io) catch unreachable;
+        defer self.mutex.unlock(self.io);
 
         for (self.jobs.items, 0..) |job, i| {
             if (job.id == id) {
@@ -80,8 +82,8 @@ pub const Cron = struct {
     }
 
     pub fn list(self: *Cron, arena: std.mem.Allocator) ![]Job {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        try self.mutex.lock(self.io);
+        defer self.mutex.unlock(self.io);
 
         const jobs = try arena.alloc(Job, self.jobs.items.len);
         @memcpy(jobs, self.jobs.items);
@@ -89,8 +91,8 @@ pub const Cron = struct {
     }
 
     pub fn run(self: *Cron) !void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        try self.mutex.lock(self.io);
+        defer self.mutex.unlock(self.io);
 
         var step = Time.unix(self.time().epoch - self.config.catchup_window);
 
@@ -112,7 +114,10 @@ pub const Cron = struct {
             // Wait until the next tick
             const wait: u64 = @intCast(@max(0, step.epoch - self.time().epoch));
             log.debug("sleeping for {}", .{wait});
-            self.wait.timedWait(&self.mutex, wait * std.time.ns_per_s) catch break;
+
+            // TODO: I have no clue, Io.Select(U) is crazy... I hope it's not the way
+            // self.wait.timedWait(&self.mutex, wait * std.time.ns_per_s) catch break;
+            try self.io.sleep(.fromSeconds(wait), .awake);
         }
     }
 
@@ -143,20 +148,20 @@ pub const Cron = struct {
 
 test Cron {
     var shm_queue: ShmQueue = undefined;
-    try shm_queue.init(.{ .name = "cron_q", .capacity = 10 });
+    try shm_queue.init(std.testing.io, .{ .name = "cron_q", .capacity = 10 });
     defer shm_queue.deinit();
 
     const queue = &shm_queue.interface;
     defer queue.clear() catch unreachable;
 
-    var cron = Cron.init(testing.allocator, queue, .{});
+    var cron = Cron.init(std.testing.io, std.testing.allocator, queue, .{});
     defer cron.deinit();
 
     testing.time.value = 0;
     cron.time = &testing.time.getTime;
 
     // Only needed for listing
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
 
     const id = try cron.schedule("* * * * *", "bar", "baz");
@@ -254,7 +259,7 @@ pub const Expr = struct {
     //     }
     // }
 
-    pub fn format(self: *const Expr, w: *std.io.Writer) !void {
+    pub fn format(self: *const Expr, w: *std.Io.Writer) !void {
         inline for (std.meta.fields(Expr), 0..) |f, i| {
             if (i > 0) try w.writeByte(' ');
             try writeField(w, @field(self, f.name), @bitSizeOf(f.type));
@@ -327,7 +332,7 @@ pub const Expr = struct {
         return @truncate(mask);
     }
 
-    fn writeField(writer: *std.io.Writer, mask: u64, comptime bits: u8) !void {
+    fn writeField(writer: *std.Io.Writer, mask: u64, comptime bits: u8) !void {
         const all: u64 = (@as(u64, 1) << bits) - 1;
 
         if (mask & all == all) {
@@ -451,7 +456,7 @@ test "expr.match()" {
     try expectMatch("* * * * *", .{
         .{ 0, true },
         .{ 60, true },
-        .{ std.time.timestamp(), true },
+        .{ Time.now().epoch, true },
     });
 
     try expectMatch("*/5 * * * *", .{

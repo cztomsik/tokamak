@@ -81,19 +81,19 @@ pub const Template = struct {
         allocator.free(self.tokens);
     }
 
-    pub fn render(self: *const Template, data: anytype, writer: *std.io.Writer) !void {
+    pub fn render(self: *const Template, data: anytype, writer: *std.Io.Writer) !void {
         try renderPart(self.tokens, .fromPtr(&data), writer);
     }
 
     pub fn renderAlloc(self: *const Template, allocator: std.mem.Allocator, data: anytype) ![]const u8 {
-        var wb = std.io.Writer.Allocating.init(allocator);
+        var wb: std.Io.Writer.Allocating = .init(allocator);
         errdefer wb.deinit();
 
         try self.render(data, &wb.writer);
         return wb.toOwnedSlice();
     }
 
-    fn renderPart(tokens: []const Token, data: Value, writer: *std.io.Writer) !void {
+    fn renderPart(tokens: []const Token, data: Value, writer: *std.Io.Writer) !void {
         var i: usize = 0;
 
         while (i < tokens.len) {
@@ -180,7 +180,7 @@ pub const Value = union(enum) {
     indexable: struct { *const anyopaque, usize, *const fn (ptr: *const anyopaque, index: usize) Value },
 
     fn fromPtr(ptr: anytype) Value {
-        const T = @TypeOf(ptr.*);
+        const T = @typeInfo(@TypeOf(ptr)).pointer.child;
 
         if (T == std.json.Value) {
             return .fromJsonValue(ptr);

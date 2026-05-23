@@ -30,9 +30,9 @@ pub const Context = struct {
     bin: []const u8,
     command: *const Command,
     args: []const []const u8,
-    in: *std.io.Reader,
-    out: *std.io.Writer,
-    err: *std.io.Writer,
+    in: *std.Io.Reader,
+    out: *std.Io.Writer,
+    err: *std.Io.Writer,
     injector: *Injector,
     format: OutputFormat = .auto,
 
@@ -187,16 +187,16 @@ pub fn printUsage(ctx: *Context, cmds: []const Command) !void {
 }
 
 /// CLI entry point. Use with `tk.app.run(tk.cli.run, &.{YourModule})`.
-pub fn run(inj: *Injector, allocator: std.mem.Allocator, cmds: []const Command) !void {
-    var arena = std.heap.ArenaAllocator.init(allocator);
+pub fn run(inj: *Injector, io: std.Io, gpa: std.mem.Allocator, argz: std.process.Args, cmds: []const Command) !void {
+    var arena = std.heap.ArenaAllocator.init(gpa);
     defer arena.deinit();
 
-    var in = std.fs.File.stdin().reader(&.{});
-    var out = std.fs.File.stdout().writer(&.{});
-    var err = std.fs.File.stderr().writer(&.{});
+    var in = std.Io.File.stdin().reader(io, &.{});
+    var out = std.Io.File.stdout().writer(io, &.{});
+    var err = std.Io.File.stderr().writer(io, &.{});
 
-    // NOTE: We are using arena so we don't need to call argsFree()
-    const args = try std.process.argsAlloc(arena.allocator());
+    // NOTE: We are using arena so we don't need to free
+    const args = try argz.toSlice(arena.allocator());
     for (args) |arg| if (!std.unicode.utf8ValidateSlice(arg)) return error.InvalidArg;
 
     var format: OutputFormat = .auto;

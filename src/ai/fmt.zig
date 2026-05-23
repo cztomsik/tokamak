@@ -7,7 +7,7 @@ pub fn stringify(value: anytype, writer: anytype) !void {
 }
 
 pub fn stringifyAlloc(arena: std.mem.Allocator, value: anytype) ![]const u8 {
-    var bw = std.io.Writer.Allocating.init(arena);
+    var bw: std.Io.Writer.Allocating = .init(arena);
     try writeValue(value, &bw.writer);
     return bw.toOwnedSlice();
 }

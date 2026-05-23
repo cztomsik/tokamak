@@ -5,7 +5,7 @@ const DEFAULT_PATH = "config.json";
 
 const ReadOptions = struct {
     path: []const u8 = DEFAULT_PATH,
-    cwd: ?std.fs.Dir = null,
+    cwd: ?std.Io.Dir = null,
     // TODO: alloc_always should not be overridable
     parse: std.json.ParseOptions = .{ .ignore_unknown_fields = true, .allocate = .alloc_always },
     max_bytes: usize = 16 * 1024,
@@ -28,7 +28,7 @@ pub fn read(comptime T: type, allocator: std.mem.Allocator, options: ReadOptions
 
 const WriteOptions = struct {
     path: []const u8 = DEFAULT_PATH,
-    cwd: ?std.fs.Dir = null,
+    cwd: ?std.Io.Dir = null,
     stringify: std.json.Stringify.Options = .{ .whitespace = .indent_2 },
 };
 

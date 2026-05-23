@@ -31,12 +31,12 @@ pub const Event = union(enum) {
 /// This is because many events are typically ignored, making such operations
 /// wasteful.
 pub const Parser = struct {
-    reader: ?*std.io.Reader = null,
+    reader: ?*std.Io.Reader = null,
     is_eof: bool = false,
     scanner: Scanner = .{ .input = &.{} },
 
     /// Create a parser for streaming input.
-    pub fn initStreaming(reader: *std.io.Reader) Parser {
+    pub fn initStreaming(reader: *std.Io.Reader) Parser {
         std.debug.assert(reader.buffer.len > 0);
 
         return .{

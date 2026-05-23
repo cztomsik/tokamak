@@ -103,7 +103,7 @@ pub const DefaultEngine = struct {
     }
 
     pub fn renderTemplate(self: *DefaultEngine, tpl: Template, arena: std.mem.Allocator, data: anytype) ![]const u8 {
-        var aw = std.io.Writer.Allocating.init(arena);
+        var aw: std.Io.Writer.Allocating = .init(arena);
         defer aw.deinit();
 
         // TODO: decide if we ever want to do streaming, ie. renderTemplateInto(tpl, arena, writer)
@@ -194,8 +194,8 @@ const Parser = struct {
     fn init(allocator: std.mem.Allocator) Parser {
         return .{
             .arena = allocator,
-            .stack = .{},
-            .root_nodes = .{},
+            .stack = .empty,
+            .root_nodes = .empty,
         };
     }
 
@@ -209,8 +209,8 @@ const Parser = struct {
             .open => |tag| {
                 try self.stack.append(self.arena, .{
                     .tag = try self.arena.dupe(u8, tag),
-                    .attrs = .{},
-                    .children = .{},
+                    .attrs = .empty,
+                    .children = .empty,
                     .is_component = std.mem.startsWith(u8, tag, "x-"),
                 });
             },
@@ -259,7 +259,7 @@ const Parser = struct {
     }
 
     fn extractDirectives(self: *Parser, attrs: []const Template.Attribute) !Directives {
-        var dirs: Directives = .{ .attrs = .{} };
+        var dirs: Directives = .{ .attrs = .empty };
         for (attrs) |attr| {
             if (std.mem.eql(u8, attr.name, "v-if")) {
                 dirs.v_if = attr.value;
@@ -367,12 +367,12 @@ const Parser = struct {
 };
 
 pub const RenderContext = struct {
-    writer: *std.io.Writer,
+    writer: *std.Io.Writer,
     js: js.Context,
     components: *ComponentRegistry,
     injector: Injector,
 
-    fn init(allocator: std.mem.Allocator, writer: *std.io.Writer, components: *ComponentRegistry) !RenderContext {
+    fn init(allocator: std.mem.Allocator, writer: *std.Io.Writer, components: *ComponentRegistry) !RenderContext {
         return .{
             .writer = writer,
             .js = try js.Context.init(allocator),

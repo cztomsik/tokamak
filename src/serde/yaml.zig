@@ -10,12 +10,12 @@ pub const WriterOptions = struct {};
 
 // TODO: this is still WIP, do not use it for anything important
 pub const Writer = struct {
-    writer: *std.io.Writer,
+    writer: *std.Io.Writer,
     options: WriterOptions,
     indent: usize = 0,
     after_dash: bool = false,
 
-    pub fn init(writer: *std.io.Writer, options: WriterOptions) Writer {
+    pub fn init(writer: *std.Io.Writer, options: WriterOptions) Writer {
         return .{ .writer = writer, .options = options };
     }
 
@@ -177,7 +177,7 @@ const stories: []const Story = &.{
 };
 
 fn expectYaml(val: anytype, expected: []const u8) !void {
-    var bw = std.io.Writer.Allocating.init(std.testing.allocator);
+    var bw: std.Io.Writer.Allocating = .init(std.testing.allocator);
     defer bw.deinit();
 
     var w = Writer.init(&bw.writer, .{});

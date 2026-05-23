@@ -8,12 +8,12 @@ pub fn logger(options: struct { scope: @TypeOf(.EnumLiteral) = .server }, childr
 
     const H = struct {
         fn handleLogger(ctx: *Context) anyerror!void {
-            const start = std.time.milliTimestamp();
+            const start = std.Io.Timestamp.now(ctx.server.http.io, .awake);
             defer if (ctx.responded) log.debug("{s} {s} {} [{}ms]", .{
                 @tagName(ctx.req.method),
                 ctx.req.url.path,
                 ctx.res.status,
-                std.time.milliTimestamp() - start,
+                start.untilNow(ctx.server.http.io, .awake),
             });
 
             try ctx.next();

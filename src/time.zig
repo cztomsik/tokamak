@@ -167,7 +167,7 @@ pub const Time = struct {
 
     /// Get the current time.
     pub fn now() Time {
-        return unix(std.time.timestamp());
+        return unix(std.Io.Timestamp.now(std.Options.debug_io, .real).toSeconds());
     }
 
     pub fn today() Time {
@@ -445,10 +445,7 @@ test date_to_rata {
 }
 
 test "fuzz against libc" {
-    const c = @cImport({
-        @cInclude("stdlib.h");
-        @cInclude("time.h");
-    });
+    const c = @import("c");
 
     var r = std.Random.DefaultPrng.init(123);
     for (0..1_000) |_| {

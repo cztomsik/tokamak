@@ -1,5 +1,6 @@
 .DS_Store
 zig-out/
+zig-pkg/
 .zig-cache/
 docs/dist/
 node_modules/

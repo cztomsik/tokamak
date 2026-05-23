@@ -15,12 +15,12 @@ const WriterOptions = struct {
 };
 
 pub const Writer = struct {
-    inner: *std.io.Writer,
+    inner: *std.Io.Writer,
     options: WriterOptions,
     row: usize = 0,
     col: usize = 0,
 
-    pub fn init(inner: *std.io.Writer, options: WriterOptions) Writer {
+    pub fn init(inner: *std.Io.Writer, options: WriterOptions) Writer {
         return .{ .inner = inner, .options = options };
     }
 
@@ -151,7 +151,7 @@ const people: []const Person = &.{
 };
 
 fn expectCsv(options: WriterOptions, val: anytype, expected: []const u8) !void {
-    var wb = std.io.Writer.Allocating.init(std.testing.allocator);
+    var wb: std.Io.Writer.Allocating = .init(std.testing.allocator);
     defer wb.deinit();
 
     var w = Writer.init(&wb.writer, options);

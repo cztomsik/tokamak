@@ -40,7 +40,7 @@ pub fn dir(comptime path: []const u8, comptime options: DirOptions) Route {
             }
 
             // Resolve relative paths (this is important for the check below to work)
-            target = try std.fs.path.resolvePosix(ctx.allocator, &.{ path, std.mem.trimLeft(u8, target, "/") });
+            target = try std.fs.path.resolvePosix(ctx.allocator, &.{ path, std.mem.trimStart(u8, target, "/") });
 
             // Prevent (out-of-directory) traversal attacks
             if (!std.mem.startsWith(u8, target, path)) {
@@ -76,7 +76,7 @@ pub fn file(comptime path: []const u8) Route {
 }
 
 fn sendFile(ctx: *Context, target: []const u8) !void {
-    const body = if (E.get(target)) |e| e else try std.fs.cwd().readFileAlloc(ctx.allocator, target, std.math.maxInt(usize));
+    const body = if (E.get(target)) |e| e else try std.Io.Dir.cwd().readFileAlloc(ctx.server.http.io, target, ctx.allocator, std.Io.Limit.unlimited);
 
     ctx.res.header("content-type", try content_type(ctx.allocator, target));
     ctx.res.header("cache-control", "no-cache, no-store, must-revalidate");

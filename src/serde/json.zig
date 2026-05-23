@@ -6,7 +6,7 @@ const testing = @import("../testing.zig");
 pub const Writer = struct {
     inner: std.json.Stringify,
 
-    pub fn init(iow: *std.io.Writer, options: std.json.Stringify.Options) Writer {
+    pub fn init(iow: *std.Io.Writer, options: std.json.Stringify.Options) Writer {
         return .{ .inner = .{ .writer = iow, .options = options } };
     }
 
@@ -103,7 +103,7 @@ const stories: []const Story = &.{
 };
 
 pub fn expectJson(val: anytype, expected: []const u8) !void {
-    var bw = std.io.Writer.Allocating.init(std.testing.allocator);
+    var bw: std.Io.Writer.Allocating = .init(std.testing.allocator);
     defer bw.deinit();
 
     var w = Writer.init(&bw.writer, .{ .whitespace = .indent_2 });

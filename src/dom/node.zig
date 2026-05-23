@@ -106,7 +106,7 @@ pub const Node = struct {
 
     pub fn dump(self: *Node) void {
         const Cx = struct {
-            writer: *std.io.Writer,
+            writer: *std.Io.Writer,
             indent: usize = 0,
 
             fn open(cx: *@This(), el: *Element) !void {
@@ -153,7 +153,7 @@ pub const Node = struct {
         std.debug.lockStdErr();
         defer std.debug.unlockStdErr();
 
-        var w = std.fs.File.stderr().writer(&.{});
+        var w = std.Io.File.stderr().writer(std.Options.debug_io, &.{});
         var cx = Cx{ .writer = &w.interface };
         self.visit(&cx) catch {};
     }

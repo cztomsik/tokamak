@@ -15,15 +15,15 @@ pub const RequestOptions = struct {
 pub const RequestBody = struct {
     ctx: *const anyopaque,
     content_type: []const u8,
-    render: *const fn (ctx: *const anyopaque, writer: *std.io.Writer) anyerror!void,
+    render: *const fn (ctx: *const anyopaque, writer: *std.Io.Writer) anyerror!void,
 
-    pub fn write(self: RequestBody, writer: *std.io.Writer) !void {
+    pub fn write(self: RequestBody, writer: *std.Io.Writer) !void {
         try self.render(self.ctx, writer);
     }
 
     pub fn json(ptr: anytype) RequestBody {
         const H = struct {
-            fn render(ctx: @TypeOf(ptr), writer: *std.io.Writer) anyerror!void {
+            fn render(ctx: @TypeOf(ptr), writer: *std.Io.Writer) anyerror!void {
                 var jw = serde.json.Writer.init(writer, .{});
                 try serde.serialize(&jw, ctx);
             }
@@ -87,9 +87,9 @@ pub const StdClient = struct {
         .make_request = &make_request,
     },
 
-    pub fn init(allocator: std.mem.Allocator) !@This() {
+    pub fn init(io: std.Io, allocator: std.mem.Allocator) !@This() {
         return .{
-            .std_client = .{ .allocator = allocator },
+            .std_client = .{ .allocator = allocator, .io = io },
         };
     }
 
@@ -99,7 +99,7 @@ pub const StdClient = struct {
 
     // TODO: This is a minimal PoC for Zig 0.15.1 - it works, but... IDK
     fn make_request(client: *Client, arena: std.mem.Allocator, options: RequestOptions) !Response {
-        const self: *@This() = @fieldParentPtr("interface", client);
+        const self: *@This() = @alignCast(@fieldParentPtr("interface", client));
 
         // NOTE: This is shared for both sending & receiving
         var buf: []u8 = try arena.alloc(u8, 8 * 1024);
@@ -160,14 +160,14 @@ test {
         // .post("/echo", tk.meta.dupe),
     };
 
-    var server = try tk.Server.init(std.testing.allocator, routes, .{ .listen = .{ .port = 8081 } });
+    var server = try tk.Server.init(std.testing.io, std.testing.allocator, routes, .{ .listen = .{ .port = 8081 } });
     defer server.deinit();
 
     var thread = try std.Thread.spawn(.{}, tk.Server.start, .{&server});
     defer thread.join();
     defer server.stop();
 
-    var std_client = try StdClient.init(std.testing.allocator);
+    var std_client = try StdClient.init(std.testing.io, std.testing.allocator);
     defer std_client.deinit();
 
     const client = &std_client.interface;

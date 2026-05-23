@@ -118,7 +118,7 @@ pub const Context = struct {
         return pos;
     }
 
-    pub fn print(self: *Context, writer: *std.io.Writer, val: Value) !void {
+    pub fn print(self: *Context, writer: *std.Io.Writer, val: Value) !void {
         _ = self; // autofix
 
         // TODO: It's likely that some of this will be js-specific.
@@ -157,7 +157,8 @@ const Builtins = struct {
     }
 
     pub fn print(vm_ctx: *vm.Context, val: Value) !void {
-        var fw = std.fs.File.stderr().writer(&.{});
+        // TODO: I think we could use std.debug.print() or std.log.debug() + fmt.Alt()
+        var fw = std.Io.File.stderr().writer(std.Options.debug_io, &.{});
         const w = &fw.interface;
         try cx(vm_ctx).print(w, val);
         try w.writeByte('\n');
@@ -465,7 +466,7 @@ test Parser {
 }
 
 fn expectEval(js: *Context, expr: []const u8, expected: []const u8) !void {
-    var wb = std.io.Writer.Allocating.init(std.testing.allocator);
+    var wb: std.Io.Writer.Allocating = .init(std.testing.allocator);
     defer wb.deinit();
 
     const res = try js.eval(expr);
