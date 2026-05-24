@@ -5,6 +5,14 @@ const Bundle = @import("container.zig").Bundle;
 const Server = @import("server.zig").Server;
 const ServerOptions = @import("server.zig").InitOptions;
 
+pub const ProcessInit = struct {
+    init: *const std.process.Init = &current,
+    args: *const std.process.Args = &current.minimal.args,
+    io: *const std.Io = &current.io,
+
+    var current: std.process.Init = undefined;
+};
+
 pub const Base = struct {
     pub fn configure(bundle: *Bundle) void {
         bundle.addCompileHook(maybeConfigureServer);
@@ -27,17 +35,11 @@ pub const Base = struct {
     }
 };
 
-pub fn run(comptime fun: anytype, comptime mods: []const type) !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-
-    try runAlloc(fun, gpa.allocator(), mods);
-}
-
-pub fn runAlloc(comptime fun: anytype, allocator: std.mem.Allocator, comptime mods: []const type) !void {
+pub fn run(init: std.process.Init, comptime fun: anytype, comptime mods: []const type) !void {
     comptime std.debug.assert(@typeInfo(@TypeOf(fun)) == .@"fn");
 
-    const ct = try Container.init(allocator, mods ++ &[_]type{Base});
+    ProcessInit.current = init;
+    const ct = try Container.init(init.gpa, mods ++ &[_]type{ ProcessInit, Base });
     defer ct.deinit();
 
     try ct.injector.call(fun);
