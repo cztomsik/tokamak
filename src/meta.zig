@@ -34,14 +34,17 @@ pub fn tids(comptime types: []const type) []const TypeId {
 /// compilation.
 pub const ComptimeVal = struct {
     type: type,
-    ptr: *const anyopaque,
+    inner: type,
 
     pub fn wrap(comptime val: anytype) ComptimeVal {
-        return .{ .type = @TypeOf(val), .ptr = @ptrCast(&val) };
+        const H = struct {
+            pub const value = val;
+        };
+        return .{ .type = @TypeOf(val), .inner = H };
     }
 
     pub fn unwrap(self: ComptimeVal) self.type {
-        return @as(*const self.type, @ptrCast(@alignCast(self.ptr))).*;
+        return self.inner.value;
     }
 };
 
@@ -191,9 +194,7 @@ pub fn UnwrapErr(comptime T: type) type {
 pub fn Const(comptime T: type) type {
     return switch (@typeInfo(T)) {
         .pointer => |p| {
-            var info = p;
-            info.is_const = true;
-            return @Type(.{ .pointer = info });
+            return @Pointer(p.size, .{ .@"const" = true }, p.child, p.sentinel());
         },
         else => T,
     };
