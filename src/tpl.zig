@@ -18,7 +18,7 @@ test raw {
 
     try std.testing.expectEqualStrings(
         "123",
-        try raw(arena.allocator(), "{{foo}}", .{ .foo = 123 }),
+        try raw(arena.allocator(), "{{foo}}", .{ .foo = @as(i64, 123) }),
     );
 
     try std.testing.expectEqualStrings(
@@ -187,10 +187,11 @@ pub const Value = union(enum) {
         }
 
         return switch (@typeInfo(T)) {
+            .comptime_int, .comptime_float => @compileError("TODO: zig16"),
             .void, .null => .null,
             .bool => .{ .bool = ptr.* },
-            .int, .comptime_int => .{ .int = @intCast(ptr.*) },
-            .float, .comptime_float => .{ .float = @floatCast(ptr.*) },
+            .int => .{ .int = @intCast(ptr.*) },
+            .float => .{ .float = @floatCast(ptr.*) },
             .optional => if (ptr.*) |*p| .fromPtr(p) else .null,
             .@"struct" => |s| if (s.is_tuple) .fromTuple(T, ptr) else .fromStruct(T, ptr),
             .array => |a| .fromSlice(a.child, ptr),
