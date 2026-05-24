@@ -87,10 +87,11 @@ pub const Screen = struct {
 
         try std.posix.tcsetattr(stdin.handle, .FLUSH, raw);
 
-        self.truecolor = if (std.posix.getenv("COLORTERM")) |ct|
-            std.mem.eql(u8, ct, "truecolor") or std.mem.eql(u8, ct, "24bit")
-        else
-            false;
+        // TODO: env map
+        // self.truecolor = if (std.posix.getenv("COLORTERM")) |ct|
+        //     std.mem.eql(u8, ct, "truecolor") or std.mem.eql(u8, ct, "24bit")
+        // else
+        //     false;
 
         self.fin = stdin.readerStreaming(io, &.{});
         self.fout = std.Io.File.stdout().writerStreaming(io, &.{});
