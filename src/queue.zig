@@ -159,10 +159,11 @@ pub const ShmQueue = struct {
         };
 
         var buf: [256]u8 = undefined;
-        const shm_name = try std.fmt.bufPrintZ(
+        const shm_name = try std.fmt.bufPrintSentinel(
             &buf,
             "{s}_{d}_{d}",
             .{ config.name, VERSION, config.capacity },
+            0,
         );
 
         self.mutex = try ShmMutex.init(io, shm_name);

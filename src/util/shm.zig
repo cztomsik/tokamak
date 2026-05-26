@@ -9,7 +9,12 @@ pub const Mutex = struct {
 
     pub fn init(io: std.Io, name: [:0]const u8) !Mutex {
         var buf: [256]u8 = undefined;
-        const tmp_path = try std.fmt.bufPrintZ(&buf, "/tmp/{s}.lock", .{std.mem.trimStart(u8, name, "/")});
+        const tmp_path = try std.fmt.bufPrintSentinel(
+            &buf,
+            "/tmp/{s}.lock",
+            .{std.mem.trimStart(u8, name, "/")},
+            0,
+        );
 
         return .{
             .fd = try std.Io.Dir.createFileAbsolute(io, tmp_path, .{ .read = true }),
