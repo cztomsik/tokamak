@@ -104,7 +104,7 @@ pub const Injector = struct {
             break :brk &types;
         };
 
-        var args: std.meta.Tuple(types) = undefined;
+        var args: @Tuple(types) = undefined;
         inline for (0..args.len) |i| {
             if (i < extra_start) {
                 args[i] = try self.get(types[i]);
