@@ -106,6 +106,6 @@ const App = struct {
     }
 };
 
-pub fn main() !void {
-    try tk.app.run(tk.Server.start, &.{ Config, App });
+pub fn main(init: std.process.Init) !void {
+    try tk.app.run(init, tk.Server.start, &.{ Config, App });
 }

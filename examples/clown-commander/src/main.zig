@@ -1,14 +1,17 @@
-// TODO: This was mostly generated using claude-code so it is not yet idiomatic
+// TODO: This was semi-generated using LLM so it is not yet idiomatic
 
 const std = @import("std");
 const tk = @import("tokamak");
 const Builder = tk.tui.Builder;
-const DirEntry = std.fs.Dir.Entry;
+const DirEntry = std.Io.Dir.Entry;
+
+const cwd = std.Io.Dir.cwd;
 
 const Panel = struct {
+    io: std.Io,
     gpa: std.mem.Allocator,
     path: []u8,
-    files: std.ArrayList(DirEntry) = .{},
+    files: std.ArrayList(DirEntry) = .empty,
     selected: usize = 0,
 
     fn refresh(self: *Panel) !void {
@@ -17,14 +20,14 @@ const Panel = struct {
         self.selected = 0;
 
         if (!std.mem.eql(u8, self.path, "/")) {
-            try self.files.append(self.gpa, .{ .name = try self.gpa.dupe(u8, ".."), .kind = .directory });
+            try self.files.append(self.gpa, .{ .name = try self.gpa.dupe(u8, ".."), .kind = .directory, .inode = 0 });
         }
 
-        var dir = try std.fs.cwd().openDir(self.path, .{ .iterate = true });
-        defer dir.close();
+        const dir = try cwd().openDir(self.io, self.path, .{ .iterate = true });
+        defer dir.close(self.io);
 
         var it = dir.iterate();
-        while (try it.next()) |entry| {
+        while (try it.next(self.io)) |entry| {
             try self.files.append(self.gpa, try tk.meta.dupe(self.gpa, entry));
         }
 
@@ -60,10 +63,10 @@ const Commander = struct {
     mkdir_active: bool = false,
     quit: bool = false,
 
-    fn init(allocator: std.mem.Allocator, path: []const u8) !Commander {
+    fn init(io: std.Io, gpa: std.mem.Allocator, path: []const u8) !Commander {
         var panels = [2]Panel{
-            .{ .gpa = allocator, .path = try allocator.dupe(u8, path) },
-            .{ .gpa = allocator, .path = try allocator.dupe(u8, path) },
+            .{ .io = io, .gpa = gpa, .path = try gpa.dupe(u8, path) },
+            .{ .io = io, .gpa = gpa, .path = try gpa.dupe(u8, path) },
         };
         try panels[0].refresh();
         try panels[1].refresh();
@@ -193,7 +196,7 @@ fn copyFile() void {
     const dst_path = std.fs.path.join(dst.gpa, &.{ dst.path, file.name }) catch return;
     defer dst.gpa.free(dst_path);
 
-    std.fs.cwd().copyFile(src_path, std.fs.cwd(), dst_path, .{}) catch return;
+    cwd().copyFile(src_path, cwd(), dst_path, src.io, .{}) catch return;
     dst.refresh() catch {};
 }
 
@@ -204,9 +207,9 @@ fn deleteEntry() void {
     defer panel.gpa.free(path);
 
     if (file.kind == .directory) {
-        std.fs.cwd().deleteDir(path) catch {};
+        std.Io.Dir.deleteDir(cwd(), panel.io, path) catch {};
     } else {
-        std.fs.cwd().deleteFile(path) catch {};
+        std.Io.Dir.deleteFile(cwd(), panel.io, path) catch {};
     }
     panel.refresh() catch {};
 }
@@ -217,24 +220,20 @@ fn confirmMkdir() void {
     const panel = cmd.activePanel();
     const path = std.fs.path.join(panel.gpa, &.{ panel.path, name }) catch return;
     defer panel.gpa.free(path);
-    std.fs.cwd().makeDir(path) catch {};
+    std.Io.Dir.createDir(cwd(), panel.io, path, .default_dir) catch {};
     panel.refresh() catch {};
 }
 
 // --- Entry point ---
 
-pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
+pub fn main(init: std.process.Init) !void {
+    const cwd_path = try std.process.currentPathAlloc(init.io, init.gpa);
+    defer init.gpa.free(cwd_path);
 
-    const cwd = try std.process.getCwdAlloc(allocator);
-    defer allocator.free(cwd);
-
-    cmd = try Commander.init(allocator, cwd);
+    cmd = try Commander.init(init.io, init.gpa, cwd_path);
     defer cmd.deinit();
 
-    var cx = try tk.tui.Context.init(allocator);
+    var cx = try tk.tui.Context.init(init.io, init.gpa);
     defer cx.deinit();
 
     while (!cmd.quit) {

@@ -2,8 +2,8 @@ const std = @import("std");
 const tk = @import("tokamak");
 const Builder = tk.tui.Builder;
 
-pub fn main() !void {
-    var cx = try tk.tui.Context.init(std.heap.c_allocator);
+pub fn main(init: std.process.Init) !void {
+    var cx = try tk.tui.Context.init(init.io, init.gpa);
     defer cx.deinit();
 
     while (!state.quit) {
@@ -129,8 +129,9 @@ fn mainarea(ui: Builder) void {
                 }
 
                 col.header("Paragraph");
-                col.paragraph("Lorem ipsum dolor sit amet. " ** 10, -1);
-                col.paragraph("Lorem ipsum dolor sit amet. " ** 10, 2);
+                const lorem: []const u8 = @ptrCast(&@as([10][28]u8, @splat("Lorem ipsum dolor sit amet. ".*)));
+                col.paragraph(lorem, -1);
+                col.paragraph(lorem, 2);
             }
         }
     }

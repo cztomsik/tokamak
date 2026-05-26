@@ -1,4 +1,5 @@
 const builtin = @import("builtin");
+const c = @import("c");
 const std = @import("std");
 const tk = @import("tokamak");
 
@@ -15,23 +16,15 @@ const App = struct {
     }
 };
 
-pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+pub fn main(init: std.process.Init) !void {
+    try tk.app.run(init, webviewMain, &.{App});
+}
 
-    const ct = try tk.Container.init(gpa.allocator(), &.{App});
-    defer ct.deinit();
-
-    const server = try ct.injector.get(*tk.Server);
-    const port = server.http.config.port.?;
+pub fn webviewMain(server: *tk.Server, gpa: std.mem.Allocator) !void {
+    const address = server.http.config.address;
 
     const thread = try server.http.listenInNewThread();
     defer thread.join();
-
-    const c = @cImport({
-        @cInclude("stddef.h");
-        @cInclude("webview.h");
-    });
 
     const w = c.webview_create(if (builtin.mode == .Debug) 1 else 0, null);
     defer _ = c.webview_destroy(w);
@@ -39,8 +32,8 @@ pub fn main() !void {
     _ = c.webview_set_title(w, "Example");
     _ = c.webview_set_size(w, 800, 500, c.WEBVIEW_HINT_NONE);
 
-    const url = try std.fmt.allocPrintSentinel(gpa.allocator(), "http://127.0.0.1:{}", .{port}, 0);
-    defer gpa.allocator().free(url);
+    const url = try std.fmt.allocPrintSentinel(gpa, "http://{f}", .{address}, 0);
+    defer gpa.free(url);
 
     _ = c.webview_navigate(w, url);
     _ = c.webview_run(w);

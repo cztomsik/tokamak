@@ -53,7 +53,7 @@ const Cli = struct {
         return str[start orelse 0 .. end orelse str.len];
     }
 
-    fn writePdf(arena: std.mem.Allocator, filename: []const u8, title: []const u8) !void {
+    fn writePdf(io: std.Io, arena: std.mem.Allocator, filename: []const u8, title: []const u8) !void {
         var doc = try tk.pdf.Document.init(arena);
         defer doc.deinit();
 
@@ -80,22 +80,22 @@ const Cli = struct {
         try page.stroke();
         try page.addText(160, 420, "Curve", .{ .bold = true });
 
-        const file = try std.fs.cwd().createFile(filename, .{});
-        defer file.close();
-        try file.writeAll(try doc.render(arena));
+        const file = try std.Io.Dir.cwd().createFile(io, filename, .{});
+        defer file.close(io);
+        try file.writeStreamingAll(io, try doc.render(arena));
 
         std.debug.print("PDF '{s}' generated successfully", .{filename});
     }
 
-    fn grep(arena: std.mem.Allocator, file_path: []const u8, pattern: []const u8) !void {
+    fn grep(io: std.Io, arena: std.mem.Allocator, file_path: []const u8, pattern: []const u8) !void {
         var regex = try tk.regex.Regex.compile(arena, pattern);
         defer regex.deinit(arena);
 
-        const file = try std.fs.cwd().openFile(file_path, .{});
-        defer file.close();
+        const file = try std.Io.Dir.cwd().openFile(io, file_path, .{});
+        defer file.close(io);
 
         var buf: [4096]u8 = undefined;
-        var in = file.reader(&buf);
+        var in = file.reader(io, &buf);
         var grepper = tk.regex.Grep.init(&in.interface, &regex);
 
         while (try grepper.next()) |line| {
@@ -104,8 +104,6 @@ const Cli = struct {
     }
 };
 
-pub fn main() !void {
-    std.debug.print(tk.ansi.clear, .{});
-
-    try tk.app.run(tk.cli.run, &.{ App, Cli });
+pub fn main(init: std.process.Init) !void {
+    try tk.app.run(init, tk.cli.run, &.{ App, Cli });
 }
