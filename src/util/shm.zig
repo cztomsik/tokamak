@@ -95,7 +95,6 @@ pub const Shm = struct {
 };
 
 test {
-    // TODO: figure out why this keep failing every second run?
     var shm = try Shm.open(std.testing.io, "/test123", std.heap.page_size_min);
     defer {
         shm.deinit(std.testing.io);
@@ -104,13 +103,13 @@ test {
 
     try std.testing.expectEqualSlices(u8, &.{ 0, 0, 0 }, shm.data[0..3]);
 
-    const pid: i32 = @intCast(std.os.linux.fork());
+    const pid = c.fork();
     if (pid == 0) {
         @memcpy(shm.data[0..3], "abc");
         std.process.exit(0);
     }
 
-    var status: u32 = 0;
-    _ = std.os.linux.waitpid(pid, &status, 0);
+    var status: c_int = 0;
+    _ = c.waitpid(pid, &status, 0);
     try std.testing.expectEqualStrings("abc", shm.data[0..3]);
 }
