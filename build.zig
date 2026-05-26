@@ -44,7 +44,10 @@ pub fn build(b: *std.Build) !void {
     test_mod.addImport("c", translate_c.createModule());
     const tests = b.addTest(.{ .root_module = test_mod, .filters = test_filter });
     tests.root_module.addImport("httpz", httpz.module("httpz"));
-    const run_tests = b.addRunArtifact(tests);
+    // TODO: Something is broken since zig16 but running the binary directly seems to work...
+    const run_tests = std.Build.Step.Run.create(b, "run_test");
+    run_tests.stdio = .inherit;
+    run_tests.addArtifactArg(tests);
     test_step.dependOn(&run_tests.step);
 }
 
