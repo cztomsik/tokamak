@@ -55,8 +55,8 @@ const App = struct {
         , .{});
     }
 
-    fn printServerPort(server: *tk.Server) void {
-        std.debug.print("Starting tokamak on: http://localhost:{d}/todo\n", .{server.http.config.port.?});
+    fn printServerPort(server_opts: tk.ServerOptions) void {
+        std.debug.print("Starting tokamak on: http://localhost:{d}/todo\n", .{server_opts.listen.port});
     }
 };
 
@@ -65,7 +65,7 @@ pub fn main(init: std.process.Init) !void {
 }
 
 fn readOne(db: *fr.Session, id: u32) !Todo {
-    return try db.query(Todo).find(id) orelse error.NotFound;
+    return try db.query(Todo).where("id", id).findOne() orelse error.NotFound;
 }
 
 fn readAll(db: *fr.Session) ![]const Todo {
@@ -91,7 +91,7 @@ fn delete(db: *fr.Session, id: u32) !void {
 
 // helper for updating all fields which are set in the body and not null / undefined
 fn patchSetFields(db: *fr.Session, comptime RowType: type, comptime BodyType: type, id: u32, body: BodyType) !void {
-    var row = try db.query(RowType).find(id) orelse return error.NotFound;
+    var row = try db.query(RowType).where("id", id).findOne() orelse return error.NotFound;
 
     inline for (
         std.meta.fields(BodyType),

@@ -7,8 +7,8 @@
             .path = "../..",
         },
         .fridge = .{
-            .url = "git+https://github.com/cztomsik/fridge?ref=feat/zig15#1502199c5fd89920d12c35b1ea9b4d89e988aafc",
-            .hash = "fridge-0.9.5-3GyIihaqAQBt9-4RFUNeShxkFO7fy8uDZn2AZ8Wyazgm",
+            .url = "git+https://github.com/cztomsik/fridge#d93855e469394e1abe5e965d665fd91fd4b19f9b",
+            .hash = "fridge-0.9.5-3GyIipLGAQDe5ZU92MpfNpzAKfkkJxmo4WZj9M0UevtW",
         },
     },
     .paths = .{
