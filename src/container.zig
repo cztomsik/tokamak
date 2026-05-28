@@ -221,6 +221,7 @@ pub const Bundle = struct {
     runtime_hooks: Buf(Hook), // when the deps are ready / before they are gone
     n_inst: usize = 0,
     n_data: usize = 0,
+    max_align: usize = 1,
 
     /// Registers all fields of module M as dependencies.
     ///
@@ -347,7 +348,7 @@ pub const Bundle = struct {
             for (@typeInfo(hook.fun.type).@"fn".params) |p| bundle.mark(p.type orelse continue, &hook.mask);
         }
 
-        return CompiledBundle(bundle.render(), bundle.n_inst, bundle.n_data);
+        return CompiledBundle(bundle.render(), bundle.n_inst, bundle.n_data, bundle.max_align);
     }
 
     fn resolveOne(self: *Bundle, dep: *Dep) void {
@@ -465,14 +466,15 @@ pub const Bundle = struct {
         const offset = std.mem.alignForward(usize, self.n_data, @alignOf(T));
         self.n_inst += 1;
         self.n_data = offset + @sizeOf(T);
+        self.max_align = @max(self.max_align, @alignOf(T));
         return .{ .instance = .{ .type = T, .offset = offset } };
     }
 };
 
-fn CompiledBundle(comptime ops: []const Op, comptime n_inst: usize, comptime n_data: usize) type {
+fn CompiledBundle(comptime ops: []const Op, comptime n_inst: usize, comptime n_data: usize, comptime max_align: usize) type {
     return struct {
         refs: [n_inst + 2]Ref,
-        data: [n_data]u8,
+        data: [n_data]u8 align(max_align),
 
         fn init(self: *@This(), ct: *Container) !void {
             // We NEED to use ct.inj directly, because if anyone saves this ptr, it needs to stay valid (ie. not be on the stack)
