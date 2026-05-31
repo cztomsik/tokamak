@@ -115,9 +115,7 @@ pub const Cron = struct {
             const wait: u64 = @intCast(@max(0, step.epoch - self.time().epoch));
             log.debug("sleeping for {}", .{wait});
 
-            // TODO: I have no clue, Io.Select(U) is crazy... I hope it's not the way
-            // self.wait.timedWait(&self.mutex, wait * std.time.ns_per_s) catch break;
-            try self.io.sleep(.fromSeconds(wait), .awake);
+            self.wait.waitTimeout(self.io, &self.mutex, .fromSeconds(wait)) catch break;
         }
     }
 
