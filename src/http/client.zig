@@ -174,7 +174,7 @@ test {
 
     const H = struct {
         fn slow(io: std.Io) !void {
-            return std.Io.sleep(io, .fromSeconds(10), .awake);
+            return io.sleep(.fromSeconds(10), .awake);
         }
     };
 

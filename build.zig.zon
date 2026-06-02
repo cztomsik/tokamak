@@ -5,8 +5,8 @@
     // .minimum_zig_version = "0.17.0",
     .dependencies = .{
         .httpz = .{
-            .url = "git+https://github.com/karlseguin/http.zig?ref=dev#45541e02e3fb6bd0770d69e149e916429d75a9a4",
-            .hash = "httpz-0.0.0-PNVzrHnKCABpaiyOfR7bq0Up9IuORNS2da-HdZWu8U3_",
+            .url = "git+https://github.com/karlseguin/http.zig?ref=dev#8145615e3b9378cd3ab4eb05d8bc19373132b840",
+            .hash = "httpz-0.0.0-PNVzrFzKCABcvXEwdGT-nmljcDL0JSAVsssRjKLHT5GE",
         },
     },
     .paths = .{
