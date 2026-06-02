@@ -40,7 +40,7 @@ pub const Context = struct {
         const query = try self.req.query();
         var res: T = undefined;
 
-        inline for (std.meta.fields(T)) |f| {
+        inline for (@typeInfo(T).@"struct".fields) |f| {
             if (query.get(f.name)) |param| {
                 @field(res, f.name) = try self.parse(f.type, param);
             } else if (f.default_value_ptr) |ptr| {

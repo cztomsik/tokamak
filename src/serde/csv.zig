@@ -63,7 +63,7 @@ pub const Writer = struct {
 
     pub fn beginStruct(self: *Writer, comptime T: type, _: usize) !Struct {
         if (self.row == 0 and self.options.header) {
-            try self.writeHeader(std.meta.fields(T));
+            try self.writeHeader(@typeInfo(T).@"struct".field_names);
         }
 
         if (self.row > 0) {
@@ -73,9 +73,9 @@ pub const Writer = struct {
         return .{ .writer = self };
     }
 
-    fn writeHeader(self: *Writer, comptime fields: anytype) !void {
-        inline for (fields) |f| {
-            try self.write(.string, f.name);
+    fn writeHeader(self: *Writer, field_names: []const []const u8) !void {
+        for (field_names) |f| {
+            try self.write(.string, f);
             self.col += 1;
         }
         self.row += 1;

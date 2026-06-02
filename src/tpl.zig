@@ -210,14 +210,15 @@ pub const Value = union(enum) {
             fn resolve(cx: *const anyopaque, name: []const u8) Value {
                 const self: *const T = @ptrFromInt(@intFromPtr(cx));
 
-                inline for (std.meta.fields(T)) |f| {
-                    if (std.mem.eql(u8, f.name, name)) {
-                        if (f.is_comptime) { // otherwise: runtime value contains reference to comptime var
-                            const copy = @field(self, f.name);
+                const s = @typeInfo(T).@"struct";
+                inline for (s.field_names, s.field_attrs) |f, fa| {
+                    if (std.mem.eql(u8, f, name)) {
+                        if (fa.@"comptime") { // otherwise: runtime value contains reference to comptime var
+                            const copy = @field(self, f);
                             return Value.fromPtr(&copy);
                         }
 
-                        return Value.fromPtr(&@field(self, f.name));
+                        return Value.fromPtr(&@field(self, f));
                     }
                 }
 
@@ -234,14 +235,15 @@ pub const Value = union(enum) {
         const H = struct {
             fn get(cx: *const anyopaque, index: usize) Value {
                 const self: *const T = @ptrCast(@alignCast(cx));
-                inline for (std.meta.fields(T), 0..) |f, i| {
+                const s = @typeInfo(T).@"struct";
+                inline for (s.field_names, s.field_attrs, 0..) |f, fa, i| {
                     if (i == index) {
-                        if (f.is_comptime) { // otherwise: runtime value contains reference to comptime var
-                            const copy = @field(self, f.name);
+                        if (fa.@"comptime") { // otherwise: runtime value contains reference to comptime var
+                            const copy = @field(self, f);
                             return Value.fromPtr(&copy);
                         }
 
-                        return Value.fromPtr(&@field(self, f.name));
+                        return Value.fromPtr(&@field(self, f));
                     }
                 }
                 return .null;
@@ -249,7 +251,7 @@ pub const Value = union(enum) {
         };
 
         return .{
-            .indexable = .{ @ptrCast(ptr), std.meta.fields(T).len, &H.get },
+            .indexable = .{ @ptrCast(ptr), std.meta.fieldNames(T).len, &H.get },
         };
     }
 

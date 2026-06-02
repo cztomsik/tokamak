@@ -109,7 +109,7 @@ pub fn serialize(writer: anytype, value: anytype) Error!void {
 }
 
 pub fn serializeEnum(writer: anytype, value: anytype) Error!void {
-    if (@typeInfo(@TypeOf(value)).@"enum".is_exhaustive) {
+    if (@typeInfo(@TypeOf(value)).@"enum".mode == .exhaustive) {
         return writer.write(.string, @tagName(value));
     }
 
@@ -123,9 +123,9 @@ pub fn serializeSlice(writer: anytype, value: anytype) Error!void {
 }
 
 pub fn serializeTuple(writer: anytype, value: anytype) Error!void {
-    const fields = std.meta.fields(@TypeOf(value));
-    var tuple = try writer.beginTuple(fields.len);
-    inline for (0..fields.len) |i| try tuple.element(value[i]);
+    const len = @typeInfo(@TypeOf(value)).@"struct".field_types.len;
+    var tuple = try writer.beginTuple(len);
+    inline for (0..len) |i| try tuple.element(value[i]);
     return tuple.end();
 }
 
@@ -135,20 +135,20 @@ pub const SerializeStructOptions = struct {
 
 pub fn serializeStruct(writer: anytype, value: anytype, comptime options: SerializeStructOptions) Error!void {
     const T = @TypeOf(value);
-    const fields = std.meta.fields(T);
-    var st = try writer.beginStruct(T, fields.len);
-    inline for (fields) |f| {
-        if (!meta.isOptional(f.type) or options.omit_null == .never) {
-            try st.field(f.name, @field(value, f.name));
+    const s = @typeInfo(T).@"struct";
+    var sb = try writer.beginStruct(T, s.field_names.len);
+    inline for (s.field_names, s.field_types, s.field_attrs) |f, ft, fa| {
+        if (!meta.isOptional(ft) or options.omit_null == .never) {
+            try sb.field(f, @field(value, f));
         } else {
-            if (@field(value, f.name)) |v| {
-                try st.field(f.name, v);
-            } else if (options.omit_null == .auto and (f.defaultValue() == null or f.defaultValue().? != null)) {
-                try st.field(f.name, @field(value, f.name));
+            if (@field(value, f)) |v| {
+                try sb.field(f, v);
+            } else if (options.omit_null == .auto and (fa.defaultValue(ft) == null or fa.defaultValue(ft).? != null)) {
+                try sb.field(f, @field(value, f));
             }
         }
     }
-    return st.end();
+    return sb.end();
 }
 
 pub fn serializeUnion(writer: anytype, value: anytype) Error!void {

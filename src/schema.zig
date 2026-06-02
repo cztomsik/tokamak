@@ -43,16 +43,14 @@ pub const Schema = union(enum) {
                 .optional => |o| .{ .oneOf = &.{ .null, schema(o.child) } },
                 .@"union" => .{ .object = &.{} }, // TODO
                 .@"struct" => |s| if (s.is_tuple) .{ .tuple = brk: {
-                    const fields = std.meta.fields(T);
-                    var kinds: [fields.len]Schema = undefined;
-                    for (fields, 0..) |f, i| kinds[i] = schema(f.type);
+                    var kinds: [s.field_types.len]Schema = undefined;
+                    for (s.field_types, 0..) |ft, i| kinds[i] = schema(ft);
                     const res = kinds;
                     break :brk &res;
                 } } else .{
                     .object = brk: {
-                        const fields = std.meta.fields(T);
-                        var props: [fields.len]Property = undefined;
-                        for (fields, 0..) |f, i| props[i] = .{ .name = f.name, .schema = &schema(f.type), .required = f.default_value_ptr == null };
+                        var props: [s.field_names.len]Property = undefined;
+                        for (s.field_names, s.field_types, s.field_attrs, 0..) |f, ft, fa, i| props[i] = .{ .name = f, .schema = &schema(ft), .required = fa.default_value_ptr == null };
                         const res = props;
                         break :brk &res;
                     },

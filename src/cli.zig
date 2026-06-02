@@ -101,11 +101,11 @@ pub const Command = struct {
         const info = @typeInfo(@TypeOf(fun));
         if (info != .@"fn") @compileError("Command handler must be a function");
 
-        const params = info.@"fn".params;
+        const params = info.@"fn".param_types;
         const n_deps = params.len - n_args;
         const n_req = blk: {
             var n: usize = n_args;
-            while (n > 0 and meta.isOptional(params[n_deps + n - 1].type.?)) n -= 1;
+            while (n > 0 and meta.isOptional(params[n_deps + n - 1].?)) n -= 1;
             break :blk n;
         };
 

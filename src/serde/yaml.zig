@@ -70,7 +70,7 @@ pub const Writer = struct {
         if (meta.isSlice(T)) return value.len == 0;
 
         return switch (@typeInfo(T)) {
-            .@"struct" => |s| s.fields.len == 0,
+            .@"struct" => |s| s.field_names.len == 0,
             .array => shouldInline(&value[0..]),
             .optional => if (value) |v| shouldInline(v) else true,
             .pointer => shouldInline(value.*),

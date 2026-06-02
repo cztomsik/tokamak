@@ -53,24 +53,24 @@ fn writeValue(value: anytype, writer: anytype) !void {
 
 // TODO: writeTableMasked(T, items, field_mask: usize)
 fn writeTable(comptime T: type, items: []const T, writer: anytype) !void {
-    const fields = std.meta.fields(T);
+    const field_names = comptime std.meta.fieldNames(T);
 
-    var widths: [fields.len]usize = undefined;
-    inline for (fields, 0..) |f, i| widths[i] = f.name.len;
+    var widths: [field_names.len]usize = undefined;
+    inline for (field_names, 0..) |f, i| widths[i] = f.len;
 
     // Grow widths to fit values
     for (items) |item| {
-        inline for (fields, 0..) |f, i| {
-            widths[i] = @max(widths[i], getValueLength(@field(item, f.name)));
+        inline for (field_names, 0..) |f, i| {
+            widths[i] = @max(widths[i], getValueLength(@field(item, f)));
         }
     }
 
     // Write header
     try writer.writeAll("|");
-    inline for (fields, 0..) |field, i| {
+    inline for (field_names, 0..) |f, i| {
         try writer.writeByte(' ');
-        try writer.writeAll(field.name);
-        try writer.splatByteAll(' ', widths[i] - field.name.len);
+        try writer.writeAll(f);
+        try writer.splatByteAll(' ', widths[i] - f.len);
         try writer.writeAll(" |");
     }
     try writer.writeAll("\n");
@@ -87,9 +87,9 @@ fn writeTable(comptime T: type, items: []const T, writer: anytype) !void {
     // Write items
     for (items) |item| {
         try writer.writeAll("|");
-        inline for (fields, 0..) |field, i| {
+        inline for (field_names, 0..) |f, i| {
             try writer.writeAll(" ");
-            const v = @field(item, field.name);
+            const v = @field(item, f);
             try writeValue(v, writer);
             try writer.splatByteAll(' ', widths[i] - getValueLength(v));
             try writer.writeAll(" |");

@@ -26,7 +26,8 @@ pub fn monitor(processes: anytype) noreturn {
     while (true) {
         inline for (0..processes.len) |i| {
             if (pids[i] == 0) {
-                const child = std.posix.fork() catch @panic("fork failed");
+                const child = std.c.fork();
+                if (child == -1) @panic("fork failed");
                 if (child == 0) return run(processes[i]);
 
                 log.debug("start: #{d} {s} pid: {d}", .{ i, processes[i][0], child });
@@ -34,7 +35,7 @@ pub fn monitor(processes: anytype) noreturn {
             }
         }
 
-        const exited = std.posix.waitpid(0, 0).pid;
+        const exited = std.c.waitpid(0, null, 0);
         inline for (0..processes.len) |i| {
             if (pids[i] == exited) {
                 log.debug("exit: #{d} {s} pid: {d}", .{ i, processes[i][0], exited });
@@ -46,7 +47,8 @@ pub fn monitor(processes: anytype) noreturn {
 
 fn run(proc: anytype) noreturn {
     // Helps with mixing logs from different processes.
-    std.posix.nanosleep(0, 100_000_000);
+    var ts: std.c.timespec = .{ .sec = 0, .nsec = 100_000_000 };
+    _ = std.c.nanosleep(&ts, null);
 
     setproctitle(proc[0]);
 
@@ -60,11 +62,11 @@ fn run(proc: anytype) noreturn {
                 std.debug.dumpStackTrace(trace.*);
             }
 
-            std.posix.exit(1);
+            std.process.exit(1);
         };
     }
 
-    std.posix.exit(0);
+    std.process.exit(0);
 }
 
 fn setproctitle(name: [:0]const u8) void {

@@ -1,7 +1,8 @@
 const std = @import("std");
 const util = @import("util.zig");
 const testing = @import("testing.zig");
-const Time = @import("time.zig").Time;
+const time = @import("time.zig");
+const Time = time.Time;
 const Shm = util.Shm;
 const ShmMutex = util.ShmMutex;
 
@@ -137,14 +138,8 @@ pub const ShmQueue = struct {
     /// Initialize the queue in place. The caller must ensure `self` is at a
     /// stable memory location that won't be moved after this call.
     pub fn init(self: *ShmQueue, io: std.Io, config: ShmQueueConfig) !void {
-        const H = struct {
-            fn timestamp() i64 {
-                return Time.now().epoch;
-            }
-        };
-
         self.io = io;
-        self.time = &H.timestamp;
+        self.time = &time.timestamp;
         self.job_timeout = config.job_timeout;
         self.interface = .{
             .vtable = &.{

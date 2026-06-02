@@ -1,6 +1,7 @@
 const std = @import("std");
 const testing = @import("testing.zig");
-const Time = @import("time.zig").Time;
+const time = @import("time.zig");
+const Time = time.Time;
 const Queue = @import("queue.zig").Queue;
 const ShmQueue = @import("queue.zig").ShmQueue;
 const log = std.log.scoped(.cron);
@@ -258,9 +259,10 @@ pub const Expr = struct {
     // }
 
     pub fn format(self: *const Expr, w: *std.Io.Writer) !void {
-        inline for (std.meta.fields(Expr), 0..) |f, i| {
+        const ex = @typeInfo(Expr).@"struct";
+        inline for (ex.field_names, ex.field_types, 0..) |f, ft, i| {
             if (i > 0) try w.writeByte(' ');
-            try writeField(w, @field(self, f.name), @bitSizeOf(f.type));
+            try writeField(w, @field(self, f), @bitSizeOf(ft));
         }
     }
 
@@ -286,9 +288,10 @@ pub const Expr = struct {
         var it = std.mem.tokenizeScalar(u8, expr, ' ');
         var res: Expr = undefined;
 
-        inline for (std.meta.fields(Expr)) |f| {
-            @field(res, f.name) = try parseField(
-                f.type,
+        const ex = @typeInfo(Expr).@"struct";
+        inline for (ex.field_names, ex.field_types) |f, ft| {
+            @field(res, f) = try parseField(
+                ft,
                 it.next() orelse return error.MissingField,
             );
         }
@@ -454,7 +457,7 @@ test "expr.match()" {
     try expectMatch("* * * * *", .{
         .{ 0, true },
         .{ 60, true },
-        .{ Time.now().epoch, true },
+        .{ time.timestamp(), true },
     });
 
     try expectMatch("*/5 * * * *", .{

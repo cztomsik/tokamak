@@ -13,8 +13,8 @@ pub const Context = struct {
     pub fn init(arena: std.mem.Allocator) !Context {
         var ctx = vm.Context.init(arena);
 
-        inline for (comptime std.meta.declarations(Builtins)) |d| {
-            try ctx.define(d.name, @field(Builtins, d.name));
+        inline for (comptime std.meta.declarations(Builtins)) |decl| {
+            try ctx.define(decl, @field(Builtins, decl));
         }
 
         return .{

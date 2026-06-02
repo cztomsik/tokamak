@@ -69,9 +69,9 @@ pub const redirect = Route.redirect;
 
 test {
     std.testing.refAllDecls(@This());
-    inline for (@typeInfo(@This()).@"struct".decls) |decl| {
-        if (@TypeOf(@field(@This(), decl.name)) == type and meta.isStruct(@field(@This(), decl.name))) {
-            std.testing.refAllDecls(@field(@This(), decl.name));
+    inline for (@typeInfo(@This()).@"struct".decl_names) |decl| {
+        if (@TypeOf(@field(@This(), decl)) == type and meta.isStruct(@field(@This(), decl))) {
+            std.testing.refAllDecls(@field(@This(), decl));
         }
     }
 }

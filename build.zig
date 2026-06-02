@@ -29,7 +29,8 @@ pub fn build(b: *std.Build) !void {
     const translate_c = b.addTranslateC(.{
         .root_source_file = b.path("src/c.h"),
         .target = target,
-        .optimize = optimize,
+        // .optimize = optimize,
+        .optimize = .Debug, // TODO: translate-c is broken
     });
     root.addImport("c", translate_c.createModule());
 

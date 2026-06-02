@@ -15,12 +15,12 @@ pub const Ref = struct {
         return .{
             .tid = meta.tid(@typeInfo(@TypeOf(ptr)).pointer.child), // NOTE: @TypeOf(ptr.*) does not work when T is opaque
             .ptr = @ptrCast(@alignCast(@constCast(ptr))),
-            .is_const = @typeInfo(@TypeOf(ptr)).pointer.is_const,
+            .is_const = @typeInfo(@TypeOf(ptr)).pointer.attrs.@"const",
         };
     }
 
     fn match(self: Ref, comptime P: type) bool {
-        return self.tid == meta.tid(meta.Deref(P)) and (!self.is_const or @typeInfo(P).pointer.is_const);
+        return self.tid == meta.tid(meta.Deref(P)) and (!self.is_const or @typeInfo(P).pointer.attrs.@"const");
     }
 };
 
@@ -94,12 +94,12 @@ pub const Injector = struct {
             @compileError("Expected a tuple of arguments");
         }
 
-        const params = @typeInfo(@TypeOf(fun)).@"fn".params;
+        const params = @typeInfo(@TypeOf(fun)).@"fn".param_types;
         const extra_start = params.len - extra_args.len;
 
         const types = comptime brk: {
             var types: [params.len]type = undefined;
-            for (0..extra_start) |i| types[i] = params[i].type orelse @compileError("reached anytype");
+            for (0..extra_start) |i| types[i] = params[i] orelse @compileError("reached anytype");
             for (extra_start..params.len, 0..) |i, j| types[i] = @TypeOf(extra_args[j]);
             break :brk &types;
         };

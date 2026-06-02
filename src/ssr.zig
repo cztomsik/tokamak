@@ -48,14 +48,14 @@ const ComponentRegistry = struct {
                 var inst: T = undefined;
                 var inj = Injector.init(&.{ .ref(&inst), .ref(ctx) }, &ctx.injector);
 
-                inline for (std.meta.fields(T)) |f| {
+                inline for (@typeInfo(T).@"struct".field_names, @typeInfo(T).@"struct".field_types, @typeInfo(T).@"struct".field_attrs) |f, ft, fa| {
                     for (comp.props) |prop| {
-                        if (std.mem.eql(u8, f.name, prop.name)) {
-                            @field(inst, f.name) = try parse.parseValue(f.type, prop.value, ctx.js.vm.arena);
+                        if (std.mem.eql(u8, f, prop.name)) {
+                            @field(inst, f) = try parse.parseValue(ft, prop.value, ctx.js.vm.arena);
                             break;
                         }
                     } else {
-                        @field(inst, f.name) = f.defaultValue() orelse return error.MissingProp;
+                        @field(inst, f) = fa.defaultValue(ft) orelse return error.MissingProp;
                     }
                 }
 
