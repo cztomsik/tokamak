@@ -201,7 +201,10 @@ pub const Screen = struct {
         const height: usize = @intCast(self.back_buffer.size[1]);
         if (width == 0 or height == 0) return;
 
+        var buf: [256]u8 = undefined;
         const w = &self.fout.interface;
+        w.buffer = &buf;
+        defer w.buffer = &.{};
 
         for (0..height) |row| {
             for (self.back_buffer.row(row), self.front_buffer.row(row), 0..) |back, front, col| {
@@ -218,9 +221,9 @@ pub const Screen = struct {
                     }
 
                     // Encode u21 codepoint to UTF-8
-                    var buf: [4]u8 = undefined;
-                    const len = std.unicode.utf8Encode(back.char, &buf) catch 1;
-                    try w.writeAll(buf[0..len]);
+                    var buf2: [4]u8 = undefined;
+                    const len = std.unicode.utf8Encode(back.char, &buf2) catch 1;
+                    try w.writeAll(buf2[0..len]);
                 }
             }
         }
