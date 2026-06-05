@@ -1,5 +1,6 @@
 const std = @import("std");
 const log = std.log.scoped(.monitor);
+const meta = @import("meta.zig");
 
 /// Runs the given processes in parallel, restarting them if they exit.
 ///
@@ -58,8 +59,11 @@ fn run(proc: anytype) noreturn {
         _ = res catch |e| {
             log.err("{s}", .{@errorName(e)});
 
-            if (@errorReturnTrace()) |trace| {
-                std.debug.dumpStackTrace(trace.*);
+            const stderr = std.debug.lockStderr(&.{}).terminal();
+            defer std.debug.unlockStderr();
+
+            if (@errorReturnTrace()) |et| {
+                std.debug.writeErrorReturnTrace(et, stderr) catch {};
             }
 
             std.process.exit(1);
@@ -70,26 +74,24 @@ fn run(proc: anytype) noreturn {
 }
 
 fn setproctitle(name: [:0]const u8) void {
-    // name includes path so we should always have some extra space
-    const dest = std.mem.span(std.os.argv[0]);
-    if (std.os.argv.len == 1 and dest.len >= name.len) {
-        @memcpy(dest[0..name.len], name);
-        dest.ptr[name.len] = 0;
-    } else log.debug("Could not rewrite process name {s}\ndest: {s}", .{ name, std.os.argv[0] });
+    _ = name; // autofix
+    // TODO: zig17 removed argv so we might need to access is via init.minimal.args.vector or something like that???
+
+    // // name includes path so we should always have some extra space
+    // const dest = std.mem.span(std.os.argv[0]);
+    // if (std.os.argv.len == 1 and dest.len >= name.len) {
+    //     @memcpy(dest[0..name.len], name);
+    //     dest.ptr[name.len] = 0;
+    // } else log.debug("Could not rewrite process name {s}\ndest: {s}", .{ name, std.os.argv[0] });
 }
 
 fn isTupleOfProcesses(comptime T: type) bool {
-    if (!isTuple(T)) return false;
+    if (!meta.isTuple(T)) return false;
 
-    inline for (@typeInfo(T).@"struct".fields) |f| {
-        if (!isTuple(f.type)) return false;
-        if (@typeInfo(f.type).@"struct".fields.len != 3) return false;
+    inline for (@typeInfo(T).@"struct".field_types) |ft| {
+        if (!meta.isTuple(ft)) return false;
+        if (@typeInfo(ft).@"struct".field_types.len != 3) return false;
     }
 
     return true;
-}
-
-fn isTuple(comptime T: type) bool {
-    const info = @typeInfo(T);
-    return info == .@"struct" and info.@"struct".is_tuple;
 }

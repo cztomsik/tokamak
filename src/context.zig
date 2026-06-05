@@ -40,11 +40,12 @@ pub const Context = struct {
         const query = try self.req.query();
         var res: T = undefined;
 
-        inline for (@typeInfo(T).@"struct".fields) |f| {
-            if (query.get(f.name)) |param| {
-                @field(res, f.name) = try self.parse(f.type, param);
-            } else if (f.default_value_ptr) |ptr| {
-                @field(res, f.name) = @as(*const f.type, @ptrCast(@alignCast(ptr))).*;
+        const s = @typeInfo(T).@"struct";
+        inline for (s.field_names, s.field_types, s.field_attrs) |f, ft, fa| {
+            if (query.get(f)) |param| {
+                @field(res, f) = try self.parse(ft, param);
+            } else if (fa.defaultValue(ft)) |def| {
+                @field(res, f) = def;
             } else {
                 return error.MissingField;
             }
