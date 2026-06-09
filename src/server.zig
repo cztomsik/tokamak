@@ -69,8 +69,8 @@ pub const Server = struct {
 
 const Adapter = struct {
     pub fn handle(self: *Adapter, req: *httpz.Request, res: *httpz.Response) void {
-        const offset = @offsetOf(Server, "http") + @offsetOf(httpz.Server(Adapter), "handler");
-        const server: *Server = @ptrFromInt(@intFromPtr(self) - offset);
+        const http: *httpz.Server(Adapter) = @alignCast(@fieldParentPtr("handler", self));
+        const server: *Server = @alignCast(@fieldParentPtr("http", http));
 
         var ctx: Context = undefined;
 

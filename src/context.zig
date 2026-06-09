@@ -173,13 +173,11 @@ pub const Context = struct {
     }
 
     /// Continue with additional dependencies available for injection.
-    pub fn nextScoped(self: *Context, ctx: anytype) !void {
-        const prev = self.injector;
-        defer self.injector = prev;
+    pub fn nextScoped(self: *Context, inj: *Injector) !void {
+        const curr = self.injector;
+        defer self.injector = curr;
 
-        var inj = Injector.init(&.{.ref(&ctx[0])}, prev);
-        self.injector = &inj;
-
+        self.injector = inj;
         try self.next();
     }
 };

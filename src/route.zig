@@ -48,10 +48,11 @@ pub const Route = struct {
     pub fn provide(comptime fac: anytype, children: []const Route) Route {
         const H = struct {
             fn handleProvide(ctx: *Context) anyerror!void {
-                var child = .{try ctx.injector.call(fac)};
-                defer if (std.meta.hasMethod(@TypeOf(child[0]), "deinit")) child[0].deinit();
+                var child = try ctx.injector.call(fac);
+                defer if (std.meta.hasMethod(@TypeOf(child), "deinit")) child.deinit();
 
-                try ctx.nextScoped(&child);
+                var inj = Injector.init(&.{.ref(&child)}, ctx.injector);
+                try ctx.nextScoped(&inj);
             }
         };
 
