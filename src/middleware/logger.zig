@@ -13,7 +13,7 @@ pub fn logger(options: struct { scope: @TypeOf(.EnumLiteral) = .server }, childr
                 @tagName(ctx.req.method),
                 ctx.req.url.path,
                 ctx.res.status,
-                start.untilNow(ctx.server.http.io, .awake),
+                start.untilNow(ctx.server.http.io, .awake).toMilliseconds(),
             });
 
             try ctx.next();
