@@ -78,7 +78,8 @@ const Adapter = struct {
             .ref(&ctx),
             .ref(server),
             .ref(&server.http.io),
-            .ref(&res.arena),
+            // TODO: this was &res.arena but it was causing really weird segfaults (see todos_orm_sqlite example for repro)
+            .ref(&req.conn.conn_arena),
             .ref(req),
             .ref(res),
         }, server.injector);

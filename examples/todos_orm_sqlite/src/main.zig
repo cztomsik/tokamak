@@ -53,6 +53,19 @@ const App = struct {
             \\   is_done BOOLEAN NOT NULL
             \\ );
         , .{});
+
+        try db.exec(
+            \\ INSERT INTO todos (title, is_done) VALUES 
+            \\ ('Learn Zig', 0), 
+            \\ ('Build a Tokamak app', 0), 
+            \\ ('Master SQLite', 1);
+        , .{});
+
+        // TODO: see server.zig for a matching TODO
+        // NOTE: curl /todo was segfaulting when this was 120 (100 worked fine, so it has to be something related either to arena or some array building)
+        // for (0..120) |_| {
+        //     try db.exec("INSERT INTO todos (title, is_done) VALUES ('Fix arena segfault', 1);", .{});
+        // }
     }
 
     fn printServerPort(server_opts: tk.ServerOptions) void {
@@ -72,17 +85,19 @@ fn readAll(db: *fr.Session) ![]const Todo {
     return try db.query(Todo).findAll();
 }
 
-fn create(res: *tk.Response, db: *fr.Session, body: Todo) !Todo {
+fn create(res: *tk.Response, db: *fr.Session, data: Todo) !Todo {
     res.status = @intFromEnum(Status.created);
-    return try db.query(Todo).insert(body).returning("*").fetchOne(Todo) orelse error.InternalServerError;
+    return try db.query(Todo).insert(data).returning("*").fetchOne(Todo) orelse error.InternalServerError;
 }
 
-fn update(db: *fr.Session, id: u32, body: Todo) !void {
-    return try db.update(Todo, id, body);
+fn update(db: *fr.Session, id: u32, data: Todo) !void {
+    return try db.update(Todo, id, data);
 }
 
-fn patch(db: *fr.Session, id: u32, body: PatchTodoReq) !void {
-    return try patchSetFields(db, Todo, PatchTodoReq, id, body);
+fn patch(db: *fr.Session, id: u32, data: PatchTodoReq) !void {
+    var row = try db.query(Todo).where("id", id).findOne() orelse return error.NotFound;
+    applyPatch(&row, data);
+    return try db.update(Todo, id, row);
 }
 
 fn delete(db: *fr.Session, id: u32) !void {
@@ -90,26 +105,10 @@ fn delete(db: *fr.Session, id: u32) !void {
 }
 
 // helper for updating all fields which are set in the body and not null / undefined
-fn patchSetFields(db: *fr.Session, comptime RowType: type, comptime BodyType: type, id: u32, body: BodyType) !void {
-    var row = try db.query(RowType).where("id", id).findOne() orelse return error.NotFound;
-
-    inline for (
-        std.meta.fields(BodyType),
-    ) |field| {
-        const body_field = @field(body, field.name);
-        const is_set = if (switch (@typeInfo(field.type)) {
-            .pointer => |ptr| ptr.size == .slice,
-            else => false,
-        }) {
-            const Child = std.meta.Child(field.type);
-            return !std.mem.eql(Child, body_field, null);
-        } else body_field != null;
-
-        // if the field is not null, update the row's field value
-        if (is_set) {
-            @field(row, field.name) = body_field.?;
+fn applyPatch(dest: anytype, ptch: anytype) void {
+    inline for (comptime std.meta.fieldNames(@TypeOf(ptch))) |f| {
+        if (@field(ptch, f)) |v| {
+            @field(dest, f) = v;
         }
     }
-
-    try db.update(RowType, id, row);
 }
