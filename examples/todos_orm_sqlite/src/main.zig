@@ -60,12 +60,6 @@ const App = struct {
             \\ ('Build a Tokamak app', 0), 
             \\ ('Master SQLite', 1);
         , .{});
-
-        // TODO: see server.zig for a matching TODO
-        // NOTE: curl /todo was segfaulting when this was 120 (100 worked fine, so it has to be something related either to arena or some array building)
-        // for (0..120) |_| {
-        //     try db.exec("INSERT INTO todos (title, is_done) VALUES ('Fix arena segfault', 1);", .{});
-        // }
     }
 
     fn printServerPort(server_opts: tk.ServerOptions) void {
