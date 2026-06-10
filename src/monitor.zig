@@ -1,25 +1,27 @@
 const std = @import("std");
 const log = std.log.scoped(.monitor);
 const meta = @import("meta.zig");
+const tkApp = @import("app.zig");
 
 /// Runs the given processes in parallel, restarting them if they exit.
 ///
-/// The processes are tuples of the form:
-///    .{ "name", &fn, .{ ...args } }
+/// Each process is a tuple of the form:
+///    .{ "name", mods, &fn }
+///
+/// The function `fn` will be called via `tk.app.run(init, fn, mods)` for
+/// dependency injection.
 ///
 /// Example:
-///    pub fn main() !void {
-///        // do some init checks and setup if needed
-///
-///        return monitor(.{
-///            .{ "server", &serverFn, .{ 8080 } },
-///            .{ "worker 1", &workerFn, .{ 1 } },
-///            .{ "worker 2", &workerFn, .{ 2 } },
+///    pub fn main(init: std.process.Init) !void {
+///        const mods: []const type = &.{App};
+///        tk.monitor(init, .{
+///            .{ "server", mods, server.run },
+///            .{ "worker", mods, worker.run },
 ///        });
 ///    }
-pub fn monitor(processes: anytype) noreturn {
+pub fn monitor(init: std.process.Init, processes: anytype) noreturn {
     if (comptime !isTupleOfProcesses(@TypeOf(processes))) {
-        @compileError("Expected tuple of .{ \"name\", &fn, .{ ...args } }");
+        @compileError("Expected tuple of .{ \"name\", mods, &fn }");
     }
 
     var pids = std.mem.zeroes([processes.len]std.posix.pid_t);
@@ -29,7 +31,7 @@ pub fn monitor(processes: anytype) noreturn {
             if (pids[i] == 0) {
                 const child = std.c.fork();
                 if (child == -1) @panic("fork failed");
-                if (child == 0) return run(processes[i]);
+                if (child == 0) return run(init, processes[i]);
 
                 log.debug("start: #{d} {s} pid: {d}", .{ i, processes[i][0], child });
                 pids[i] = child;
@@ -46,14 +48,14 @@ pub fn monitor(processes: anytype) noreturn {
     }
 }
 
-fn run(proc: anytype) noreturn {
+fn run(init: std.process.Init, proc: anytype) noreturn {
     // Helps with mixing logs from different processes.
     var ts: std.c.timespec = .{ .sec = 0, .nsec = 100_000_000 };
     _ = std.c.nanosleep(&ts, null);
 
-    setproctitle(proc[0]);
+    setproctitle(init, proc[0]);
 
-    const res = @call(.auto, proc[1], proc[2]);
+    const res = tkApp.run(init, proc[2], proc[1]);
 
     if (comptime @typeInfo(@TypeOf(res)) == .error_union) {
         _ = res catch |e| {
@@ -73,16 +75,17 @@ fn run(proc: anytype) noreturn {
     std.process.exit(0);
 }
 
-fn setproctitle(name: [:0]const u8) void {
-    _ = name; // autofix
-    // TODO: zig17 removed argv so we might need to access is via init.minimal.args.vector or something like that???
+fn setproctitle(init: std.process.Init, name: [:0]const u8) void {
+    const argv = init.minimal.args.vector;
+    if (argv.len == 0) return;
 
     // // name includes path so we should always have some extra space
-    // const dest = std.mem.span(std.os.argv[0]);
-    // if (std.os.argv.len == 1 and dest.len >= name.len) {
-    //     @memcpy(dest[0..name.len], name);
-    //     dest.ptr[name.len] = 0;
-    // } else log.debug("Could not rewrite process name {s}\ndest: {s}", .{ name, std.os.argv[0] });
+    const dest = std.mem.sliceTo(@as([*:0]u8, @constCast(argv[0])), 0);
+
+    if (argv.len == 1 and dest.len >= name.len) {
+        @memcpy(dest[0..name.len], name);
+        dest.ptr[name.len] = 0;
+    } else log.debug("Could not rewrite process name {s}\ndest: {s}", .{ name, argv[0] });
 }
 
 fn isTupleOfProcesses(comptime T: type) bool {
