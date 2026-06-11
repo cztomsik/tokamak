@@ -4,7 +4,6 @@ const httpz = @import("httpz");
 // Stand-alone namespaces
 pub const ai = @import("ai.zig");
 pub const app = @import("app.zig");
-// pub const cdp = @import("cdp.zig");
 pub const cli = @import("cli.zig");
 pub const config = @import("config.zig");
 pub const cron = @import("cron.zig");
@@ -15,7 +14,6 @@ pub const ext = @import("ext.zig");
 pub const html2md = @import("html2md.zig");
 pub const http = @import("http.zig");
 pub const js = @import("js.zig");
-// pub const mail = @import("mail.zig");
 pub const meta = @import("meta.zig");
 pub const monitor = @import("monitor.zig").monitor;
 pub const pdf = @import("pdf.zig");
