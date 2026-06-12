@@ -16,7 +16,7 @@ pub const HtmlParser = struct {
         };
     }
 
-    pub fn initStreaming(reader: *std.io.Reader) HtmlParser {
+    pub fn initStreaming(reader: *std.Io.Reader) HtmlParser {
         return .{
             .sax = .initStreaming(reader),
         };
@@ -43,7 +43,7 @@ pub const HtmlParser = struct {
         // "stack", but we still need to parse their properties.
         var open_el: ?*Element = null;
 
-        const time = std.time.milliTimestamp();
+        // const time = std.time.milliTimestamp();
         var n_elem: usize = 0;
         var n_attr: usize = 0;
         var n_text: usize = 0;
@@ -113,13 +113,13 @@ pub const HtmlParser = struct {
             }
         }
 
-        std.debug.print("time: {}ms mem used: {B} unclosed: {} #el: {} #attr: {} #text: {}\n", .{
-            std.time.milliTimestamp() - time, // total, including I/O
-            doc.arenaSize(),
-            top.depth(),
-            n_elem,
-            n_attr,
-            n_text,
-        });
+        // std.debug.print("time: {}ms mem used: {B} unclosed: {} #el: {} #attr: {} #text: {}\n", .{
+        //     std.time.milliTimestamp() - time, // total, including I/O
+        //     doc.arenaSize(),
+        //     top.depth(),
+        //     n_elem,
+        //     n_attr,
+        //     n_text,
+        // });
     }
 };

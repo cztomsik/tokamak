@@ -9,11 +9,8 @@ fn hello() ![]const u8 {
     return "Hello, world!";
 }
 
-pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-
-    var server = try tk.Server.init(gpa.allocator(), routes, .{});
+pub fn main(init: std.process.Init) !void {
+    var server = try tk.Server.init(init.io, init.gpa, routes, .{});
     defer server.deinit();
 
     try server.start();

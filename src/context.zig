@@ -40,11 +40,12 @@ pub const Context = struct {
         const query = try self.req.query();
         var res: T = undefined;
 
-        inline for (std.meta.fields(T)) |f| {
-            if (query.get(f.name)) |param| {
-                @field(res, f.name) = try self.parse(f.type, param);
-            } else if (f.default_value_ptr) |ptr| {
-                @field(res, f.name) = @as(*const f.type, @ptrCast(@alignCast(ptr))).*;
+        const s = @typeInfo(T).@"struct";
+        inline for (s.field_names, s.field_types, s.field_attrs) |f, ft, fa| {
+            if (query.get(f)) |param| {
+                @field(res, f) = try self.parse(ft, param);
+            } else if (fa.defaultValue(ft)) |def| {
+                @field(res, f) = def;
             } else {
                 return error.MissingField;
             }
@@ -81,17 +82,17 @@ pub const Context = struct {
     /// Sets a cookie.
     pub fn setCookie(self: *Context, name: []const u8, value: []const u8, options: CookieOptions) !void {
         // TODO: start with current header?
-        var buf = std.ArrayList(u8){};
-        const writer = buf.writer(self.req.arena);
+        var bw: std.Io.Writer.Allocating = .init(self.req.arena);
+        const w = &bw.writer;
 
-        try writer.print("{s}={s}", .{ name, value });
+        try w.print("{s}={s}", .{ name, value });
 
-        if (options.max_age) |age| try writer.print("; Max-Age={d}", .{age});
-        if (options.domain) |domain| try writer.print("; Domain={s}", .{domain});
-        if (options.http_only) try writer.writeAll("; HttpOnly");
-        if (options.secure) try writer.writeAll("; Secure");
+        if (options.max_age) |age| try w.print("; Max-Age={d}", .{age});
+        if (options.domain) |domain| try w.print("; Domain={s}", .{domain});
+        if (options.http_only) try w.writeAll("; HttpOnly");
+        if (options.secure) try w.writeAll("; Secure");
 
-        self.res.header("set-cookie", buf.items);
+        self.res.header("set-cookie", bw.written());
     }
 
     /// Send a response. Accepts strings, JSON-serializable values, errors, or
@@ -172,13 +173,11 @@ pub const Context = struct {
     }
 
     /// Continue with additional dependencies available for injection.
-    pub fn nextScoped(self: *Context, ctx: anytype) !void {
-        const prev = self.injector;
-        defer self.injector = prev;
+    pub fn nextScoped(self: *Context, inj: *Injector) !void {
+        const curr = self.injector;
+        defer self.injector = curr;
 
-        var inj = Injector.init(&.{.ref(&ctx[0])}, prev);
-        self.injector = &inj;
-
+        self.injector = inj;
         try self.next();
     }
 };
@@ -256,76 +255,3 @@ pub fn getErrorStatus(e: anyerror) u16 {
         else => 500,
     };
 }
-
-// fn fakeReq(arena: *std.heap.ArenaAllocator, input: []const u8) !Request {
-//     const bytes = try arena.allocator().dupe(u8, input);
-
-//     var server: std.http.Server = undefined;
-//     server.read_buffer = bytes;
-
-//     return Request.init(
-//         arena.allocator(),
-//         std.http.Server.Request{
-//             .server = &server,
-//             .head = try std.http.Server.Request.Head.parse(bytes),
-//             .head_end = bytes.len,
-//             .reader_state = undefined,
-//         },
-//     );
-// }
-
-// test "request parsing" {
-//     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-//     defer arena.deinit();
-
-//     const req1 = try fakeReq(&arena, "GET /test HTTP/1.0\r\n\r\n");
-//     const req2 = try fakeReq(&arena, "POST /foo%20bar HTTP/1.0\r\n\r\n");
-//     const req3 = try fakeReq(&arena, "PUT /foo%3Abar+baz HTTP/1.0\r\n\r\n");
-//     const req4 = try fakeReq(&arena, "DELETE /test?foo=hello%20world&bar=baz%3Aqux&opt=null HTTP/1.0\r\n\r\n");
-
-//     try std.testing.expectEqual(std.http.Method.GET, req1.method);
-//     try std.testing.expectEqual(std.http.Method.POST, req2.method);
-//     try std.testing.expectEqual(std.http.Method.PUT, req3.method);
-//     try std.testing.expectEqual(std.http.Method.DELETE, req4.method);
-
-//     try std.testing.expectEqualStrings("/test", req1.path);
-//     try std.testing.expectEqualStrings("/foo bar", req2.path);
-//     try std.testing.expectEqualStrings("/foo:bar baz", req3.path);
-//     try std.testing.expectEqualStrings("/test", req4.path);
-
-//     try std.testing.expectEqualStrings("hello world", req4.getQueryParam("foo").?);
-//     try std.testing.expectEqualStrings("baz:qux", req4.getQueryParam("bar").?);
-//     try std.testing.expectEqualStrings("null", req4.getQueryParam("opt").?);
-//     try std.testing.expectEqual(null, req4.getQueryParam("missing"));
-// }
-
-// test "req.getCookie()" {
-//     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-//     defer arena.deinit();
-
-//     var req = try fakeReq(&arena, "GET /test HTTP/1.0\r\nCookie: foo=bar; baz=qux\r\n\r\n");
-
-//     try std.testing.expectEqualStrings("bar", req.getCookie("foo").?);
-//     try std.testing.expectEqualStrings("qux", req.getCookie("baz").?);
-//     try std.testing.expectEqual(null, req.getCookie("missing"));
-// }
-
-// test "req.readQuery()" {
-//     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-//     defer arena.deinit();
-
-//     var req = try fakeReq(&arena, "GET /test?str=foo&num=123&opt=null HTTP/1.0\r\n\r\n");
-
-//     const q1 = try req.readQuery(struct { str: []const u8, num: u32, opt: ?u32 });
-//     try std.testing.expectEqualStrings("foo", q1.str);
-//     try std.testing.expectEqual(123, q1.num);
-//     try std.testing.expectEqual(null, q1.opt);
-
-//     const q2 = try req.readQuery(struct { missing: ?u32 = null, opt: ?u32 });
-//     try std.testing.expectEqual(null, q2.missing);
-//     try std.testing.expectEqual(null, q2.opt);
-
-//     const q3 = try req.readQuery(struct { num: u32 = 0, missing: u32 = 123 });
-//     try std.testing.expectEqual(123, q3.num);
-//     try std.testing.expectEqual(123, q3.missing);
-// }

@@ -48,10 +48,11 @@ pub const Route = struct {
     pub fn provide(comptime fac: anytype, children: []const Route) Route {
         const H = struct {
             fn handleProvide(ctx: *Context) anyerror!void {
-                var child = .{try ctx.injector.call(fac)};
-                defer if (std.meta.hasMethod(@TypeOf(child[0]), "deinit")) child[0].deinit();
+                var child = try ctx.injector.call(fac);
+                defer if (std.meta.hasMethod(@TypeOf(child), "deinit")) child.deinit();
 
-                try ctx.nextScoped(&child);
+                var inj = Injector.init(&.{.ref(&child)}, ctx.injector);
+                try ctx.nextScoped(&inj);
             }
         };
 
@@ -159,12 +160,12 @@ pub const Route = struct {
             var res: []const Route = &.{};
 
             for (std.meta.declarations(T)) |d| {
-                if (@typeInfo(@TypeOf(@field(T, d.name))) != .@"fn") continue;
-                const j = std.mem.indexOfScalar(u8, d.name, ' ') orelse continue;
+                if (@typeInfo(@TypeOf(@field(T, d))) != .@"fn") continue;
+                const j = std.mem.indexOfScalar(u8, d, ' ') orelse continue;
 
                 var buf: [j]u8 = undefined;
-                const method = std.ascii.lowerString(&buf, d.name[0..j]);
-                res = res ++ .{@field(@This(), method)(d.name[j + 1 ..], @field(T, d.name))};
+                const method = std.ascii.lowerString(&buf, d[0..j]);
+                res = res ++ .{@field(@This(), method)(d[j + 1 ..], @field(T, d))};
             }
 
             break :blk res;
@@ -212,20 +213,20 @@ fn route(comptime method: httpz.Method, comptime path: []const u8, comptime has_
 
 fn routeMetadata(comptime path: []const u8, comptime has_query: bool, comptime has_body: bool, comptime handler: anytype) *const Route.Metadata {
     comptime {
-        const fields = std.meta.fields(std.meta.ArgsTuple(@TypeOf(handler)));
+        const field_types = std.meta.fieldTypes(std.meta.ArgsTuple(@TypeOf(handler)));
         const n_params = util.countScalar(u8, path, ':');
-        const n_deps = fields.len - n_params - @intFromBool(has_query) - @intFromBool(has_body);
+        const n_deps = field_types.len - n_params - @intFromBool(has_query) - @intFromBool(has_body);
 
         return &.{
-            .deps = meta.tids(meta.fieldTypes(std.meta.ArgsTuple(@TypeOf(handler)))[0..n_deps]),
+            .deps = meta.tids(field_types[0..n_deps]),
             .params = brk: {
                 var params: [n_params]Schema = undefined;
-                for (0..n_params, n_deps..) |i, j| params[i] = .schema(fields[j].type);
+                for (0..n_params, n_deps..) |i, j| params[i] = .schema(field_types[j]);
                 const res = params;
                 break :brk &res;
             },
-            .query = if (has_query) .schema(fields[n_deps + n_params].type) else null,
-            .body = if (has_body) .schema(fields[fields.len - 1].type) else null,
+            .query = if (has_query) .schema(field_types[n_deps + n_params]) else null,
+            .body = if (has_body) .schema(field_types[field_types.len - 1]) else null,
             .result = switch (meta.Result(handler)) {
                 void => null,
                 else => |R| .schema(R),
@@ -233,8 +234,7 @@ fn routeMetadata(comptime path: []const u8, comptime has_query: bool, comptime h
             .errors = brk: {
                 switch (@typeInfo(meta.Return(handler))) {
                     .error_union => |r| {
-                        if (@typeInfo(r.error_set).error_set == null) break :brk &.{};
-                        const names = std.meta.fieldNames(r.error_set);
+                        const names = @typeInfo(r.error_set).error_set.error_names orelse &.{};
                         var errors: [names.len]anyerror = undefined;
                         for (names, 0..) |e, i| errors[i] = @field(anyerror, e);
                         const res = errors;

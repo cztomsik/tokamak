@@ -147,11 +147,12 @@ const Dep = struct {
 
         switch (self.provider) {
             .autowire => {
-                inline for (std.meta.fields(self.type)) |f| {
-                    if (f.defaultValue()) |def| {
-                        @field(inst, f.name) = inj.find(f.type) orelse def;
+                const svc = @typeInfo(self.type).@"struct";
+                inline for (svc.field_names, svc.field_types, svc.field_attrs) |f, ft, fa| {
+                    if (fa.defaultValue(ft)) |def| {
+                        @field(inst, f) = inj.find(ft) orelse def;
                     } else {
-                        @field(inst, f.name) = try inj.get(f.type);
+                        @field(inst, f) = try inj.get(ft);
                     }
                 }
             },
@@ -221,6 +222,7 @@ pub const Bundle = struct {
     runtime_hooks: Buf(Hook), // when the deps are ready / before they are gone
     n_inst: usize = 0,
     n_data: usize = 0,
+    max_align: usize = 1,
 
     /// Registers all fields of module M as dependencies.
     ///
@@ -237,21 +239,22 @@ pub const Bundle = struct {
         self.provide(M, .value(undefined));
         const start = self.findDep(M).?.state.instance.offset;
 
-        for (std.meta.fields(M)) |f| {
+        const mod = @typeInfo(M).@"struct";
+        for (mod.field_names, mod.field_types, mod.field_attrs) |f, ft, fa| {
             // Add "inline" inst (without alloc)
             self.insertDep(.{
                 .state = .{ .instance = .{
-                    .type = f.type,
-                    .offset = if (f.is_comptime) start else start + @offsetOf(M, f.name),
+                    .type = ft,
+                    .offset = if (fa.@"comptime") start else start + @offsetOf(M, f),
                 } },
-                .type = f.type,
-                .provider = if (f.defaultValue()) |v| .value(v) else .auto,
+                .type = ft,
+                .provider = if (fa.defaultValue(ft)) |v| .value(v) else .auto,
             });
             self.n_inst += 1;
 
             // Auto-add &T.interface, if present
-            if (meta.isStruct(f.type) and @hasField(f.type, "interface")) {
-                self.expose(f.type, "interface");
+            if (meta.isStruct(ft) and @hasField(ft, "interface")) {
+                self.expose(ft, "interface");
             }
         }
 
@@ -344,10 +347,10 @@ pub const Bundle = struct {
         }
 
         for (bundle.runtime_hooks.items()) |*hook| {
-            for (@typeInfo(hook.fun.type).@"fn".params) |p| bundle.mark(p.type orelse continue, &hook.mask);
+            for (@typeInfo(hook.fun.type).@"fn".param_types) |P| bundle.mark(P orelse continue, &hook.mask);
         }
 
-        return CompiledBundle(bundle.render(), bundle.n_inst, bundle.n_data);
+        return CompiledBundle(bundle.render(), bundle.n_inst, bundle.n_data, bundle.max_align);
     }
 
     fn resolveOne(self: *Bundle, dep: *Dep) void {
@@ -375,11 +378,11 @@ pub const Bundle = struct {
         }
 
         switch (dep.provider) {
-            .autowire => for (std.meta.fields(dep.type)) |f| if (!std.mem.eql(u8, f.name, "interface")) self.mark(f.type, &dep.mask),
+            .autowire => for (std.meta.fieldNames(dep.type), std.meta.fieldTypes(dep.type)) |f, ft| if (!std.mem.eql(u8, f, "interface")) self.mark(ft, &dep.mask),
             .val => {},
-            .fac => |f| for (@typeInfo(f.type).@"fn".params) |p| self.mark(p.type orelse continue, &dep.mask),
+            .fac => |f| for (@typeInfo(f.type).@"fn".param_types) |P| self.mark(P orelse continue, &dep.mask),
             // TODO: maybe we can lift the first-arg constraint for initializers and only check p.type != dep.type?
-            .fun => |f| for (@typeInfo(f.type).@"fn".params[1..]) |p| self.mark(p.type orelse continue, &dep.mask),
+            .fun => |f| for (@typeInfo(f.type).@"fn".param_types[1..]) |P| self.mark(P orelse continue, &dep.mask),
             .fref => |r| self.mark(r[0], &dep.mask),
             else => unreachable,
         }
@@ -465,14 +468,15 @@ pub const Bundle = struct {
         const offset = std.mem.alignForward(usize, self.n_data, @alignOf(T));
         self.n_inst += 1;
         self.n_data = offset + @sizeOf(T);
+        self.max_align = @max(self.max_align, @alignOf(T));
         return .{ .instance = .{ .type = T, .offset = offset } };
     }
 };
 
-fn CompiledBundle(comptime ops: []const Op, comptime n_inst: usize, comptime n_data: usize) type {
+fn CompiledBundle(comptime ops: []const Op, comptime n_inst: usize, comptime n_data: usize, comptime max_align: usize) type {
     return struct {
         refs: [n_inst + 2]Ref,
-        data: [n_data]u8,
+        data: [n_data]u8 align(max_align),
 
         fn init(self: *@This(), ct: *Container) !void {
             // We NEED to use ct.inj directly, because if anyone saves this ptr, it needs to stay valid (ie. not be on the stack)

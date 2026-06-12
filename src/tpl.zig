@@ -18,7 +18,7 @@ test raw {
 
     try std.testing.expectEqualStrings(
         "123",
-        try raw(arena.allocator(), "{{foo}}", .{ .foo = 123 }),
+        try raw(arena.allocator(), "{{foo}}", .{ .foo = @as(i64, 123) }),
     );
 
     try std.testing.expectEqualStrings(
@@ -81,19 +81,19 @@ pub const Template = struct {
         allocator.free(self.tokens);
     }
 
-    pub fn render(self: *const Template, data: anytype, writer: *std.io.Writer) !void {
+    pub fn render(self: *const Template, data: anytype, writer: *std.Io.Writer) !void {
         try renderPart(self.tokens, .fromPtr(&data), writer);
     }
 
     pub fn renderAlloc(self: *const Template, allocator: std.mem.Allocator, data: anytype) ![]const u8 {
-        var wb = std.io.Writer.Allocating.init(allocator);
+        var wb: std.Io.Writer.Allocating = .init(allocator);
         errdefer wb.deinit();
 
         try self.render(data, &wb.writer);
         return wb.toOwnedSlice();
     }
 
-    fn renderPart(tokens: []const Token, data: Value, writer: *std.io.Writer) !void {
+    fn renderPart(tokens: []const Token, data: Value, writer: *std.Io.Writer) !void {
         var i: usize = 0;
 
         while (i < tokens.len) {
@@ -180,17 +180,18 @@ pub const Value = union(enum) {
     indexable: struct { *const anyopaque, usize, *const fn (ptr: *const anyopaque, index: usize) Value },
 
     fn fromPtr(ptr: anytype) Value {
-        const T = @TypeOf(ptr.*);
+        const T = @typeInfo(@TypeOf(ptr)).pointer.child;
 
         if (T == std.json.Value) {
             return .fromJsonValue(ptr);
         }
 
         return switch (@typeInfo(T)) {
+            .comptime_int, .comptime_float => @compileError("TODO: zig16"),
             .void, .null => .null,
             .bool => .{ .bool = ptr.* },
-            .int, .comptime_int => .{ .int = @intCast(ptr.*) },
-            .float, .comptime_float => .{ .float = @floatCast(ptr.*) },
+            .int => .{ .int = @intCast(ptr.*) },
+            .float => .{ .float = @floatCast(ptr.*) },
             .optional => if (ptr.*) |*p| .fromPtr(p) else .null,
             .@"struct" => |s| if (s.is_tuple) .fromTuple(T, ptr) else .fromStruct(T, ptr),
             .array => |a| .fromSlice(a.child, ptr),
@@ -209,14 +210,15 @@ pub const Value = union(enum) {
             fn resolve(cx: *const anyopaque, name: []const u8) Value {
                 const self: *const T = @ptrFromInt(@intFromPtr(cx));
 
-                inline for (std.meta.fields(T)) |f| {
-                    if (std.mem.eql(u8, f.name, name)) {
-                        if (f.is_comptime) { // otherwise: runtime value contains reference to comptime var
-                            const copy = @field(self, f.name);
+                const s = @typeInfo(T).@"struct";
+                inline for (s.field_names, s.field_attrs) |f, fa| {
+                    if (std.mem.eql(u8, f, name)) {
+                        if (fa.@"comptime") { // otherwise: runtime value contains reference to comptime var
+                            const copy = @field(self, f);
                             return Value.fromPtr(&copy);
                         }
 
-                        return Value.fromPtr(&@field(self, f.name));
+                        return Value.fromPtr(&@field(self, f));
                     }
                 }
 
@@ -233,14 +235,15 @@ pub const Value = union(enum) {
         const H = struct {
             fn get(cx: *const anyopaque, index: usize) Value {
                 const self: *const T = @ptrCast(@alignCast(cx));
-                inline for (std.meta.fields(T), 0..) |f, i| {
+                const s = @typeInfo(T).@"struct";
+                inline for (s.field_names, s.field_attrs, 0..) |f, fa, i| {
                     if (i == index) {
-                        if (f.is_comptime) { // otherwise: runtime value contains reference to comptime var
-                            const copy = @field(self, f.name);
+                        if (fa.@"comptime") { // otherwise: runtime value contains reference to comptime var
+                            const copy = @field(self, f);
                             return Value.fromPtr(&copy);
                         }
 
-                        return Value.fromPtr(&@field(self, f.name));
+                        return Value.fromPtr(&@field(self, f));
                     }
                 }
                 return .null;
@@ -248,7 +251,7 @@ pub const Value = union(enum) {
         };
 
         return .{
-            .indexable = .{ @ptrCast(ptr), std.meta.fields(T).len, &H.get },
+            .indexable = .{ @ptrCast(ptr), std.meta.fieldNames(T).len, &H.get },
         };
     }
 

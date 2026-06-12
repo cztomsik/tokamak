@@ -185,10 +185,10 @@ pub const Context = struct {
             },
             .@"struct" => |s| {
                 var props: std.StringHashMapUnmanaged(Value) = .empty;
-                try props.ensureUnusedCapacity(self.arena, s.fields.len);
+                try props.ensureUnusedCapacity(self.arena, s.field_names.len);
 
-                inline for (s.fields) |f| {
-                    props.putAssumeCapacity(try self.ident(f.name), try self.value(@field(input, f.name)));
+                inline for (s.field_names) |f| {
+                    props.putAssumeCapacity(try self.ident(f), try self.value(@field(input, f)));
                 }
 
                 return .{ .object = props };

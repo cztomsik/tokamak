@@ -4,20 +4,16 @@ const httpz = @import("httpz");
 // Stand-alone namespaces
 pub const ai = @import("ai.zig");
 pub const app = @import("app.zig");
-// pub const cdp = @import("cdp.zig");
 pub const cli = @import("cli.zig");
 pub const config = @import("config.zig");
 pub const cron = @import("cron.zig");
 pub const crypto = @import("crypto.zig");
 pub const dom = @import("dom.zig");
 pub const entities = @import("entities.zig");
-pub const event = @import("event.zig");
 pub const ext = @import("ext.zig");
-pub const iter = @import("iter.zig");
 pub const html2md = @import("html2md.zig");
 pub const http = @import("http.zig");
 pub const js = @import("js.zig");
-// pub const mail = @import("mail.zig");
 pub const meta = @import("meta.zig");
 pub const monitor = @import("monitor.zig").monitor;
 pub const pdf = @import("pdf.zig");
@@ -70,9 +66,9 @@ pub const redirect = Route.redirect;
 
 test {
     std.testing.refAllDecls(@This());
-    inline for (@typeInfo(@This()).@"struct".decls) |decl| {
-        if (@TypeOf(@field(@This(), decl.name)) == type and meta.isStruct(@field(@This(), decl.name))) {
-            std.testing.refAllDecls(@field(@This(), decl.name));
+    inline for (@typeInfo(@This()).@"struct".decl_names) |decl| {
+        if (@TypeOf(@field(@This(), decl)) == type and meta.isStruct(@field(@This(), decl))) {
+            std.testing.refAllDecls(@field(@This(), decl));
         }
     }
 }

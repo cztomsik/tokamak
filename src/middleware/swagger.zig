@@ -91,7 +91,7 @@ fn walk(arena: std.mem.Allocator, prefix: []const u8, res: *PathMap, routes: []c
                 var op: Operation = .{};
 
                 if (m.params.len > 0) {
-                    var params = std.ArrayList(Parameter){};
+                    var params: std.ArrayList(Parameter) = .empty;
                     const names = Params.match(route.path.?, route.path.?).?;
 
                     for (m.params, 0..) |schema, i| try params.append(arena, .{
@@ -136,7 +136,7 @@ fn walk(arena: std.mem.Allocator, prefix: []const u8, res: *PathMap, routes: []c
 }
 
 fn swaggerPath(arena: std.mem.Allocator, prefix: []const u8, path: []const u8) ![]const u8 {
-    var res = std.ArrayList(u8){};
+    var res: std.ArrayList(u8) = .empty;
     try res.appendSlice(arena, prefix);
 
     var pos: usize = 0;

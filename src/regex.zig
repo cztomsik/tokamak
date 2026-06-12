@@ -4,11 +4,11 @@ const Buf = @import("util.zig").Buf;
 const Sparse = @import("util.zig").Sparse(u16, u16);
 
 pub const Grep = struct {
-    reader: *std.io.Reader,
+    reader: *std.Io.Reader,
     regex: *Regex,
     line: usize = 0,
 
-    pub fn init(reader: *std.io.Reader, regex: *Regex) Grep {
+    pub fn init(reader: *std.Io.Reader, regex: *Regex) Grep {
         return .{
             .reader = reader,
             .regex = regex,
@@ -40,14 +40,14 @@ test Grep {
     var re = try Regex.compile(std.testing.allocator, "fn");
     defer re.deinit(std.testing.allocator);
 
-    var reader = std.io.Reader.fixed("line one\nfn hello\nline three\n");
+    var reader = std.Io.Reader.fixed("line one\nfn hello\nline three\n");
     var grep = Grep.init(&reader, &re);
 
     try std.testing.expectEqualStrings("fn hello\n", (try grep.next()).?);
     try std.testing.expectEqual(null, try grep.next());
 
     // No trailing newline but it should still be found
-    var reader2 = std.io.Reader.fixed("line one\nfn hello");
+    var reader2 = std.Io.Reader.fixed("line one\nfn hello");
     var grep2 = Grep.init(&reader2, &re);
 
     try std.testing.expectEqualStrings("fn hello", (try grep2.next()).?);
@@ -683,7 +683,7 @@ test Tokenizer {
 }
 
 fn expectCompile(regex: []const u8, expected: []const u8) !void {
-    var wb = std.io.Writer.Allocating.init(std.testing.allocator);
+    var wb: std.Io.Writer.Allocating = .init(std.testing.allocator);
     const w = &wb.writer;
     defer wb.deinit();
 
@@ -716,7 +716,7 @@ test "Regex.compile()" {
     try testing.expectError(Regex.compile(undefined, "*"), error.NothingToRepeat);
     try testing.expectError(Regex.compile(undefined, ")"), error.NoGroupToClose);
     try testing.expectError(Regex.compile(undefined, "("), error.UnclosedGroup);
-    try testing.expectError(Regex.compile(undefined, "a" ** (MAX_OPS + 1)), error.RegexTooComplex);
+    try testing.expectError(Regex.compile(undefined, &@as([MAX_OPS + 1]u8, @splat('a'))), error.RegexTooComplex);
 
     try expectCompile("",
         \\  0: dotstar

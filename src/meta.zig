@@ -34,14 +34,17 @@ pub fn tids(comptime types: []const type) []const TypeId {
 /// compilation.
 pub const ComptimeVal = struct {
     type: type,
-    ptr: *const anyopaque,
+    inner: type,
 
     pub fn wrap(comptime val: anytype) ComptimeVal {
-        return .{ .type = @TypeOf(val), .ptr = @ptrCast(&val) };
+        const H = struct {
+            pub const value = val;
+        };
+        return .{ .type = @TypeOf(val), .inner = H };
     }
 
     pub fn unwrap(self: ComptimeVal) self.type {
-        return @as(*const self.type, @ptrCast(@alignCast(self.ptr))).*;
+        return self.inner.value;
     }
 };
 
@@ -50,7 +53,7 @@ pub fn dupe(allocator: std.mem.Allocator, value: anytype) !@TypeOf(value) {
         .optional => try dupe(allocator, value orelse return null),
         .@"struct" => |s| {
             var res: @TypeOf(value) = undefined;
-            inline for (s.fields) |f| @field(res, f.name) = try dupe(allocator, @field(value, f.name));
+            inline for (s.field_names) |f| @field(res, f) = try dupe(allocator, @field(value, f));
             return res;
         },
         .pointer => |p| switch (p.size) {
@@ -65,7 +68,7 @@ pub fn free(allocator: std.mem.Allocator, value: anytype) void {
     switch (@typeInfo(@TypeOf(value))) {
         .optional => if (value) |v| free(allocator, v),
         .@"struct" => |s| {
-            inline for (s.fields) |f| free(allocator, @field(value, f.name));
+            inline for (s.field_names) |f| free(allocator, @field(value, f));
         },
         .pointer => |p| switch (p.size) {
             .slice => if (p.child == u8) allocator.free(value),
@@ -81,8 +84,8 @@ pub fn upcast(context: anytype, comptime T: type) T {
         .vtable = comptime brk: {
             const Impl = Deref(@TypeOf(context));
             var vtable: T.VTable = undefined;
-            for (std.meta.fields(T.VTable)) |f| {
-                @field(vtable, f.name) = @ptrCast(&@field(Impl, f.name));
+            for (std.meta.fieldNames(T.VTable)) |f| {
+                @field(vtable, f) = @ptrCast(&@field(Impl, f));
             }
 
             const copy = vtable;
@@ -103,8 +106,8 @@ pub fn Result(comptime fun: anytype) type {
 }
 
 pub fn LastArg(comptime fun: anytype) type {
-    const params = @typeInfo(@TypeOf(fun)).@"fn".params;
-    return params[params.len - 1].type.?;
+    const params = @typeInfo(@TypeOf(fun)).@"fn".param_types;
+    return params[params.len - 1].?;
 }
 
 pub inline fn isStruct(comptime T: type) bool {
@@ -191,9 +194,7 @@ pub fn UnwrapErr(comptime T: type) type {
 pub fn Const(comptime T: type) type {
     return switch (@typeInfo(T)) {
         .pointer => |p| {
-            var info = p;
-            info.is_const = true;
-            return @Type(.{ .pointer = info });
+            return @Pointer(p.size, .{ .@"const" = true }, p.child, p.sentinel());
         },
         else => T,
     };
@@ -205,21 +206,13 @@ pub inline fn hasDecl(comptime T: type, comptime name: []const u8) bool {
         else => false,
     };
 }
-
-pub fn fieldTypes(comptime T: type) []const type {
-    const fields = std.meta.fields(T);
-    var buf = util.Buf(type).initComptime(fields.len);
-    for (fields) |f| buf.push(f.type);
-    return buf.finish();
-}
-
 pub fn fnParams(comptime fun: anytype) []const type {
     const info = @typeInfo(@TypeOf(fun));
     if (info != .@"fn") @compileError("Expected a function, got " ++ @typeName(@TypeOf(fun)));
 
-    const params = info.@"fn".params;
+    const params = info.@"fn".param_types;
     var buf = util.Buf(type).initComptime(params.len);
-    for (params) |param| buf.push(param.type.?);
+    for (params) |pt| buf.push(pt.?);
     return buf.finish();
 }
 

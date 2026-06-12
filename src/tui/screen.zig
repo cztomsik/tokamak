@@ -66,14 +66,14 @@ pub const Buffer = struct {
 pub const Screen = struct {
     back_buffer: Buffer, // drawing target
     front_buffer: Buffer, // last flushed state (what is currently displayed)
-    fin: std.fs.File.Reader,
-    fout: std.fs.File.Writer,
+    fin: std.Io.File.Reader,
+    fout: std.Io.File.Writer,
     original_termios: std.posix.termios,
     truecolor: bool = false,
 
-    pub fn init(self: *Screen, gpa: std.mem.Allocator) !void {
-        const stdin = std.fs.File.stdin();
-        if (!stdin.isTty()) return error.NotATty;
+    pub fn init(self: *Screen, io: std.Io, gpa: std.mem.Allocator) !void {
+        const stdin = std.Io.File.stdin();
+        if (!try stdin.isTty(io)) return error.NotATty;
 
         const original = try std.posix.tcgetattr(stdin.handle);
         errdefer std.posix.tcsetattr(stdin.handle, .FLUSH, original) catch {};
@@ -87,13 +87,14 @@ pub const Screen = struct {
 
         try std.posix.tcsetattr(stdin.handle, .FLUSH, raw);
 
-        self.truecolor = if (std.posix.getenv("COLORTERM")) |ct|
-            std.mem.eql(u8, ct, "truecolor") or std.mem.eql(u8, ct, "24bit")
-        else
-            false;
+        // TODO: env map
+        // self.truecolor = if (std.posix.getenv("COLORTERM")) |ct|
+        //     std.mem.eql(u8, ct, "truecolor") or std.mem.eql(u8, ct, "24bit")
+        // else
+        //     false;
 
-        self.fin = stdin.readerStreaming(&.{});
-        self.fout = std.fs.File.stdout().writerStreaming(&.{});
+        self.fin = stdin.readerStreaming(io, &.{});
+        self.fout = std.Io.File.stdout().writerStreaming(io, &.{});
         self.original_termios = original;
 
         // Query initial terminal size and allocate both buffers
@@ -200,7 +201,10 @@ pub const Screen = struct {
         const height: usize = @intCast(self.back_buffer.size[1]);
         if (width == 0 or height == 0) return;
 
+        var buf: [256]u8 = undefined;
         const w = &self.fout.interface;
+        w.buffer = &buf;
+        defer w.buffer = &.{};
 
         for (0..height) |row| {
             for (self.back_buffer.row(row), self.front_buffer.row(row), 0..) |back, front, col| {
@@ -217,9 +221,9 @@ pub const Screen = struct {
                     }
 
                     // Encode u21 codepoint to UTF-8
-                    var buf: [4]u8 = undefined;
-                    const len = std.unicode.utf8Encode(back.char, &buf) catch 1;
-                    try w.writeAll(buf[0..len]);
+                    var buf2: [4]u8 = undefined;
+                    const len = std.unicode.utf8Encode(back.char, &buf2) catch 1;
+                    try w.writeAll(buf2[0..len]);
                 }
             }
         }

@@ -14,12 +14,12 @@ const WriterOptions = struct {
 
 pub const Writer = struct {
     buf: []u8,
-    inner: *std.io.Writer,
+    inner: *std.Io.Writer,
     options: WriterOptions,
     row: usize = 0,
     col: usize = 0,
 
-    pub fn init(buf: []u8, writer: *std.io.Writer, options: WriterOptions) Writer {
+    pub fn init(buf: []u8, writer: *std.Io.Writer, options: WriterOptions) Writer {
         return .{ .buf = buf, .inner = writer, .options = options };
     }
 
@@ -167,7 +167,7 @@ const people_cols: []const Col = &.{
 
 fn expectTable(val: anytype, expected: []const u8) !void {
     var buf: [256]u8 = undefined;
-    var wb = std.io.Writer.Allocating.init(std.testing.allocator);
+    var wb: std.Io.Writer.Allocating = .init(std.testing.allocator);
     defer wb.deinit();
 
     var w = Writer.init(&buf, &wb.writer, .{ .columns = people_cols });

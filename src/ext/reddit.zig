@@ -4,7 +4,7 @@ const testing = @import("../testing.zig");
 
 pub const Config = struct {
     base_url: []const u8 = "https://www.reddit.com/",
-    timeout: ?usize = 2 * 60,
+    timeout: i64 = 2 * 60,
 };
 
 pub const Post = struct {

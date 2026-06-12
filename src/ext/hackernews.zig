@@ -4,7 +4,7 @@ const testing = @import("../testing.zig");
 
 pub const Config = struct {
     base_url: []const u8 = "https://hacker-news.firebaseio.com/v0/",
-    timeout: ?usize = 2 * 60,
+    timeout: i64 = 2 * 60,
 };
 
 // TODO: aiStringify() or maybe some mask should be passed during agr.addTool()?

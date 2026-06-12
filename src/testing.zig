@@ -44,7 +44,7 @@ pub fn expectEqual(res: anytype, expected: meta.Const(@TypeOf(res))) !void {
 
 /// Attempts to print `arg` into a buf and then compare those strings.
 pub fn expectFmt(arg: anytype, expected: []const u8) !void {
-    var wb = std.io.Writer.Allocating.init(allocator);
+    var wb: std.Io.Writer.Allocating = .init(allocator);
     defer wb.deinit();
 
     try wb.writer.print("{f}", .{arg});
@@ -72,7 +72,7 @@ pub fn expectTable(items: anytype, comptime expected: []const u8) !void {
         break :blk cols;
     };
 
-    var wb = std.io.Writer.Allocating.init(allocator);
+    var wb: std.Io.Writer.Allocating = .init(allocator);
     defer wb.deinit();
 
     var buf: [header.len]u8 = undefined;
@@ -151,7 +151,7 @@ pub const MockClient = struct {
         self.* = .{
             .interface = .{ .make_request = &make_request },
             .allocator = gpa,
-            .fixtures = .{},
+            .fixtures = .empty,
         };
 
         return self;

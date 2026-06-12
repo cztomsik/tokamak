@@ -25,7 +25,7 @@ pub const Sendmail = struct {
         if (msg.from) |from| try checkAddress(from);
         try checkAddress(msg.to);
 
-        var args = std.ArrayList([]const u8){};
+        var args: std.ArrayList([]const u8) = .empty;
         defer args.deinit(allocator);
 
         try args.append(allocator, self.config.path);
@@ -97,7 +97,7 @@ pub const Sendmail = struct {
         }
     }
 
-    fn writeMessage(msg: Message, writer: *std.io.Writer) !void {
+    fn writeMessage(msg: Message, writer: *std.Io.Writer) !void {
         const template = tpl.Template.parseComptime(
             \\To: {{to}}
             \\{{#from}}From: {{from}}
@@ -113,7 +113,7 @@ pub const Sendmail = struct {
 };
 
 test "fmt" {
-    var wb = std.io.Writer.Allocating.init(std.testing.allocator);
+    var wb: std.Io.Writer.Allocating = .init(std.testing.allocator);
     defer wb.deinit();
 
     var msg: Message = .{ .to = "foo@bar.com", .subject = "Hello", .text = "Hello!" };

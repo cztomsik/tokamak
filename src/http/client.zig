@@ -9,21 +9,21 @@ pub const RequestOptions = struct {
     headers: []const std.http.Header = &.{},
     body: ?RequestBody = null,
     max_len: usize = 1024 * 1024,
-    timeout: ?usize = 60, // TODO: given how std.http.Client reads, it's better to wait for async + timers
+    timeout: i64 = 60, // seconds
 };
 
 pub const RequestBody = struct {
     ctx: *const anyopaque,
     content_type: []const u8,
-    render: *const fn (ctx: *const anyopaque, writer: *std.io.Writer) anyerror!void,
+    render: *const fn (ctx: *const anyopaque, writer: *std.Io.Writer) anyerror!void,
 
-    pub fn write(self: RequestBody, writer: *std.io.Writer) !void {
+    pub fn write(self: RequestBody, writer: *std.Io.Writer) !void {
         try self.render(self.ctx, writer);
     }
 
     pub fn json(ptr: anytype) RequestBody {
         const H = struct {
-            fn render(ctx: @TypeOf(ptr), writer: *std.io.Writer) anyerror!void {
+            fn render(ctx: @TypeOf(ptr), writer: *std.Io.Writer) anyerror!void {
                 var jw = serde.json.Writer.init(writer, .{});
                 try serde.serialize(&jw, ctx);
             }
@@ -87,9 +87,9 @@ pub const StdClient = struct {
         .make_request = &make_request,
     },
 
-    pub fn init(allocator: std.mem.Allocator) !@This() {
+    pub fn init(io: std.Io, allocator: std.mem.Allocator) !@This() {
         return .{
-            .std_client = .{ .allocator = allocator },
+            .std_client = .{ .allocator = allocator, .io = io },
         };
     }
 
@@ -97,10 +97,27 @@ pub const StdClient = struct {
         self.std_client.deinit();
     }
 
-    // TODO: This is a minimal PoC for Zig 0.15.1 - it works, but... IDK
+    // TODO: This is a minimal PoC for Zig 0.17.0 - now with proper timeout
     fn make_request(client: *Client, arena: std.mem.Allocator, options: RequestOptions) !Response {
-        const self: *@This() = @fieldParentPtr("interface", client);
+        const self: *@This() = @alignCast(@fieldParentPtr("interface", client));
+        const io = self.std_client.io;
 
+        const SelectResult = union(enum) { timeout: anyerror!void, response: anyerror!Response };
+        var buf: [1]SelectResult = undefined;
+
+        var select: std.Io.Select(SelectResult) = .init(io, &buf);
+        defer select.cancelDiscard();
+
+        try select.concurrent(.timeout, std.Io.sleep, .{ io, .fromSeconds(options.timeout), .awake });
+        try select.concurrent(.response, make_request2, .{ self, arena, options });
+
+        return switch (try select.await()) {
+            .timeout => error.RequestTimeout,
+            .response => |res| res,
+        };
+    }
+
+    fn make_request2(self: *StdClient, arena: std.mem.Allocator, options: RequestOptions) !Response {
         // NOTE: This is shared for both sending & receiving
         var buf: []u8 = try arena.alloc(u8, 8 * 1024);
 
@@ -155,19 +172,26 @@ pub const StdClient = struct {
 test {
     const tk = @import("../main.zig");
 
+    const H = struct {
+        fn slow(io: std.Io) !void {
+            return io.sleep(.fromSeconds(10), .awake);
+        }
+    };
+
     const routes: []const tk.Route = &.{
         .get("/ping", tk.send("pong")),
+        .get("/slow", H.slow),
         // .post("/echo", tk.meta.dupe),
     };
 
-    var server = try tk.Server.init(std.testing.allocator, routes, .{ .listen = .{ .port = 8081 } });
+    var server = try tk.Server.init(std.testing.io, std.testing.allocator, routes, .{ .listen = .{ .port = 8081 } });
     defer server.deinit();
 
     var thread = try std.Thread.spawn(.{}, tk.Server.start, .{&server});
     defer thread.join();
     defer server.stop();
 
-    var std_client = try StdClient.init(std.testing.allocator);
+    var std_client = try StdClient.init(std.testing.io, std.testing.allocator);
     defer std_client.deinit();
 
     const client = &std_client.interface;
@@ -178,4 +202,11 @@ test {
     const res1 = try client.request(arena.allocator(), .{ .url = "http://localhost:8081/ping" });
     try std.testing.expectEqual(.ok, res1.status);
     try std.testing.expectEqualStrings("pong", res1.body);
+
+    // 1-second timeout against a 10-second handler -> should timeout.
+    const err = client.request(arena.allocator(), .{
+        .url = "http://localhost:8081/slow",
+        .timeout = 1,
+    });
+    try std.testing.expectError(error.RequestTimeout, err);
 }

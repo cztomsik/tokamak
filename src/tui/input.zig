@@ -19,11 +19,11 @@ const Error = error{ PollFailed, EndOfStream, ReadFailed };
 /// Poll for a key without blocking. Returns null if no key is available.
 /// timeout is in ms.
 /// NOTE: This is incomplete, but it's not worth fixing until Zig v0.18
-pub fn pollKey(stdin: *std.fs.File.Reader, timeout_ms: i32) Error!?Key {
+pub fn pollKey(stdin: *std.Io.File.Reader, timeout_ms: i32) Error!?Key {
     return if (try pollReadable(stdin, timeout_ms)) try readKey(stdin) else null;
 }
 
-pub fn pollReadable(stdin: *std.fs.File.Reader, timeout_ms: i32) Error!bool {
+pub fn pollReadable(stdin: *std.Io.File.Reader, timeout_ms: i32) Error!bool {
     var pfd: [1]std.posix.pollfd = .{.{
         .fd = stdin.file.handle,
         .events = std.posix.POLL.IN,
@@ -33,7 +33,7 @@ pub fn pollReadable(stdin: *std.fs.File.Reader, timeout_ms: i32) Error!bool {
     return rc > 0;
 }
 
-pub fn readKey(stdin: *std.fs.File.Reader) Error!Key {
+pub fn readKey(stdin: *std.Io.File.Reader) Error!Key {
     // TODO: This was already buffered once but I really don't like the Zig IO design and I might just fix this during tk.Io refactor
     var buf: [1]u8 = undefined;
     try stdin.interface.readSliceAll(&buf);
@@ -50,7 +50,7 @@ pub fn readKey(stdin: *std.fs.File.Reader) Error!Key {
     };
 }
 
-fn readCSI(stdin: *std.fs.File.Reader) Error!Key {
+fn readCSI(stdin: *std.Io.File.Reader) Error!Key {
     switch (try readMore(stdin)) {
         // macOS terminal app
         'O' => switch (try readMore(stdin)) {
@@ -77,7 +77,7 @@ fn readCSI(stdin: *std.fs.File.Reader) Error!Key {
     return decodeCSI(seq[0..i]);
 }
 
-fn readUtf8(stdin: *std.fs.File.Reader, first: u8) Error!u21 {
+fn readUtf8(stdin: *std.Io.File.Reader, first: u8) Error!u21 {
     const seq_len = std.unicode.utf8ByteSequenceLength(first) catch 1;
     if (seq_len == 1) return first;
     var buf: [4]u8 = .{ first, undefined, undefined, undefined };
@@ -85,7 +85,7 @@ fn readUtf8(stdin: *std.fs.File.Reader, first: u8) Error!u21 {
     return std.unicode.utf8Decode(buf[0..seq_len]) catch first;
 }
 
-fn readMore(stdin: *std.fs.File.Reader) Error!u8 {
+fn readMore(stdin: *std.Io.File.Reader) Error!u8 {
     while (!try pollReadable(stdin, 1_000)) {}
 
     // TODO: same as above

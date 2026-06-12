@@ -152,7 +152,7 @@ pub const Context = struct {
 
     const State = struct { key: u64 = 0, tid: [*:0]const u8 = @typeName(void), data: u64 = undefined };
 
-    pub fn init(gpa: std.mem.Allocator) !*Context {
+    pub fn init(io: std.Io, gpa: std.mem.Allocator) !*Context {
         const ctx = try gpa.create(Context);
         errdefer gpa.destroy(ctx);
 
@@ -161,7 +161,7 @@ pub const Context = struct {
         arena.* = std.heap.ArenaAllocator.init(gpa);
 
         ctx.* = .{ .gpa = gpa, .arena = arena.allocator(), .screen = undefined, .stack = undefined };
-        try ctx.screen.init(gpa);
+        try ctx.screen.init(io, gpa);
 
         return ctx;
     }

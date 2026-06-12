@@ -5,7 +5,7 @@ const testing = @import("../testing.zig");
 pub const Config = struct {
     base_url: []const u8 = "https://api.github.com/",
     api_key: ?[]const u8 = null,
-    timeout: ?usize = 2 * 60,
+    timeout: i64 = 2 * 60,
 };
 
 // https://docs.github.com/en/rest/issues/issues?apiVersion=2022-11-28#list-repository-issues
@@ -53,7 +53,6 @@ pub const Client = struct {
     fn request(self: *Client, arena: std.mem.Allocator, options: http.RequestOptions) !http.ClientResponse {
         var opts = options;
         opts.base_url = opts.base_url orelse self.config.base_url;
-        opts.timeout = opts.timeout orelse self.config.timeout;
 
         if (self.config.api_key) |key| {
             opts.headers = &.{

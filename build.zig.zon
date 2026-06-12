@@ -2,10 +2,11 @@
     .name = .tokamak,
     .fingerprint = 0xf718fab679d2b915,
     .version = "2.0.0",
+    // .minimum_zig_version = "0.17.0",
     .dependencies = .{
         .httpz = .{
-            .url = "git+https://github.com/karlseguin/http.zig?ref=master#00014146eaf9e17750b752fa4905f7623fbe30f7",
-            .hash = "httpz-0.0.0-PNVzrFndBgDr9zQx7Mj_MFiqYslgcRlx45FJ_gERmRTb",
+            .url = "git+https://github.com/karlseguin/http.zig?ref=dev#49684ddd1fb030f72594cce8370b076dfa922ff9",
+            .hash = "httpz-0.0.0-PNVzrATcCADK2AQ3S7KDpH49xF3iMZ6Itih2-uBglAae",
         },
     },
     .paths = .{

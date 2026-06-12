@@ -15,12 +15,12 @@ const WriterOptions = struct {
 };
 
 pub const Writer = struct {
-    inner: *std.io.Writer,
+    inner: *std.Io.Writer,
     options: WriterOptions,
     row: usize = 0,
     col: usize = 0,
 
-    pub fn init(inner: *std.io.Writer, options: WriterOptions) Writer {
+    pub fn init(inner: *std.Io.Writer, options: WriterOptions) Writer {
         return .{ .inner = inner, .options = options };
     }
 
@@ -63,7 +63,7 @@ pub const Writer = struct {
 
     pub fn beginStruct(self: *Writer, comptime T: type, _: usize) !Struct {
         if (self.row == 0 and self.options.header) {
-            try self.writeHeader(std.meta.fields(T));
+            try self.writeHeader(@typeInfo(T).@"struct".field_names);
         }
 
         if (self.row > 0) {
@@ -73,9 +73,9 @@ pub const Writer = struct {
         return .{ .writer = self };
     }
 
-    fn writeHeader(self: *Writer, comptime fields: anytype) !void {
-        inline for (fields) |f| {
-            try self.write(.string, f.name);
+    fn writeHeader(self: *Writer, field_names: []const []const u8) !void {
+        for (field_names) |f| {
+            try self.write(.string, f);
             self.col += 1;
         }
         self.row += 1;
@@ -151,7 +151,7 @@ const people: []const Person = &.{
 };
 
 fn expectCsv(options: WriterOptions, val: anytype, expected: []const u8) !void {
-    var wb = std.io.Writer.Allocating.init(std.testing.allocator);
+    var wb: std.Io.Writer.Allocating = .init(std.testing.allocator);
     defer wb.deinit();
 
     var w = Writer.init(&wb.writer, options);

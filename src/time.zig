@@ -20,6 +20,16 @@ fn checkRange(num: anytype, min: @TypeOf(num), max: @TypeOf(num)) void {
     }
 }
 
+/// Returns the current Unix timestamp in seconds.
+pub fn timestamp() i64 {
+    return std.Io.Timestamp.now(std.Options.debug_io, .real).toSeconds();
+}
+
+/// Returns the current Unix timestamp in milliseconds.
+pub fn milliTimestamp() i64 {
+    return std.Io.Timestamp.now(std.Options.debug_io, .real).toMilliseconds();
+}
+
 /// Units for Time operations (includes time-of-day components).
 pub const TimeUnit = enum { second, minute, hour, day, month, year };
 
@@ -167,7 +177,7 @@ pub const Time = struct {
 
     /// Get the current time.
     pub fn now() Time {
-        return unix(std.time.timestamp());
+        return unix(timestamp());
     }
 
     pub fn today() Time {
@@ -445,10 +455,7 @@ test date_to_rata {
 }
 
 test "fuzz against libc" {
-    const c = @cImport({
-        @cInclude("stdlib.h");
-        @cInclude("time.h");
-    });
+    const c = @import("c");
 
     var r = std.Random.DefaultPrng.init(123);
     for (0..1_000) |_| {

@@ -2,7 +2,7 @@
 
 ## System Environment
 
-- **zig** 0.15.2 (`/Users/cztomsik/.zvm/bin/zig`)
+- **zig** 0.17.x (`/Users/cztomsik/.zvm/bin/zig`) — target is 0.17.x; the 0.17 line may be somewhat unstable
 - **node** v24.14.1 (`/Users/cztomsik/.nvm/versions/node/v24.14.1/bin/node`)
 - **python3** 3.9.6 (`/usr/bin/python3`)
 - **rg** (ripgrep) 15.1.0 — use for quick navigation: `rg -o '^\s*(pub )?(fn|struct|const|var|test)\s+\w+' .`
@@ -11,7 +11,7 @@
 
 ## Project Overview
 
-**Tokamak** is a web application framework for Zig (v0.15.2), built around [http.zig](https://github.com/karlseguin/http.zig) and a dependency injection container. It is designed to run behind a reverse proxy (Nginx, CloudFront) for SSL, caching, and sanitization.
+**Tokamak** is a web application framework for Zig (v0.17.x), built around [http.zig](https://github.com/karlseguin/http.zig) and a dependency injection container. It is designed to run behind a reverse proxy (Nginx, CloudFront) for SSL, caching, and sanitization.
 
 - **Version:** 2.0.0
 - **Dependency:** `httpz` (git hash `00014146eaf9e17750b752fa4905f7623fbe30f7`)

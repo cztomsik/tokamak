@@ -8,7 +8,7 @@ const log = std.log.scoped(.ai_client);
 pub const Config = struct {
     base_url: []const u8 = "https://api.openai.com/v1/",
     api_key: ?[]const u8 = null,
-    timeout: ?usize = 2 * 60,
+    timeout: i64 = 2 * 60,
 
     pub fn openrouter(api_key: []const u8) Config {
         return .{
@@ -60,7 +60,7 @@ pub const Client = struct {
     fn request(self: *Client, arena: std.mem.Allocator, options: http.RequestOptions) !http.ClientResponse {
         var opts = options;
         opts.base_url = opts.base_url orelse self.config.base_url;
-        opts.timeout = opts.timeout orelse self.config.timeout;
+        opts.timeout = self.config.timeout;
 
         if (self.config.api_key) |key| {
             opts.headers = &.{

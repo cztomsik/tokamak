@@ -6,7 +6,7 @@ Tokamak is a web application framework for Zig, built around
 [http.zig](https://github.com/karlseguin/http.zig) and a simple dependency
 injection container.
 
-> **Note:** The main branch currently targets **Zig 0.15.2**.
+> **Note:** The main branch currently targets **Zig 0.17.x**. The 0.17 release line may still be unstable; expect occasional breaking changes from upstream.
 
 Note that it is **not designed to be used alone**, but with a reverse proxy in
 front of it, like Nginx or Cloudfront, which will handle SSL, caching,
@@ -70,12 +70,10 @@ fn hello() ![]const u8 {
     return "Hello";
 }
 
-pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-    defer _ = gpa.deinit();
-    
-    var server = try tk.Server.init(allocator, routes, .{ .listen = .{ .port = 8080 } });
+pub fn main(init: std.process.Init) !void {
+    var server = try tk.Server.init(init.io, init.gpa, routes, .{ .listen = .{ .port = 8080 } });
+    defer server.deinit();
+
     try server.start();
 }
 ```
@@ -127,20 +125,19 @@ fn hello(res: *tk.Response) !void {
 
 ## Custom Dependencies
 
-You can also provide your own (global) dependencies by passing your own
-`*tk.Injector` to the server.
+You can also provide your own (global) dependencies using the multi-module
+system. Define a struct with the dependencies as fields, and the framework will
+resolve them automatically:
 
 ```zig
-pub fn main() !void {
-    var db = try sqlite.open("my.db");
-    var inj = tk.Injector.init(&.{ .ref(&db) }, null);
+const App = struct {
+    db: Db,
+    server: tk.Server,
+    routes: []const tk.Route = &.{ ... },
+};
 
-    var server = try tk.Server.init(allocator, routes, .{
-        .injector = &inj,
-        .listen = .{ .port = 8080 },
-    });
-
-    try server.start();
+pub fn main(init: std.process.Init) !void {
+    try tk.app.run(init, tk.Server.start, &.{App});
 }
 ```
 
@@ -350,6 +347,22 @@ It takes a tuple of `{ name, fn_ptr, args_tuple }` triples as input.
 > the main thread and forks processes, which may lead to unexpected behavior if
 > used incorrectly. Use with caution.
 
+## Examples
+
+All examples are located in the [`examples/`](examples/) directory. Each example is a standalone project with its own `build.zig` file and can be built independently.
+
+| Example | Description |
+|---------|-------------|
+| [`hello`](examples/hello/) | Minimal server with a single route — the simplest way to get started |
+| [`hello_app`](examples/hello_app/) | Multi-module app pattern using `tk.app.run()` |
+| [`hello_cli`](examples/hello_cli/) | CLI application with commands for Hacker News, GitHub, web scraping, regex, PDF generation, and more |
+| [`hello_tui`](examples/hello_tui/) | Terminal UI demo with panels, grids, modals, tree navigation, inputs, and themes |
+| [`hello_ssr`](examples/hello_ssr/) | Server-side rendering with custom components (Badge, Card, UserRow, Counter) and template engine |
+| [`blog`](examples/blog/) | RESTful blog API with an in-memory service layer, Swagger/OpenAPI docs, and static file serving |
+| [`todos_orm_sqlite`](examples/todos_orm_sqlite/) | CRUD todo app with SQLite ORM ([fridge](https://github.com/urholaukkarinen/fridge)), connection pooling, and route-scoped DB sessions |
+| [`clown-commander`](examples/clown-commander/) | Terminal file manager with dual-panel browsing, file copy/delete, and mkdir support |
+| [`webview_app`](examples/webview_app/) | Desktop app that embeds a web server in a webview window (requires macOS) |
+
 ## Advanced Dependency Injection
 
 ### Multi-Module System
@@ -373,8 +386,8 @@ const WebModule = struct {
 };
 
 // Register modules when creating a Container
-pub fn main() !void {
-    try tk.app.run(Server.start, &.{
+pub fn main(init: std.process.Init) !void {
+    try tk.app.run(init, tk.Server.start, &.{
         SharedModule,
         WebModule,
     });

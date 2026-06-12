@@ -29,12 +29,13 @@ pub const FsLoaderOptions = struct {
 
 pub const FsLoader = struct {
     interface: Loader,
-    allocator: std.mem.Allocator,
+    io: std.Io,
+    gpa: std.mem.Allocator,
     base_dir: []const u8,
 
-    pub fn init(allocator: std.mem.Allocator, options: FsLoaderOptions) !FsLoader {
-        const base_dir = try std.fs.cwd().realpathAlloc(allocator, options.base_dir);
-        errdefer allocator.free(base_dir);
+    pub fn init(io: std.Io, gpa: std.mem.Allocator, options: FsLoaderOptions) !FsLoader {
+        const base_dir = try std.Io.Dir.cwd().realPathFileAlloc(io, options.base_dir, gpa);
+        errdefer gpa.free(base_dir);
 
         return .{
             .interface = .{
@@ -43,30 +44,31 @@ pub const FsLoader = struct {
                     .resolve = &resolve,
                 },
             },
-            .allocator = allocator,
+            .io = io,
+            .gpa = gpa,
             .base_dir = base_dir,
         };
     }
 
     pub fn deinit(self: *FsLoader) void {
-        self.allocator.free(self.base_dir);
+        self.gpa.free(self.base_dir);
     }
 
-    fn resolve(loader: *Loader, allocator: std.mem.Allocator, path: []const u8) ?[]const u8 {
+    fn resolve(loader: *Loader, arena: std.mem.Allocator, path: []const u8) ?[]const u8 {
         const self: *FsLoader = @fieldParentPtr("interface", loader);
 
-        const clean_path = std.mem.trimLeft(u8, path, "/");
-        const full_path = std.fs.path.join(allocator, &.{ self.base_dir, clean_path }) catch return null;
+        const clean_path = std.mem.trimStart(u8, path, "/");
+        const full_path = std.fs.path.join(arena, &.{ self.base_dir, clean_path }) catch return null;
 
-        const resolved_path = std.fs.path.resolve(allocator, &.{full_path}) catch {
-            allocator.free(full_path);
+        const resolved_path = std.fs.path.resolve(arena, &.{full_path}) catch {
+            arena.free(full_path);
             return null;
         };
-        allocator.free(full_path);
+        arena.free(full_path);
 
         // Check against path traversal
         if (!std.mem.startsWith(u8, resolved_path, self.base_dir)) {
-            allocator.free(resolved_path);
+            arena.free(resolved_path);
             return null;
         }
 
@@ -74,12 +76,13 @@ pub const FsLoader = struct {
     }
 
     fn load(loader: *Loader, arena: std.mem.Allocator, path: []const u8) !?Resource {
+        const self: *FsLoader = @fieldParentPtr("interface", loader);
+
         const resolved = resolve(loader, arena, path) orelse return null;
 
-        const content = std.fs.cwd().readFileAlloc(arena, resolved, std.math.maxInt(usize)) catch |err| {
+        const content = std.Io.Dir.cwd().readFileAlloc(self.io, resolved, arena, .unlimited) catch |err| {
             return if (err == error.FileNotFound) null else err;
         };
-
         return .{
             .content = content,
             .content_type = mime(std.fs.path.extension(resolved)),

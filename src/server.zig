@@ -31,10 +31,9 @@ pub const Server = struct {
     http: httpz.Server(Adapter),
 
     /// Initialize a new server.
-    pub fn init(allocator: std.mem.Allocator, routes: []const Route, options: InitOptions) !Server {
-        const http = try httpz.Server(Adapter).init(allocator, .{
-            .address = options.listen.hostname,
-            .port = options.listen.port,
+    pub fn init(io: std.Io, allocator: std.mem.Allocator, routes: []const Route, options: InitOptions) !Server {
+        const http = try httpz.Server(Adapter).init(io, allocator, .{
+            .address = .{ .ip = .{ .ip4 = try .parse(options.listen.hostname, options.listen.port) } },
             .workers = options.workers,
             .request = options.request,
             .response = options.response,
@@ -70,15 +69,16 @@ pub const Server = struct {
 
 const Adapter = struct {
     pub fn handle(self: *Adapter, req: *httpz.Request, res: *httpz.Response) void {
-        const offset = @offsetOf(Server, "http") + @offsetOf(httpz.Server(Adapter), "handler");
-        const server: *Server = @ptrFromInt(@intFromPtr(self) - offset);
+        const http: *httpz.Server(Adapter) = @alignCast(@fieldParentPtr("handler", self));
+        const server: *Server = @alignCast(@fieldParentPtr("http", http));
 
         var ctx: Context = undefined;
 
         var inj: Injector = .init(&.{
             .ref(&ctx),
             .ref(server),
-            .ref(&res.arena),
+            .ref(&server.http.io),
+            .ref(&req.arena),
             .ref(req),
             .ref(res),
         }, server.injector);

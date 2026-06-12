@@ -80,7 +80,7 @@ pub const Selector = struct {
     }
 
     pub fn parse(allocator: std.mem.Allocator, selector: []const u8) !Selector {
-        var parts = std.ArrayList(Part){};
+        var parts: std.ArrayList(Part) = .empty;
         defer parts.deinit(allocator);
 
         var tokenizer = Tokenizer{ .input = selector };

@@ -93,13 +93,13 @@ pub const Document = struct {
         return id;
     }
 
-    // TODO: accept *std.io.Writer but we need some way to find out where we are (global pos)
+    // TODO: accept *std.Io.Writer but we need some way to find out where we are (global pos)
     pub fn render(self: *Document, allocator: std.mem.Allocator) ![]u8 {
         if (self.pages.items.len == 0) {
             return Error.EmptyDocument;
         }
 
-        var buf: std.io.Writer.Allocating = .init(allocator);
+        var buf: std.Io.Writer.Allocating = .init(allocator);
         defer buf.deinit();
 
         const writer = &buf.writer;
@@ -109,7 +109,7 @@ pub const Document = struct {
         // Header
         try writer.writeAll("%PDF-1.4\n");
 
-        var xref_positions = ArrayList(u32){};
+        var xref_positions = ArrayList(u32).empty;
         defer xref_positions.deinit(allocator);
         try xref_positions.append(allocator, 0); // Object 0 is always free
 
@@ -262,7 +262,7 @@ pub const Document = struct {
         }
     }
 
-    fn writeObject(self: *Document, writer: *std.io.Writer, obj: PdfObject) !void {
+    fn writeObject(self: *Document, writer: *std.Io.Writer, obj: PdfObject) !void {
         try writer.print("{} {} obj\n", .{ obj.ref.id, obj.ref.generation });
         try self.writeValue(writer, obj.value);
 
@@ -291,7 +291,7 @@ pub const Document = struct {
         try writer.writeAll("\nendobj\n");
     }
 
-    fn writeValue(self: *Document, writer: *std.io.Writer, value: Value) !void {
+    fn writeValue(self: *Document, writer: *std.Io.Writer, value: Value) !void {
         switch (value) {
             .null => try writer.writeAll("null"),
             .boolean => |b| try writer.writeAll(if (b) "true" else "false"),
@@ -325,7 +325,7 @@ pub const Page = struct {
     document: *Document,
     width: f64,
     height: f64,
-    buf: std.io.Writer.Allocating,
+    buf: std.Io.Writer.Allocating,
 
     pub fn init(document: *Document, width: f64, height: f64) !Page {
         return Page{

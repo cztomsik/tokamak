@@ -48,14 +48,14 @@ const ComponentRegistry = struct {
                 var inst: T = undefined;
                 var inj = Injector.init(&.{ .ref(&inst), .ref(ctx) }, &ctx.injector);
 
-                inline for (std.meta.fields(T)) |f| {
+                inline for (@typeInfo(T).@"struct".field_names, @typeInfo(T).@"struct".field_types, @typeInfo(T).@"struct".field_attrs) |f, ft, fa| {
                     for (comp.props) |prop| {
-                        if (std.mem.eql(u8, f.name, prop.name)) {
-                            @field(inst, f.name) = try parse.parseValue(f.type, prop.value, ctx.js.vm.arena);
+                        if (std.mem.eql(u8, f, prop.name)) {
+                            @field(inst, f) = try parse.parseValue(ft, prop.value, ctx.js.vm.arena);
                             break;
                         }
                     } else {
-                        @field(inst, f.name) = f.defaultValue() orelse return error.MissingProp;
+                        @field(inst, f) = fa.defaultValue(ft) orelse return error.MissingProp;
                     }
                 }
 
@@ -103,7 +103,7 @@ pub const DefaultEngine = struct {
     }
 
     pub fn renderTemplate(self: *DefaultEngine, tpl: Template, arena: std.mem.Allocator, data: anytype) ![]const u8 {
-        var aw = std.io.Writer.Allocating.init(arena);
+        var aw: std.Io.Writer.Allocating = .init(arena);
         defer aw.deinit();
 
         // TODO: decide if we ever want to do streaming, ie. renderTemplateInto(tpl, arena, writer)
@@ -194,8 +194,8 @@ const Parser = struct {
     fn init(allocator: std.mem.Allocator) Parser {
         return .{
             .arena = allocator,
-            .stack = .{},
-            .root_nodes = .{},
+            .stack = .empty,
+            .root_nodes = .empty,
         };
     }
 
@@ -209,8 +209,8 @@ const Parser = struct {
             .open => |tag| {
                 try self.stack.append(self.arena, .{
                     .tag = try self.arena.dupe(u8, tag),
-                    .attrs = .{},
-                    .children = .{},
+                    .attrs = .empty,
+                    .children = .empty,
                     .is_component = std.mem.startsWith(u8, tag, "x-"),
                 });
             },
@@ -259,7 +259,7 @@ const Parser = struct {
     }
 
     fn extractDirectives(self: *Parser, attrs: []const Template.Attribute) !Directives {
-        var dirs: Directives = .{ .attrs = .{} };
+        var dirs: Directives = .{ .attrs = .empty };
         for (attrs) |attr| {
             if (std.mem.eql(u8, attr.name, "v-if")) {
                 dirs.v_if = attr.value;
@@ -367,12 +367,12 @@ const Parser = struct {
 };
 
 pub const RenderContext = struct {
-    writer: *std.io.Writer,
+    writer: *std.Io.Writer,
     js: js.Context,
     components: *ComponentRegistry,
     injector: Injector,
 
-    fn init(allocator: std.mem.Allocator, writer: *std.io.Writer, components: *ComponentRegistry) !RenderContext {
+    fn init(allocator: std.mem.Allocator, writer: *std.Io.Writer, components: *ComponentRegistry) !RenderContext {
         return .{
             .writer = writer,
             .js = try js.Context.init(allocator),
