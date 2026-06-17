@@ -13,7 +13,7 @@ pub const Route = struct {
     method: ?httpz.Method = null,
     prefix: ?[]const u8 = null,
     path: ?[]const u8 = null,
-    handler: ?*const fn (*Context) anyerror!void = null, // TODO: should be `?*const Handler` but Zig recently reverted again
+    handler: ?*const Handler = null,
     children: []const Route = &.{},
     metadata: ?*const Metadata = null,
 

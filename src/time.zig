@@ -231,20 +231,13 @@ pub const Time = struct {
     }
 
     pub fn setStartOf(self: Time, unit: TimeUnit) Time {
-        // TODO: continue :label?
         return switch (unit) {
             .second => self,
             .minute => self.setSecond(0),
             .hour => self.setSecond(0).setMinute(0),
-            .day => self.setSecond(0).setMinute(0).setHour(0),
-            .month => {
-                const d = self.date();
-                return unix(0).setDate(.ymd(d.year, d.month, 1));
-            },
-            .year => {
-                const d = self.date();
-                return unix(0).setDate(.ymd(d.year, 1, 1));
-            },
+            .day => unix(0).setDate(self.date()),
+            .month => unix(0).setDate(self.date().setStartOf(.month)),
+            .year => unix(0).setDate(self.date().setStartOf(.year)),
         };
     }
 
@@ -259,20 +252,13 @@ pub const Time = struct {
     }
 
     pub fn setEndOf(self: Time, unit: TimeUnit) Time {
-        // TODO: continue :label?
         return switch (unit) {
             .second => self,
             .minute => self.setSecond(59),
             .hour => self.setSecond(59).setMinute(59),
-            .day => self.setSecond(59).setMinute(59).setHour(23),
-            .month => {
-                const d = self.date();
-                return unix(EOD).setDate(.ymd(d.year, d.month, daysInMonth(d.year, d.month)));
-            },
-            .year => {
-                const d = self.date();
-                return unix(EOD).setDate(.ymd(d.year, 12, 31));
-            },
+            .day => unix(EOD).setDate(self.date()),
+            .month => unix(EOD).setDate(self.date().setEndOf(.month)),
+            .year => unix(EOD).setDate(self.date().setEndOf(.year)),
         };
     }
 
