@@ -6,19 +6,17 @@
 const std = @import("std");
 const util = @import("util.zig");
 
+inline fn check(condition: bool, msg: []const u8) void {
+    if (!condition) {
+        @branchHint(.unlikely);
+        std.log.warn(msg, .{});
+    }
+}
+
 const RATA_MIN = date_to_rata(Date.MIN);
 const RATA_MAX = date_to_rata(Date.MAX);
 const RATA_TO_UNIX = 719468;
 const EOD = 86_400 - 1;
-
-// TODO: Decide if we want to use std.debug.assert(), @panic() or just throw an error
-fn checkRange(num: anytype, min: @TypeOf(num), max: @TypeOf(num)) void {
-    if (util.lt(num, min) or util.gt(num, max)) {
-        // TODO: fix later (we can't use {f} and {any} is also wrong)
-        // std.log.warn("Value {} is not in range [{}, {}]", .{ num, min, max });
-        std.log.warn("Value not in range", .{});
-    }
-}
 
 /// Returns the current Unix timestamp in seconds.
 pub fn timestamp() i64 {
@@ -62,9 +60,9 @@ pub const Date = struct {
     pub const MAX = Date.ymd(1471744, 12, 31);
 
     pub fn cmp(a: Date, b: Date) std.math.Order {
-        if (a.year != b.year) return util.cmp(a.year, b.year);
-        if (a.month != b.month) return util.cmp(a.month, b.month);
-        return util.cmp(a.day, b.day);
+        if (a.year != b.year) return std.math.order(a.year, b.year);
+        if (a.month != b.month) return std.math.order(a.month, b.month);
+        return std.math.order(a.day, b.day);
     }
 
     pub fn parse(str: []const u8) !Date {
@@ -300,7 +298,7 @@ pub const Time = struct {
 
 // https://github.com/cassioneri/eaf/blob/1509faf37a0e0f59f5d4f11d0456fd0973c08f85/eaf/gregorian.hpp#L42
 fn rata_to_date(N: i64) Date {
-    checkRange(N, RATA_MIN, RATA_MAX);
+    check(N >= RATA_MIN and N <= RATA_MAX, "N out of range");
 
     // Century.
     const N_1: i64 = 4 * N + 3;
@@ -330,7 +328,7 @@ fn rata_to_date(N: i64) Date {
 
 // https://github.com/cassioneri/eaf/blob/1509faf37a0e0f59f5d4f11d0456fd0973c08f85/eaf/gregorian.hpp#L88
 fn date_to_rata(date: Date) i32 {
-    checkRange(date, Date.MIN, Date.MAX);
+    check(date.cmp(Date.MIN) != .lt and date.cmp(Date.MAX) != .gt, "Date out of range");
 
     // Map.
     const J: u32 = @intFromBool(date.month <= 2);
