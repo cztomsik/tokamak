@@ -106,11 +106,3 @@ test countLines {
     try std.testing.expectEqual(1, countLines("hello", 10));
     try std.testing.expectEqual(2, countLines("hello\nworld", 10));
 }
-
-pub fn countScalar(comptime T: type, slice: []const T, value: T) usize {
-    var n: usize = 0;
-    for (slice) |c| {
-        if (c == value) n += 1;
-    }
-    return n;
-}

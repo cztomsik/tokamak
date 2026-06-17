@@ -60,7 +60,7 @@ pub fn expectTable(items: anytype, comptime expected: []const u8) !void {
     const header = comptime expected[0..std.mem.indexOfScalar(u8, expected, '\n').?];
 
     const cols = comptime blk: {
-        var cols: [util.countScalar(u8, header, '|') - 1]serde.table.Col = undefined;
+        var cols: [std.mem.countScalar(u8, header, '|') - 1]serde.table.Col = undefined;
         var it = std.mem.tokenizeScalar(u8, header, '|');
         for (0..cols.len) |i| {
             const cell = it.next().?;

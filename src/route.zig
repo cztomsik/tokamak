@@ -214,7 +214,7 @@ fn route(comptime method: httpz.Method, comptime path: []const u8, comptime has_
 fn routeMetadata(comptime path: []const u8, comptime has_query: bool, comptime has_body: bool, comptime handler: anytype) *const Route.Metadata {
     comptime {
         const field_types = std.meta.fieldTypes(std.meta.ArgsTuple(@TypeOf(handler)));
-        const n_params = util.countScalar(u8, path, ':');
+        const n_params = std.mem.countScalar(u8, path, ':');
         const n_deps = field_types.len - n_params - @intFromBool(has_query) - @intFromBool(has_body);
 
         return &.{
