@@ -223,7 +223,7 @@ const Op = union(enum) {
 /// Compile-time dependency graph builder.
 pub const Bundle = struct {
     deps: Buf(Dep),
-    index: [256]DepId = [_]DepId{.empty} ** 256,
+    index: [256]DepId = @splat(.empty),
     compile_hooks: Buf(meta.ComptimeVal), // before the compilation
     runtime_hooks: Buf(Hook), // when the deps are ready / before they are gone
     n_inst: usize = 0,
