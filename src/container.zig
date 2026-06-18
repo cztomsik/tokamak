@@ -125,18 +125,18 @@ pub const How = union(enum) {
     }
 };
 
-// NOTE: we could use pointer since we are in comptime and the buf is
-// fixed-capacity but I was getting some ptr compile errors then
 const DepId = enum(u8) { empty = 255, _ };
+const DepMask = u256;
 
 const Dep = struct {
+    id: DepId = .empty,
     type: type,
     provider: How,
     state: union(enum) {
         instance: struct { type: type, offset: usize },
         override,
     },
-    mask: u64 = 0, // bitset of what we need
+    mask: DepMask = 0, // bitset of what we need
     next: DepId = .empty, // chain for hash collisions
 
     fn desc(self: Dep) []const u8 {
@@ -201,7 +201,7 @@ const Dep = struct {
 const Hook = struct {
     kind: enum { init, deinit },
     fun: meta.ComptimeVal,
-    mask: u64 = 0,
+    mask: DepMask = 0,
 
     fn desc(self: Hook) []const u8 {
         return "hook " ++ @tagName(self.kind) ++ " " ++ @typeName(self.fun.type);
@@ -232,9 +232,9 @@ pub const Bundle = struct {
 
     fn typeHash(comptime T: type) u8 {
         const name = @typeName(meta.Deref(T));
-        var h: usize = 0;
+        var h: usize = 131;
         for (name) |c| h = h *% 31 +% c;
-        return @truncate(h);
+        return @truncate(h); // h % 256 == @truncate()
     }
 
     /// Registers all fields of module M as dependencies.
@@ -340,7 +340,7 @@ pub const Bundle = struct {
     // TODO: public?
     fn compile(comptime mods: []const type) type {
         var bundle = Bundle{
-            .deps = .initComptime(64),
+            .deps = .initComptime(255),
             .compile_hooks = .initComptime(64),
             .runtime_hooks = .initComptime(64),
         };
@@ -401,24 +401,19 @@ pub const Bundle = struct {
         }
     }
 
-    fn mark(self: *Bundle, comptime T: type, mask: *u64) void {
+    fn mark(self: *Bundle, comptime T: type, mask: *DepMask) void {
         // Builtins
         if (T == *Container or T == *Injector or T == std.mem.Allocator) return;
 
         if (self.findDep(T)) |dep| {
-            // error: pointer arithmetic requires element type 'xxx' to have runtime bits
-            // const i = dep - self.deps.buf.ptr;
-            var i: usize = 0;
-            while (dep != &self.deps.buf[i]) : (i += 1) {}
-
-            mask.* |= 1 << i;
+            mask.* |= 1 << @intFromEnum(dep.id);
         }
     }
 
     fn render(self: *Bundle) []const Op {
         var buf = Buf(Op).initComptime(self.deps.len + self.runtime_hooks.len);
-        var ready: u64 = 0;
-        var hooks: u64 = 0;
+        var ready: DepMask = 0;
+        var hooks: DepMask = 0;
 
         while (@popCount(ready) < self.n_inst) {
             for (self.deps.items(), 0..) |dep, i| {
@@ -477,23 +472,17 @@ pub const Bundle = struct {
             unreachable;
         }
 
-        // TODO: I'm not sure if we can really do anything about this, because
-        // if any module has configure() that still counts towards the global
-        // limit so maybe a better idea would be to set this in compile()
-        // something like mods.len * 10_000 or IDK, but at least this impl
-        // should scale better with higher deps.len because the previous impl
-        // was N^2, increasing with every new dep (+ the .configure() cost)
-        // - or maybe we could just set 1M or something call it a day
+        // TODO: M.configure() is unbounded so this may still be too low in practice
         @setEvalBranchQuota(self.deps.len * 256);
 
         // New dep - prepend to chain at this hash bucket
         const h = typeHash(dep.type);
-        const new_idx: u8 = @intCast(self.deps.len);
 
         var new_dep = dep;
+        new_dep.id = @enumFromInt(@as(u8, @intCast(self.deps.len)));
         new_dep.next = self.index[h];
         self.deps.push(new_dep);
-        self.index[h] = @enumFromInt(new_idx);
+        self.index[h] = new_dep.id;
     }
 
     fn allocInstance(self: *Bundle, comptime T: type) @FieldType(Dep, "state") {
