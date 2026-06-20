@@ -51,6 +51,7 @@ pub const Cron = struct {
         self.jobs.deinit(self.allocator);
     }
 
+    /// Schedule a new job.
     pub fn schedule(self: *Cron, expr: []const u8, name: []const u8, data: []const u8) !JobId {
         try self.mutex.lock(self.io);
         defer self.mutex.unlock(self.io);
@@ -59,6 +60,7 @@ pub const Cron = struct {
         const exp = try Expr.parse(expr);
         const next = exp.next(self.time());
 
+        // TODO: meta.dupe() or maybe we could make our own array list with appendDupe()?
         try self.jobs.append(self.allocator, .{
             .id = id,
             .schedule = exp,
@@ -221,43 +223,6 @@ pub const Expr = struct {
         return res;
     }
 
-    // pub fn next(self: *const Expr, since: Time) Time {
-    //     while (true) {
-    //         var res = since.setSecond(0);
-    //         // std.debug.print("{}\n", .{res});
-
-    //         if (findNext(self.minute, res.minute())) |min| {
-    //             res = res.setMinute(min);
-    //             if (self.match(res)) return res;
-    //         }
-    //         res = res.setMinute(findFirst(self.minute));
-
-    //         if (findNext(self.hour, res.hour())) |hour| {
-    //             res = res.setHour(hour);
-    //             if (self.match(res)) return res;
-    //         }
-    //         res = res.setHour(findFirst(self.hour));
-
-    //         // TODO: remove the loop once we fix this
-    //         // if (findNext(self.day, res.day())) |day| {
-    //         //     res = res.setDay(day);
-    //         //     if (self.match(res)) return res;
-    //         // }
-    //         // res = res.setDay(findFirst(self.day));
-
-    //         // if (findNext(self.month, res.month())) |month| {
-    //         //     res = res.setMonth(month);
-    //         //     if (self.match(res)) return res;
-    //         // }
-    //         // res = res.setMonth(findFirst(self.month));
-    //         // return res.add(.years, 1);
-
-    //         if (self.match(res)) return res;
-    //         res = res.add(.days, 1);
-    //         if (self.match(res)) return res;
-    //     }
-    // }
-
     pub fn format(self: *const Expr, w: *std.Io.Writer) !void {
         const ex = @typeInfo(Expr).@"struct";
         inline for (ex.field_names, ex.field_types, 0..) |f, ft, i| {
@@ -269,19 +234,6 @@ pub const Expr = struct {
     pub fn serialize(self: *const Expr, writer: anytype) !void {
         var buf: [64]u8 = undefined;
         try writer.write(.string, try std.fmt.bufPrint(&buf, "{f}", .{self}));
-    }
-
-    fn findNext(mask: anytype, curr: u32) ?u32 {
-        // std.debug.print("find next:  {b:.>32} {}\n", .{ mask, curr });
-        var n = curr + 1;
-        while (n < @bitSizeOf(@TypeOf(mask))) : (n += 1) {
-            if (isSet(mask, n)) return n;
-        } else return null;
-    }
-
-    fn findFirst(mask: anytype) u32 {
-        // std.debug.print("find first: {b:.>32}\n", .{mask});
-        return @intCast(@ctz(mask));
     }
 
     pub fn parse(expr: []const u8) !Expr {
@@ -328,6 +280,10 @@ pub const Expr = struct {
             } else {
                 mask |= maskBit(try std.fmt.parseInt(u8, part, 10));
             }
+        }
+
+        if (mask >> @bitSizeOf(T) > 0) {
+            return error.Overflow;
         }
 
         return @truncate(mask);
@@ -441,6 +397,16 @@ test "Expr.parse()" {
     try expect(!isSet(ex6.minute, 6));
     try expect(isSet(ex6.minute, 10));
     try expect(isSet(ex6.minute, 15));
+
+    // Reject straight-out invalid values
+    try expect(Expr.parse("60 * * * *") == error.Overflow);
+    try expect(Expr.parse("* 24 * * *") == error.Overflow);
+    try expect(Expr.parse("* * 32 * *") == error.Overflow);
+    try expect(Expr.parse("* * * 13 *") == error.Overflow);
+    try expect(Expr.parse("* * * * 8") == error.Overflow);
+
+    // This is valid, we just need to make sure that next() cannot hang indefinitely.
+    _ = try Expr.parse("0 0 31 2 *");
 }
 
 fn expectMatch(expr: []const u8, matches: anytype) !void {
@@ -533,6 +499,12 @@ test "expr.next()" {
     try expectNext("0 9 * * 1", .{
         .{ 0, 4 * 24 * 3600 + 9 * 3600 }, // Jan 1 (Thu) -> Jan 5 (Mon) 9:00
         .{ 4 * 24 * 3600 + 9 * 3600, 11 * 24 * 3600 + 9 * 3600 }, // Jan 5 (Mon) -> Jan 12 (Mon) 9:00
+    });
+}
+
+test "expr.next() stress-test" {
+    try expectNext("0 0 29 2 4", .{
+        .{ 0, 825_552_000 }, // Jan 1 1970 -> Feb 29 1996 (Thu), ~13.8M iterations
     });
 }
 
