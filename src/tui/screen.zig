@@ -206,25 +206,43 @@ pub const Screen = struct {
         w.buffer = &buf;
         defer w.buffer = &.{};
 
+        // Track cursor position and active colors to avoid redundant ANSI
+        // sequences for consecutive cells sharing the same attributes.
+        var cursor: [2]i32 = .{ -1, -1 };
+        var current: [2]Color = undefined;
+        var first = true;
+
         for (0..height) |row| {
             for (self.back_buffer.row(row), self.front_buffer.row(row), 0..) |back, front, col| {
-                if (!back.eq(front)) {
-                    // Always position cursor absolutely at the target cell
-                    try w.print("\x1B[{d};{d}H", .{ row + 1, col + 1 });
+                if (back.eq(front)) continue;
 
-                    // Emit color for every changed cell (cursor jumps absolutely,
-                    // so tracking "current" color across non-contiguous cells is incorrect).
+                const r: i32 = @intCast(row);
+                const c: i32 = @intCast(col);
+
+                // Position cursor only when it moves away from where it is.
+                if (first or r != cursor[0] or c != cursor[1]) {
+                    try w.print("\x1B[{d};{d}H", .{ r + 1, c + 1 });
+                    cursor = .{ r, c };
+                    first = false;
+                }
+
+                // Emit color only when fg or bg changes.
+                if (first or back.fg != current[0] or back.bg != current[1]) {
                     if (self.truecolor) {
                         try w.print("\x1B[38;2;{f};48;2;{f}m", .{ back.fg, back.bg });
                     } else {
                         try w.print("\x1B[38;5;{d};48;5;{d}m", .{ back.fg.to256(), back.bg.to256() });
                     }
-
-                    // Encode u21 codepoint to UTF-8
-                    var buf2: [4]u8 = undefined;
-                    const len = std.unicode.utf8Encode(back.char, &buf2) catch 1;
-                    try w.writeAll(buf2[0..len]);
+                    current = .{ back.fg, back.bg };
                 }
+
+                // Encode u21 codepoint to UTF-8
+                var buf2: [4]u8 = undefined;
+                const len = std.unicode.utf8Encode(back.char, &buf2) catch 1;
+                try w.writeAll(buf2[0..len]);
+
+                // Advance
+                cursor[1] += 1;
             }
         }
 
