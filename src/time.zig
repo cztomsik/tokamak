@@ -40,12 +40,13 @@ pub fn isLeapYear(year: i32) bool {
     return (year & (d - 1)) == 0;
 }
 
-// https://www.youtube.com/watch?v=0s9F4QWAl-E&t=2257
-fn daysInMonth(year: i32, month: u8) u8 {
+/// Returns the number of days in the given month and year, accounting for leap years.
+pub fn daysInMonth(year: i32, month: u8) u8 {
     if (month == 2) {
         return if (isLeapYear(year)) 29 else 28;
     }
 
+    // https://www.youtube.com/watch?v=0s9F4QWAl-E&t=2257
     return 30 | (month ^ (month >> 3));
 }
 
@@ -219,7 +220,7 @@ pub const Time = struct {
     }
 
     pub fn date(self: Time) Date {
-        return rata_to_date(@divTrunc(self.epoch, std.time.s_per_day) + RATA_TO_UNIX);
+        return rata_to_date(quotient(self.epoch, @intCast(std.time.s_per_day)) + RATA_TO_UNIX);
     }
 
     pub fn setDate(self: Time, dat: Date) Time {
@@ -276,8 +277,8 @@ pub const Time = struct {
     fn total(self: Time, part: enum { seconds, minutes, hours }) i64 {
         return switch (part) {
             .seconds => self.epoch,
-            .minutes => @divTrunc(self.epoch, std.time.s_per_min),
-            .hours => @divTrunc(self.epoch, std.time.s_per_hour),
+            .minutes => quotient(self.epoch, @intCast(std.time.s_per_min)),
+            .hours => quotient(self.epoch, @intCast(std.time.s_per_hour)),
         };
     }
 
@@ -407,6 +408,14 @@ test "edge-cases" {
     try testing.expectFmt(feb29.setEndOf(.month), "2000-02-29 23:59:59 UTC");
     try testing.expectFmt(feb29.add(.years, 1), "2001-02-28 00:00:00 UTC");
     try testing.expectFmt(feb29.add(.years, 4), "2004-02-29 00:00:00 UTC");
+}
+
+test "negative epoch" {
+    try testing.expectFmt(Time.unix(-1), "1969-12-31 23:59:59 UTC");
+    try testing.expectFmt(Time.unix(-3600), "1969-12-31 23:00:00 UTC");
+    try testing.expectFmt(Time.unix(-1).setStartOf(.hour), "1969-12-31 23:00:00 UTC");
+    try testing.expectFmt(Time.unix(-86400), "1969-12-31 00:00:00 UTC");
+    try testing.expectFmt(Time.unix(-1).setStartOf(.day), "1969-12-31 00:00:00 UTC");
 }
 
 test isLeapYear {
