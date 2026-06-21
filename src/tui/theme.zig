@@ -66,7 +66,44 @@ pub const Color = enum(u32) {
     }
 };
 
+/// Named theme color slots. Cells reference these by index instead of raw RGB.
+pub const ThemeColor = enum(u8) {
+    text = 0, // default text
+    base1 = 1, // base bg
+    base2 = 2, // darker (elevation/nesting)
+    base3 = 3, // darkest
+    primary = 4, // primary action
+    secondary = 5,
+    accent = 6,
+
+    pub fn resolve(self: ThemeColor, theme: *const Theme) Color {
+        return @as(*const [7]Color, @ptrCast(theme))[@intFromEnum(self)];
+    }
+};
+
+/// Screen-owned theme: 7 named color slots.
+pub const Theme = extern struct {
+    text: Color,
+    base1: Color,
+    base2: Color,
+    base3: Color,
+    primary: Color,
+    secondary: Color,
+    accent: Color,
+
+    pub const nord: Theme = @bitCast([7]u32{ 0xECEFF4, 0x2E3440, 0x3B4252, 0x434C5E, 0x88C0D0, 0x81A1C1, 0xA3BE8C });
+    pub const dracula: Theme = @bitCast([7]u32{ 0xF8F8F2, 0x282A36, 0x343746, 0x424450, 0xBD93F9, 0x6272A4, 0x8BE9FD });
+    pub const ayu_mirage: Theme = @bitCast([7]u32{ 0xCCCAC2, 0x1F2430, 0x232834, 0x2A2F3A, 0x5CCFE6, 0xAAD94C, 0xFFCC66 });
+    pub const catppuccin_mocha: Theme = @bitCast([7]u32{ 0xCDD6F4, 0x1E1E2E, 0x181825, 0x11111B, 0x89B4FA, 0xB4BEFE, 0xF5C2E7 });
+    pub const catppuccin_latte: Theme = @bitCast([7]u32{ 0x4C4F69, 0xEFF1F5, 0xE6E9EF, 0xDCE0E8, 0x1E66F5, 0x7287FD, 0xEA76CB });
+};
+
 test {
     const c = Color.rgb(0xCC, 0xCA, 0xC2);
     try std.testing.expectEqual(@as(u8, 251), c.to256());
+}
+
+test "ThemeColor.resolve(&theme)" {
+    try std.testing.expectEqual(Theme.nord.text, ThemeColor.resolve(.text, &Theme.nord));
+    try std.testing.expectEqual(Theme.nord.primary, ThemeColor.resolve(.primary, &Theme.nord));
 }

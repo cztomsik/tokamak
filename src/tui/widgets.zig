@@ -11,7 +11,6 @@
 
 const std = @import("std");
 const util = @import("../util.zig");
-const Color = @import("color.zig").Color;
 const Builder = @import("builder.zig").Builder;
 const Control = @import("control.zig").Control;
 const Key = @import("context.zig").Key;
@@ -76,7 +75,7 @@ pub fn collapsible(ui: Builder, title: []const u8, open: *bool) bool {
     const ctrl = ui.control(open);
     if (ctrl.pressed()) ctrl.toggle();
 
-    if (ctrl.focused) f.fg = ui.ctx.theme.primary;
+    if (ctrl.focused) f.fg = .primary;
     f.text(ui.ctx.fmt("{s} {s}", .{ if (open.*) "▼" else "▶", title }));
 
     return open.*;
@@ -91,9 +90,8 @@ pub fn separator(ui: Builder) void {
 pub fn button(ui: Builder, lbl: []const u8) bool {
     const f = ui.next(-1, 1) orelse return false;
     const ctrl = ui.control(@as(*void, undefined));
-    const t = ui.ctx.theme;
 
-    f.fill(if (ctrl.focused) t.primary else t.accent);
+    f.fill(if (ctrl.focused) .primary else .accent);
     f.hcenter(@intCast(lbl.len)).text(lbl);
 
     if (ctrl.pressed()) {
@@ -110,7 +108,7 @@ pub fn checkbox(ui: Builder, lbl: []const u8, checked: *bool) void {
     const ctrl = ui.control(checked);
     if (ctrl.pressed()) ctrl.toggle();
 
-    if (ctrl.focused) f.fg = ui.ctx.theme.primary;
+    if (ctrl.focused) f.fg = .primary;
     f.text(ui.ctx.fmt("{s} {s}", .{ if (checked.*) "[x]" else "[ ]", lbl }));
 }
 
@@ -121,7 +119,7 @@ pub fn numberInput(ui: Builder, value: *i32, step: i32) void {
     ctrl.editNumber(); // TODO: This should also take min, max, step
     ctrl.stepNumber(-1000, 1000, step);
 
-    if (ctrl.focused) f.fg = ui.ctx.theme.primary;
+    if (ctrl.focused) f.fg = .primary;
     f.text(ui.ctx.fmt("{d}", .{value.*}));
 }
 
@@ -132,7 +130,7 @@ pub fn textInput(ui: Builder, buf: []u8, len: *usize) void {
     const cur = ui.state(usize, len.*);
     ctrl.editText(buf, len, cur);
 
-    if (ctrl.focused) f.fg = ui.ctx.theme.primary;
+    if (ctrl.focused) f.fg = .primary;
 
     const w: usize = @intCast(f.width());
     const content = buf[0..len.*];
@@ -154,7 +152,7 @@ pub fn textArea(ui: Builder, buf: []u8, len: *usize, height: i32) void {
     const cur = ui.state(usize, len.*);
     ctrl.editTextArea(buf, len, cur);
 
-    if (ctrl.focused) f.fg = ui.ctx.theme.primary;
+    if (ctrl.focused) f.fg = .primary;
     const content = buf[0..len.*];
     f.text(content);
 
@@ -217,7 +215,7 @@ pub const SelectBuilder = struct {
         const i = self.ui.container().index;
         var f = self.ui.next(-1, 1) orelse return;
 
-        if (self.ctrl.focused and self.ctrl.value.* == i) f.fg = self.ui.ctx.theme.primary;
+        if (self.ctrl.focused and self.ctrl.value.* == i) f.fg = .primary;
         f.text(self.ui.ctx.fmt("{s} {s}", .{ if (self.ctrl.value.* == i) "(*)" else "( )", lbl }));
     }
 };
@@ -228,7 +226,7 @@ pub fn slider(ui: Builder, value: *f32, step: f32) void {
     const ctrl = ui.control(value);
     ctrl.stepNumber(0, 1, step);
 
-    if (ctrl.focused) f.fg = ui.ctx.theme.primary;
+    if (ctrl.focused) f.fg = .primary;
     f.draw(0, 0, "◄");
     f.draw(f.width() - 1, 0, "►");
 
@@ -244,7 +242,7 @@ pub fn spinner(ui: Builder) void {
 
 /// Render a progress bar as a background fill, value in 0.0..1.0
 pub fn progress(ui: Builder, value: f32) void {
-    if (ui.next(-1, 1)) |f| f.hbar(value, .yellow);
+    if (ui.next(-1, 1)) |f| f.hbar(value, .secondary);
 }
 
 /// Render a full-screen overlay with z=100, always on top of other content.
@@ -257,7 +255,7 @@ pub fn overlay(ui: Builder, width: i32, height: i32) ?Builder {
 /// Render short message in always on top overlay.
 pub fn flash(ui: Builder, msg: []const u8) void {
     if (ui.overlay(48, 10)) |o| {
-        o.frame.fill(ui.ctx.theme.base3);
+        o.frame.fill(.base3);
         o.frame.border(.all);
         o.frame.sub(1, 1, 46, 8).text(msg);
         o.frame.shadow();
@@ -278,7 +276,7 @@ pub fn modal(ui: Builder, open: *bool, title: []const u8, w: i32, h: i32) ?Build
     }
 
     const m = ui.pushWithFrame(&.{-1}, ui.ctx.stack[0].frame.center(w, h)) orelse return null;
-    m.frame.fill(ui.ctx.theme.base3);
+    m.frame.fill(.base3);
     m.frame.border(.all);
     m.frame.top(1).hcenter(@intCast(title.len)).text(title);
     m.frame.shadow();
@@ -287,17 +285,16 @@ pub fn modal(ui: Builder, open: *bool, title: []const u8, w: i32, h: i32) ?Build
 
 /// Render text pinned to the bottom row of the screen, outside the layout.
 pub fn statusBar(ui: Builder, txt: []const u8) void {
-    const t = ui.ctx.theme;
     const f = ui.ctx.stack[0].frame.bottom(1);
-    f.fill(t.accent);
-    f.with("fg", t.base3).text(txt);
+    f.fill(.accent);
+    f.with("fg", .base3).text(txt);
 }
 
 /// Begin F1-F10 menu bar pinned to the bottom of the screen.
 pub fn menu(ui: Builder, n: u8) ?MenuBuilder {
     const bar = ui.pushEq(n, 1) orelse return null;
     bar.frame.rect = ui.ctx.stack[0].frame.bottom(1).rect;
-    bar.frame.fill(ui.ctx.theme.base3);
+    bar.frame.fill(.base3);
     return .{ .ui = bar };
 }
 
@@ -306,9 +303,9 @@ pub const MenuBuilder = struct {
 
     pub fn item(self: MenuBuilder, key: Key, txt: []const u8) bool {
         const f = self.ui.next(-1, 1) orelse return false;
-        f.left(2).fill(self.ui.ctx.theme.accent);
-        f.with("fg", self.ui.ctx.theme.base1).text(@tagName(key));
-        f.at(2, 0).with("fg", self.ui.ctx.theme.secondary).text(txt);
+        f.left(2).fill(.accent);
+        f.with("fg", .base1).text(@tagName(key));
+        f.at(2, 0).with("fg", .secondary).text(txt);
 
         if (self.ui.ctx.pending_key) |k| if (std.meta.eql(k, key)) {
             self.ui.ctx.next_tick = .clear;
@@ -335,8 +332,7 @@ pub const TabBuilder = struct {
     pub fn item(self: TabBuilder, lbl: []const u8) void {
         const i = self.ui.container().index;
         const f = self.ui.next(-1, 1) orelse return;
-        const t = self.ui.ctx.theme;
-        if (self.ctrl.value.* == i) f.fill(if (self.ctrl.focused) t.primary else t.base2);
+        if (self.ctrl.value.* == i) f.fill(if (self.ctrl.focused) .primary else .base2);
         f.at(1, 0).text(lbl);
     }
 };
@@ -345,7 +341,7 @@ pub const TabBuilder = struct {
 pub fn kvRow(ui: Builder, lbl: []const u8, value: []const u8) void {
     const f = ui.next(-1, 1) orelse return;
     const lw: i32 = @intCast(lbl.len + 2);
-    f.with("fg", ui.ctx.theme.accent).left(lw).text(lbl);
+    f.with("fg", .accent).left(lw).text(lbl);
     f.at(lw, 0).draw(0, 0, value);
 }
 
@@ -359,7 +355,7 @@ pub fn tree(ui: Builder, items: []const []const u8, depths: []const u8, selected
         const depth: i32 = if (i < depths.len) @intCast(depths[i]) else 0;
         const indent = depth * 2;
 
-        if (ctrl.focused and selected.* == i) f.fg = ui.ctx.theme.primary;
+        if (ctrl.focused and selected.* == i) f.fg = .primary;
         f.at(indent, 0).text(ui.ctx.fmt("{s} {s}", .{ if (selected.* == i) ">" else " ", item }));
     }
 }

@@ -1,5 +1,6 @@
 const std = @import("std");
-const Color = @import("color.zig").Color;
+const Theme = @import("theme.zig").Theme;
+const ThemeColor = @import("theme.zig").ThemeColor;
 
 pub const Feature = enum(u32) {
     /// Use a separate screen buffer so the app doesn't overwrite the shell
@@ -20,8 +21,8 @@ pub const Feature = enum(u32) {
 
 pub const Cell = struct {
     char: u21 = ' ',
-    fg: Color = .white,
-    bg: Color = .black,
+    fg: ThemeColor = .text,
+    bg: ThemeColor = .base1,
     z: i32 = 0,
 
     pub inline fn eq(a: Cell, b: Cell) bool {
@@ -66,10 +67,11 @@ pub const Buffer = struct {
 pub const Screen = struct {
     back_buffer: Buffer, // drawing target
     front_buffer: Buffer, // last flushed state (what is currently displayed)
+    theme: Theme,
     fin: std.Io.File.Reader,
     fout: std.Io.File.Writer,
     original_termios: std.posix.termios,
-    truecolor: bool = false,
+    truecolor: bool,
 
     pub fn init(self: *Screen, io: std.Io, gpa: std.mem.Allocator) !void {
         const stdin = std.Io.File.stdin();
@@ -88,6 +90,7 @@ pub const Screen = struct {
         try std.posix.tcsetattr(stdin.handle, .FLUSH, raw);
 
         // TODO: env map
+        self.truecolor = false;
         // self.truecolor = if (std.posix.getenv("COLORTERM")) |ct|
         //     std.mem.eql(u8, ct, "truecolor") or std.mem.eql(u8, ct, "24bit")
         // else
@@ -96,6 +99,7 @@ pub const Screen = struct {
         self.fin = stdin.readerStreaming(io, &.{});
         self.fout = std.Io.File.stdout().writerStreaming(io, &.{});
         self.original_termios = original;
+        self.theme = Theme.nord;
 
         // Query initial terminal size and allocate both buffers
         const size = try self.querySizeIoctl();
@@ -150,7 +154,7 @@ pub const Screen = struct {
         self.back_buffer.clear();
     }
 
-    pub fn draw(self: *Screen, x: i32, y: i32, z: i32, bytes: []const u8, fg: Color) void {
+    pub fn draw(self: *Screen, x: i32, y: i32, z: i32, bytes: []const u8, fg: ThemeColor) void {
         const w, const h = self.back_buffer.size;
         if (y < 0 or y >= h) return;
 
@@ -168,7 +172,7 @@ pub const Screen = struct {
         }
     }
 
-    pub fn splat(self: *Screen, x: i32, y: i32, z: i32, bytes: []const u8, n: i32, fg: Color) void {
+    pub fn splat(self: *Screen, x: i32, y: i32, z: i32, bytes: []const u8, n: i32, fg: ThemeColor) void {
         if (n <= 0) return;
         const view = std.unicode.Utf8View.initUnchecked(bytes);
         var it = view.iterator();
@@ -181,7 +185,7 @@ pub const Screen = struct {
         }
     }
 
-    pub fn fill(self: *Screen, x: i32, y: i32, z: i32, w: i32, bg: Color) void {
+    pub fn fill(self: *Screen, x: i32, y: i32, z: i32, w: i32, bg: ThemeColor) void {
         const bw, const bh = self.back_buffer.size;
         if (y < 0 or y >= bh or w <= 0) return;
 
@@ -209,7 +213,7 @@ pub const Screen = struct {
         // Track cursor position and active colors to avoid redundant ANSI
         // sequences for consecutive cells sharing the same attributes.
         var cursor: [2]i32 = .{ -1, -1 };
-        var current: [2]Color = undefined;
+        var current: [2]ThemeColor = undefined;
         var first = true;
 
         for (0..height) |row| {
@@ -229,9 +233,9 @@ pub const Screen = struct {
                 // Emit color only when fg or bg changes.
                 if (first or back.fg != current[0] or back.bg != current[1]) {
                     if (self.truecolor) {
-                        try w.print("\x1B[38;2;{f};48;2;{f}m", .{ back.fg, back.bg });
+                        try w.print("\x1B[38;2;{f};48;2;{f}m", .{ back.fg.resolve(&self.theme), back.bg.resolve(&self.theme) });
                     } else {
-                        try w.print("\x1B[38;5;{d};48;5;{d}m", .{ back.fg.to256(), back.bg.to256() });
+                        try w.print("\x1B[38;5;{d};48;5;{d}m", .{ back.fg.resolve(&self.theme).to256(), back.bg.resolve(&self.theme).to256() });
                     }
                     current = .{ back.fg, back.bg };
                 }

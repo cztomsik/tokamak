@@ -1,6 +1,6 @@
 const util = @import("../util.zig");
 const Screen = @import("screen.zig").Screen;
-const Color = @import("color.zig").Color;
+const ThemeColor = @import("theme.zig").ThemeColor;
 
 pub const Border = struct {
     parts: [8][]const u8,
@@ -20,7 +20,7 @@ pub const Border = struct {
 pub const Frame = struct {
     screen: *Screen,
     rect: [4]i32, // absolute x, y, w, h
-    fg: Color = .white,
+    fg: ThemeColor = .text,
     z: i8 = 0,
 
     /// Return a copy of self with one field replaced.
@@ -129,7 +129,7 @@ pub const Frame = struct {
     }
 
     /// Fill the entire frame background.
-    pub fn fill(self: Frame, bg: Color) void {
+    pub fn fill(self: Frame, bg: ThemeColor) void {
         var row: i32 = 0;
         while (row < self.rect[3]) : (row += 1) {
             self.screen.fill(self.rect[0], self.rect[1] + row, self.z, self.rect[2], bg);
@@ -177,18 +177,18 @@ pub const Frame = struct {
     /// Draw a drop shadow (1-cell offset, bottom and right).
     pub fn shadow(self: Frame) void {
         const s = self.offset(1, 1);
-        s.bottom(1).fill(.black);
-        s.right(1).fill(.black);
+        s.bottom(1).fill(.base1);
+        s.right(1).fill(.base1);
     }
 
     /// Fill the left `v` fraction of the frame (0.0..1.0).
-    pub fn hbar(self: Frame, v: f32, bg: Color) void {
+    pub fn hbar(self: Frame, v: f32, bg: ThemeColor) void {
         const filled: i32 = @intFromFloat(@as(f32, @floatFromInt(self.rect[2])) * @max(0.0, @min(1.0, v)));
         self.left(filled).fill(bg);
     }
 
     /// Fill the bottom `v` fraction of the frame (0.0..1.0).
-    pub fn vbar(self: Frame, v: f32, bg: Color) void {
+    pub fn vbar(self: Frame, v: f32, bg: ThemeColor) void {
         const filled: i32 = @intFromFloat(@as(f32, @floatFromInt(self.rect[3])) * @max(0.0, @min(1.0, v)));
         self.bottom(filled).fill(bg);
     }

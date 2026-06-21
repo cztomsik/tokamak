@@ -163,14 +163,14 @@ fn fileList(ui: Builder, commander: *Commander, panel: *Panel, height: i32) void
     while (i < panel.files.items.len and i < scroll + visible) : (i += 1) {
         var f = inner.next(-1, 1) orelse return;
         const is_sel = i == panel.selected;
-        if (ctrl.focused and is_sel) f.fg = ui.ctx.theme.primary;
-        if (is_sel) f.fill(ui.ctx.theme.primary);
+        if (ctrl.focused and is_sel) f.fg = .primary;
+        if (is_sel) f.fill(.primary);
         const file = panel.files.items[i];
         if (file.kind == .directory) {
-            if (is_sel) f.fg = ui.ctx.theme.text;
+            if (is_sel) f.fg = .text;
             f.text(ui.ctx.fmt("/{s}", .{file.name}));
         } else {
-            f.fg = if (is_sel) ui.ctx.theme.text else ui.ctx.theme.secondary;
+            f.fg = if (is_sel) .text else .secondary;
             f.text(file.name);
         }
     }

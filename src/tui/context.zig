@@ -1,5 +1,6 @@
 const std = @import("std");
-const Color = @import("color.zig").Color;
+const Color = @import("theme.zig").Color;
+const Theme = @import("theme.zig").Theme;
 const input = @import("input.zig");
 const Screen = @import("screen.zig").Screen;
 const Frame = @import("frame.zig").Frame;
@@ -119,22 +120,6 @@ test Container {
     try std.testing.expectEqual(.{ 0, 0, 25, 1 }, row.next(-1, 1).?.rect);
 }
 
-pub const Theme = extern struct {
-    text: Color,
-    base1: Color, // base bg
-    base2: Color, // darker (elevation/nesting)
-    base3: Color, // darkest
-    primary: Color,
-    secondary: Color,
-    accent: Color,
-
-    pub const nord: Theme = @bitCast([7]u32{ 0xECEFF4, 0x2E3440, 0x3B4252, 0x434C5E, 0x88C0D0, 0x81A1C1, 0xA3BE8C });
-    pub const dracula: Theme = @bitCast([7]u32{ 0xF8F8F2, 0x282A36, 0x343746, 0x424450, 0xBD93F9, 0x6272A4, 0x8BE9FD });
-    pub const ayu_mirage: Theme = @bitCast([7]u32{ 0xCCCAC2, 0x1F2430, 0x232834, 0x2A2F3A, 0x5CCFE6, 0xAAD94C, 0xFFCC66 });
-    pub const catppuccin_mocha: Theme = @bitCast([7]u32{ 0xCDD6F4, 0x1E1E2E, 0x181825, 0x11111B, 0x89B4FA, 0xB4BEFE, 0xF5C2E7 });
-    pub const catppuccin_latte: Theme = @bitCast([7]u32{ 0x4C4F69, 0xEFF1F5, 0xE6E9EF, 0xDCE0E8, 0x1E66F5, 0x7287FD, 0xEA76CB });
-};
-
 pub const Context = struct {
     gpa: std.mem.Allocator,
     arena: std.mem.Allocator,
@@ -203,14 +188,14 @@ pub const Context = struct {
                     else => {},
                 };
 
-                self.stack[0] = .{ .frame = .{ .screen = &self.screen, .rect = .{ 0, 0, self.screen.back_buffer.size[0], self.screen.back_buffer.size[1] }, .fg = self.theme.text } };
+                self.stack[0] = .{ .frame = .{ .screen = &self.screen, .rect = .{ 0, 0, self.screen.back_buffer.size[0], self.screen.back_buffer.size[1] }, .fg = .text } };
                 self.state_len = self.n_state;
                 self.n_state = 0;
                 self.n_controls = 0;
                 self.frame += 1;
 
                 self.screen.clear();
-                self.stack[0].frame.fill(self.theme.base1);
+                self.stack[0].frame.fill(.base1);
 
                 self.next_tick = .flush;
                 return .{ .render = .{ .ctx = self, .frame = &self.stack[0].frame } };

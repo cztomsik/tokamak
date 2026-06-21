@@ -1,7 +1,9 @@
 // Core types
 pub const Key = @import("tui/input.zig").Key;
 pub const Context = @import("tui/context.zig").Context;
-pub const Theme = @import("tui/context.zig").Theme;
+pub const Theme = @import("tui/theme.zig").Theme;
+pub const ThemeColor = @import("tui/theme.zig").ThemeColor;
+pub const Color = @import("tui/theme.zig").Color;
 pub const Screen = @import("tui/screen.zig").Screen;
 pub const Frame = @import("tui/frame.zig").Frame;
 pub const Container = @import("tui/context.zig").Container;
