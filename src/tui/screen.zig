@@ -104,7 +104,8 @@ pub const Screen = struct {
         // Query initial terminal size and allocate both buffers
         const size = try self.querySizeIoctl();
         self.back_buffer = try Buffer.init(gpa, size);
-        self.front_buffer = try Buffer.init(gpa, size); // all defaults = empty screen
+        self.front_buffer = try Buffer.init(gpa, size);
+        for (self.front_buffer.cells) |*c| c.char = 0; // force update
 
         // Enable default features
         try self.setFeature(.alternate_screen, true);
@@ -147,6 +148,7 @@ pub const Screen = struct {
 
             // Always re-render.
             self.front_buffer.clear();
+            for (self.front_buffer.cells) |*c| c.char = 0; // force update
         }
     }
 
