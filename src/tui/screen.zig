@@ -19,15 +19,12 @@ pub const Feature = enum(u32) {
     show_cursor = 25,
 };
 
-pub const Cell = struct {
+pub const Cell = packed struct(u64) {
     char: u21 = ' ',
+    _: u19 = 0,
     fg: ThemeColor = .text,
     bg: ThemeColor = .base1,
-    z: i32 = 0,
-
-    pub inline fn eq(a: Cell, b: Cell) bool {
-        return a.char == b.char and a.fg == b.fg and a.bg == b.bg;
-    }
+    z: i8 = 0,
 };
 
 pub const Buffer = struct {
@@ -156,7 +153,7 @@ pub const Screen = struct {
         self.back_buffer.clear();
     }
 
-    pub fn draw(self: *Screen, x: i32, y: i32, z: i32, bytes: []const u8, fg: ThemeColor) void {
+    pub fn draw(self: *Screen, x: i32, y: i32, z: i8, bytes: []const u8, fg: ThemeColor) void {
         const w, const h = self.back_buffer.size;
         if (y < 0 or y >= h) return;
 
@@ -174,7 +171,7 @@ pub const Screen = struct {
         }
     }
 
-    pub fn splat(self: *Screen, x: i32, y: i32, z: i32, bytes: []const u8, n: i32, fg: ThemeColor) void {
+    pub fn splat(self: *Screen, x: i32, y: i32, z: i8, bytes: []const u8, n: i32, fg: ThemeColor) void {
         if (n <= 0) return;
         const view = std.unicode.Utf8View.initUnchecked(bytes);
         var it = view.iterator();
@@ -187,7 +184,7 @@ pub const Screen = struct {
         }
     }
 
-    pub fn fill(self: *Screen, x: i32, y: i32, z: i32, w: i32, bg: ThemeColor) void {
+    pub fn fill(self: *Screen, x: i32, y: i32, z: i8, w: i32, bg: ThemeColor) void {
         const bw, const bh = self.back_buffer.size;
         if (y < 0 or y >= bh or w <= 0) return;
 
@@ -220,7 +217,7 @@ pub const Screen = struct {
 
         for (0..height) |row| {
             for (self.back_buffer.row(row), self.front_buffer.row(row), 0..) |back, front, col| {
-                if (back.eq(front)) continue;
+                if (back == front) continue;
 
                 const r: i32 = @intCast(row);
                 const c: i32 = @intCast(col);
