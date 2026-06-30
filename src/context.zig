@@ -106,7 +106,10 @@ pub const Context = struct {
 
         switch (@TypeOf(res)) {
             void => {
-                self.res.status = if (self.res.body.len == 0) 204 else 200;
+                // NOTE: redirect() sets 302 and such handlers are often void so we need to be explicit
+                if (self.res.status == 200 and self.res.body.len == 0) {
+                    self.res.status = 204;
+                }
             },
             std.http.Status => {
                 self.res.status = @intFromEnum(res);
