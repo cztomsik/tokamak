@@ -15,12 +15,15 @@ pub const PatchTodoReq = struct {
     is_done: ?bool = null,
 };
 
+const Config = struct {
+    db: fr.SQLite3.Options = .{ .filename = ":memory:" },
+    db_pool: fr.PoolOptions = .{ .max_count = 4 },
+    server: tk.ServerOptions = .{ .listen = .{ .port = 8080 } },
+};
+
 const App = struct {
     db_pool: fr.Pool(fr.SQLite3),
-    db_opts: fr.SQLite3.Options = .{ .filename = ":memory:" },
-    db_pool_opts: fr.PoolOptions = .{ .max_count = 4 },
     server: tk.Server,
-    server_opts: tk.ServerOptions = .{ .listen = .{ .port = 8080 } },
     routes: []const tk.Route = &.{
         // add debug logging
         tk.logger(.{}, &.{
@@ -68,7 +71,7 @@ const App = struct {
 };
 
 pub fn main(init: std.process.Init) !void {
-    try tk.app.run(init, tk.Server.start, &.{App});
+    try tk.app.run(init, tk.Server.start, &.{ Config, App });
 }
 
 fn readOne(db: *fr.Session, id: u32) !Todo {
