@@ -1,7 +1,7 @@
 const std = @import("std");
 const httpz = @import("httpz");
 const Injector = @import("injector.zig").Injector;
-const How = @import("container.zig").How;
+const Provider = @import("container.zig").Provider;
 const Context = @import("context.zig").Context;
 const Route = @import("route.zig").Route;
 
@@ -31,7 +31,7 @@ pub const Server = struct {
     injector: ?*Injector,
     http: httpz.Server(Adapter),
 
-    pub const provider: How = .factory(initWithinApp);
+    pub const provider: Provider = .factory(initWithinApp);
 
     /// Initialize a new server.
     pub fn init(io: std.Io, gpa: std.mem.Allocator, routes: []const Route, options: InitOptions) !Server {

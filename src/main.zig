@@ -39,6 +39,7 @@ pub const ShortString = @import("string.zig").ShortString;
 // Core types (DI)
 pub const Injector = @import("injector.zig").Injector;
 pub const Container = @import("container.zig").Container;
+pub const Provider = @import("container.zig").Provider;
 pub const Bundle = @import("container.zig").Bundle;
 
 // Core types (Server)

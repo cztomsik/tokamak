@@ -69,7 +69,7 @@ pub const Container = struct {
 ///
 /// Used with `Bundle.provide()`, `Bundle.override()`, and `Bundle.mock()` to
 /// control dependency initialization.
-pub const How = union(enum) {
+pub const Provider = union(enum) {
     /// If there is `T.init()`, it will be used either as a factory or as an
     /// initializer; otherwise, if the type is a struct, its fields will be
     /// filled using `injector.get(f.type)`. In other cases, a compile error
@@ -98,7 +98,7 @@ pub const How = union(enum) {
     ///
     /// NOTE: If the dep type is a mutable ptr, then you can still pass a ref to
     ///       a global var this way. Not recommended, but good to know.
-    pub fn value(val: anytype) How {
+    pub fn value(val: anytype) Provider {
         return .{ .val = .wrap(val) };
     }
 
@@ -109,21 +109,21 @@ pub const How = union(enum) {
     /// Cycles should be avoided, but you can always define an empty initializer
     /// for one of them, or use `.value(undefined)`. The former is better
     /// because you can still control the order by declaring the deps.
-    pub fn factory(fac: anytype) How {
+    pub fn factory(fac: anytype) Provider {
         return .{ .fac = .wrap(fac) };
     }
 
     /// Initialize the dependency using `try inj.call(fun)`.
     /// Like with factory, if you get into a cycle, you can either adapt the
     /// other end, or in the worst case, force `undefined`.
-    pub fn initializer(init: anytype) How {
+    pub fn initializer(init: anytype) Provider {
         return .{ .fun = .wrap(init) };
     }
 
     /// Initialize the dependency by calling a given function. The function can
     /// be fallible and it can return either its dep type or void. Either way,
     /// the dependency is considered to be initialized after this call.
-    pub fn call(fun: anytype) How {
+    pub fn call(fun: anytype) Provider {
         return if (meta.Result(fun) == void) .initializer(fun) else .factory(fun);
     }
 };
@@ -136,7 +136,7 @@ const Dep = struct {
     id: DepId = .empty,
     type: type,
     T: type, // cached Deref(type)
-    provider: How,
+    provider: Provider,
     state: union(enum) {
         instance: struct { type: type, offset: usize },
         override,
@@ -144,7 +144,7 @@ const Dep = struct {
     mask: DepMask = 0, // bitset of what we need
     next: DepId = .empty, // chain for hash collisions
 
-    fn init(comptime T: type, provider: How, state: @FieldType(Dep, "state")) Dep {
+    fn init(comptime T: type, provider: Provider, state: @FieldType(Dep, "state")) Dep {
         return .{ .type = T, .T = meta.Deref(T), .provider = provider, .state = state };
     }
 
@@ -288,7 +288,7 @@ pub const Bundle = struct {
     /// Use this to add dependencies that are not module fields. The dependency
     /// can still be overridden via `override()` or mocked via `mock()`, but any
     /// other re-definition will result in a compile error.
-    pub fn provide(self: *Bundle, comptime T: type, how: How) void {
+    pub fn provide(self: *Bundle, comptime T: type, how: Provider) void {
         self.insertDep(.init(T, how, self.allocInstance(T)));
     }
 
@@ -296,7 +296,7 @@ pub const Bundle = struct {
     /// how some dependency should be initialized. This should not be part of
     /// your regular modules, and calling it outside of the test runner will
     /// result in a compile error.
-    pub fn mock(self: *Bundle, comptime T: type, how: How) void {
+    pub fn mock(self: *Bundle, comptime T: type, how: Provider) void {
         if (!builtin.is_test) @compileError("bundle.mock() can only be used in tests");
         self.override(T, how);
     }
@@ -305,7 +305,7 @@ pub const Bundle = struct {
     /// module boundaries (last one wins). Use this sparingly, as it can make
     /// initialization order harder to follow. For post-initialization logic,
     /// prefer `addInitHook()` instead.
-    pub fn override(self: *Bundle, comptime T: type, how: How) void {
+    pub fn override(self: *Bundle, comptime T: type, how: Provider) void {
         self.insertDep(.init(T, how, .override));
     }
 
