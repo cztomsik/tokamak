@@ -135,6 +135,7 @@ const DepMask = u256;
 const Dep = struct {
     id: DepId = .empty,
     type: type,
+    T: type, // cached Deref(type)
     provider: How,
     state: union(enum) {
         instance: struct { type: type, offset: usize },
@@ -142,6 +143,10 @@ const Dep = struct {
     },
     mask: DepMask = 0, // bitset of what we need
     next: DepId = .empty, // chain for hash collisions
+
+    fn init(comptime T: type, provider: How, state: @FieldType(Dep, "state")) Dep {
+        return .{ .type = T, .T = meta.Deref(T), .provider = provider, .state = state };
+    }
 
     fn desc(self: Dep) []const u8 {
         return @typeName(self.type) ++ " " ++ @tagName(self.provider);
@@ -182,7 +187,7 @@ const Dep = struct {
 
         // TODO: not 100% sure if this is always the case
         if (std.meta.hasMethod(self.type, "deinit")) {
-            inj.call(meta.Deref(self.type).deinit) catch unreachable;
+            inj.call(self.T.deinit) catch unreachable;
 
             // TODO: this didn't work properly with heap-allocated services
             // (we'd need to also check if ptr is ** and then deref once)
@@ -258,14 +263,14 @@ pub const Bundle = struct {
         const mod = @typeInfo(M).@"struct";
         for (mod.field_names, mod.field_types, mod.field_attrs) |f, ft, fa| {
             // Add "inline" inst (without alloc)
-            self.insertDep(.{
-                .state = .{ .instance = .{
+            self.insertDep(.init(
+                ft,
+                if (fa.defaultValue(ft)) |v| .value(v) else .auto,
+                .{ .instance = .{
                     .type = ft,
                     .offset = if (fa.@"comptime") start else start + @offsetOf(M, f),
                 } },
-                .type = ft,
-                .provider = if (fa.defaultValue(ft)) |v| .value(v) else .auto,
-            });
+            ));
             self.n_inst += 1;
 
             // Auto-add &T.interface, if present
@@ -284,11 +289,7 @@ pub const Bundle = struct {
     /// can still be overridden via `override()` or mocked via `mock()`, but any
     /// other re-definition will result in a compile error.
     pub fn provide(self: *Bundle, comptime T: type, how: How) void {
-        self.insertDep(.{
-            .state = self.allocInstance(T),
-            .type = T,
-            .provider = how,
-        });
+        self.insertDep(.init(T, how, self.allocInstance(T)));
     }
 
     /// Only allowed during a test run. Use this in your test module to override
@@ -305,11 +306,7 @@ pub const Bundle = struct {
     /// initialization order harder to follow. For post-initialization logic,
     /// prefer `addInitHook()` instead.
     pub fn override(self: *Bundle, comptime T: type, how: How) void {
-        self.insertDep(.{
-            .state = .override,
-            .type = T,
-            .provider = how,
-        });
+        self.insertDep(.init(T, how, .override));
     }
 
     /// Adds a reference to a struct field as a separate dependency. Use this if
@@ -360,13 +357,13 @@ pub const Bundle = struct {
         //     @compileError("Unused override for " ++ @typeName(dep.type));
         // }
 
-        if (dep.provider == .auto and @hasDecl(meta.Deref(dep.type), "provider")) {
-            dep.provider = meta.Deref(dep.type).provider;
+        if (dep.provider == .auto and @hasDecl(dep.T, "provider")) {
+            dep.provider = dep.T.provider;
         }
 
         if (dep.provider == .auto or dep.provider == .init) {
-            if (std.meta.hasFn(meta.Deref(dep.type), "init")) {
-                dep.provider = .call(@field(meta.Deref(dep.type), "init"));
+            if (std.meta.hasFn(dep.T, "init")) {
+                dep.provider = .call(@field(dep.T, "init"));
             } else if (dep.provider == .init) {
                 @compileError("Type " ++ @typeName(dep.type) ++ " does not have an init() method");
             }
@@ -439,7 +436,7 @@ pub const Bundle = struct {
 
         while (idx != .empty) {
             const dep = &self.deps.buf[@intFromEnum(idx)];
-            if (meta.Deref(dep.type) == expected) return dep;
+            if (dep.T == expected) return dep;
             idx = dep.next;
         } else return null;
     }
