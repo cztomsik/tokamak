@@ -131,6 +131,7 @@ pub const How = union(enum) {
 const DepId = enum(u8) { empty = 255, _ };
 const DepMask = u256;
 
+// A single dependency entry in the graph: type, provider, inline offset, mask.
 const Dep = struct {
     id: DepId = .empty,
     type: type,
@@ -200,7 +201,7 @@ const Dep = struct {
     }
 };
 
-// internal, always runtime
+// Runtime lifecycle hook (init or deinit) registered at comptime.
 const Hook = struct {
     kind: enum { init, deinit },
     fun: meta.ComptimeVal,
@@ -211,7 +212,7 @@ const Hook = struct {
     }
 };
 
-// internal
+// An operation in the compiled init/deinit sequence.
 const Op = union(enum) {
     dep: Dep,
     hook: Hook,
@@ -226,7 +227,7 @@ const Op = union(enum) {
 /// Compile-time dependency graph builder.
 pub const Bundle = struct {
     deps: Buf(Dep),
-    index: [256]DepId = @splat(.empty),
+    index: [256]DepId = @splat(.empty), // hash: type hash -> DepId chain
     runtime_hooks: Buf(Hook), // when the deps are ready / before they are gone
     n_inst: usize = 0,
     n_data: usize = 0,
@@ -331,14 +332,13 @@ pub const Bundle = struct {
         self.runtime_hooks.push(.{ .kind = .deinit, .fun = .wrap(fun) });
     }
 
-    // TODO: public?
+    // Build the dep graph, resolve providers, topo-sort, and generate the final type.
     fn compile(comptime mods: []const type) type {
         var bundle = Bundle{
             .deps = .initComptime(255),
             .runtime_hooks = .initComptime(64),
         };
 
-        // Build the initial graph using provided modules
         for (mods) |M| {
             bundle.addModule(M);
         }
@@ -348,7 +348,7 @@ pub const Bundle = struct {
         }
 
         for (bundle.runtime_hooks.items()) |*hook| {
-            for (@typeInfo(hook.fun.type).@"fn".param_types) |P| bundle.mark(P orelse continue, &hook.mask);
+            for (@typeInfo(hook.fun.type).@"fn".param_types) |P| bundle.mark(&hook.mask, P orelse continue);
         }
 
         return CompiledBundle(bundle.render(), bundle.n_inst, bundle.n_data, bundle.max_align);
@@ -383,17 +383,18 @@ pub const Bundle = struct {
         }
 
         switch (dep.provider) {
-            .autowire => for (std.meta.fieldNames(dep.type), std.meta.fieldTypes(dep.type)) |f, ft| if (!std.mem.eql(u8, f, "interface")) self.mark(ft, &dep.mask),
+            .autowire => for (std.meta.fieldNames(dep.type), std.meta.fieldTypes(dep.type)) |f, ft| if (!std.mem.eql(u8, f, "interface")) self.mark(&dep.mask, ft),
             .val => {},
-            .fac => |f| for (@typeInfo(f.type).@"fn".param_types) |P| self.mark(P orelse continue, &dep.mask),
+            .fac => |f| for (@typeInfo(f.type).@"fn".param_types) |P| self.mark(&dep.mask, P orelse continue),
             // NOTE: `fun` usually takes `*T` as first arg, but it's not required anymore
-            .fun => |f| for (@typeInfo(f.type).@"fn".param_types[1..]) |P| if (meta.Deref(P orelse continue) != dep.type) self.mark(P.?, &dep.mask),
-            .fref => |r| self.mark(r[0], &dep.mask),
+            .fun => |f| for (@typeInfo(f.type).@"fn".param_types[1..]) |P| if (meta.Deref(P orelse continue) != dep.type) self.mark(&dep.mask, P.?),
+            .fref => |r| self.mark(&dep.mask, r[0]),
             else => unreachable,
         }
     }
 
-    fn mark(self: *Bundle, comptime T: type, mask: *DepMask) void {
+    // Mark T as a dep (set bit in mask). Skips builtins (Container, Injector, Allocator).
+    fn mark(self: *Bundle, mask: *DepMask, comptime T: type) void {
         // Builtins
         if (T == *Container or T == *Injector or T == std.mem.Allocator) return;
 
@@ -402,6 +403,7 @@ pub const Bundle = struct {
         }
     }
 
+    // Topo-sort into a linear Op sequence. Fails with compile error on cycle.
     fn render(self: *Bundle) []const Op {
         var buf = Buf(Op).initComptime(self.deps.len + self.runtime_hooks.len);
         var ready: DepMask = 0;
@@ -442,6 +444,7 @@ pub const Bundle = struct {
         } else return null;
     }
 
+    // Insert into (comptime) hash table. Duplicate instances -> compile error. Override -> replace provider.
     fn insertDep(self: *Bundle, dep: Dep) void {
         if (self.findDep(dep.type)) |existing| {
             // Check unique
@@ -477,6 +480,7 @@ pub const Bundle = struct {
         self.index[h] = new_dep.id;
     }
 
+    // Allocate space in the inline data buffer for type T.
     fn allocInstance(self: *Bundle, comptime T: type) @FieldType(Dep, "state") {
         const offset = std.mem.alignForward(usize, self.n_data, @alignOf(T));
         self.n_inst += 1;
@@ -486,11 +490,13 @@ pub const Bundle = struct {
     }
 };
 
+// Generates the CompiledBundle type: refs[] for Injector, data[] for inline instances.
 fn CompiledBundle(comptime ops: []const Op, comptime n_inst: usize, comptime n_data: usize, comptime max_align: usize) type {
     return struct {
-        refs: [n_inst + 2]Ref,
+        refs: [n_inst + 2]Ref, // Injector refs, grows as deps init
         data: [n_data]u8 align(max_align),
 
+        // Run the compiled init sequence. On error, cleanup partial state.
         fn init(self: *@This(), ct: *Container) !void {
             // We NEED to use ct.inj directly, because if anyone saves this ptr, it needs to stay valid (ie. not be on the stack)
             const inj = &ct.injector;
