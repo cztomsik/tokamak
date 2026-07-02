@@ -76,10 +76,10 @@ pub const How = union(enum) {
     /// will be raised.
     auto,
 
-    /// Explicitly use `T.init()` method.
+    /// Explicitly use `T.init()` function.
     ///
     /// Supports both factory style (`fn() T`) and initializer style (`fn(*T) void`).
-    /// Compile error if the type has no `init()` method.
+    /// Compile error if the type has no `init()` function.
     init,
 
     /// Initialize by injecting all struct fields.
@@ -113,15 +113,18 @@ pub const How = union(enum) {
         return .{ .fac = .wrap(fac) };
     }
 
-    /// Initialize the dependency using `try inj.callArgs(fun, .{ ptr, ...deps })`.
+    /// Initialize the dependency using `try inj.call(fun)`.
     /// Like with factory, if you get into a cycle, you can either adapt the
     /// other end, or in the worst case, force `undefined`.
     pub fn initializer(init: anytype) How {
         return .{ .fun = .wrap(init) };
     }
 
-    fn method(meth: anytype) How {
-        return if (meta.Result(meth) == void) .initializer(meth) else .factory(meth);
+    /// Initialize the dependency by calling a given function. The function can
+    /// be fallible and it can return either its dep type or void. Either way,
+    /// the dependency is considered to be initialized after this call.
+    pub fn call(fun: anytype) How {
+        return if (meta.Result(fun) == void) .initializer(fun) else .factory(fun);
     }
 };
 
@@ -373,8 +376,8 @@ pub const Bundle = struct {
         // }
 
         if (dep.provider == .auto or dep.provider == .init) {
-            if (std.meta.hasMethod(dep.type, "init")) {
-                dep.provider = .method(@field(meta.Deref(dep.type), "init"));
+            if (std.meta.hasFn(meta.Deref(dep.type), "init")) {
+                dep.provider = .call(@field(meta.Deref(dep.type), "init"));
             } else if (dep.provider == .init) {
                 @compileError("Type " ++ @typeName(dep.type) ++ " does not have an init() method");
             }
@@ -394,8 +397,8 @@ pub const Bundle = struct {
             .autowire => for (std.meta.fieldNames(dep.type), std.meta.fieldTypes(dep.type)) |f, ft| if (!std.mem.eql(u8, f, "interface")) self.mark(ft, &dep.mask),
             .val => {},
             .fac => |f| for (@typeInfo(f.type).@"fn".param_types) |P| self.mark(P orelse continue, &dep.mask),
-            // TODO: maybe we can lift the first-arg constraint for initializers and only check p.type != dep.type?
-            .fun => |f| for (@typeInfo(f.type).@"fn".param_types[1..]) |P| self.mark(P orelse continue, &dep.mask),
+            // NOTE: `fun` usually takes `*T` as first arg, but it's not required anymore
+            .fun => |f| for (@typeInfo(f.type).@"fn".param_types[1..]) |P| if (meta.Deref(P orelse continue) != dep.type) self.mark(P.?, &dep.mask),
             .fref => |r| self.mark(r[0], &dep.mask),
             else => unreachable,
         }
