@@ -1,5 +1,6 @@
 const builtin = @import("builtin");
 const std = @import("std");
+const meta = @import("meta.zig");
 const serde = @import("serde.zig");
 
 /// A simple string type with SSO optimization. Strings up to 15 bytes are
@@ -132,7 +133,7 @@ pub const ShortString = extern struct {
     }
 
     pub fn eq(a: ShortString, b: ShortString) bool {
-        return @as(u128, @bitCast(a)) == @as(u128, @bitCast(b));
+        return meta.transmute(u128, a) == meta.transmute(u128, b);
     }
 };
 
@@ -217,18 +218,18 @@ test "json" {
 
     const p = try std.json.parseFromSlice(String, std.testing.allocator, "\"foo\"", .{});
     defer p.deinit();
-    try std.testing.expectEqual(s, p.value);
+    try std.testing.expect(s.eq(p.value));
 }
 
 test "little-endian layout" {
     const data: [255]u8 = undefined;
     const s: String = .initComptime(&data);
 
-    const num: [2]u64 = @bitCast(s);
+    const num = meta.transmute([2]u64, s);
     try std.testing.expectEqual(255 << 1, num[0]);
     try std.testing.expectEqual(@intFromPtr(&data), num[1]);
 
-    const mem: [16]u8 = @bitCast(s);
+    const mem = meta.transmute([16]u8, s);
     try std.testing.expectEqual(254, mem[0]);
     try std.testing.expectEqual(1, mem[1]);
 }

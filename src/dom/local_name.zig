@@ -1,4 +1,5 @@
 const std = @import("std");
+const meta = @import("../meta.zig");
 const ShortString = @import("../string.zig").ShortString;
 
 // TODO: arbitrary tag names/attributes (len > 15)
@@ -10,7 +11,7 @@ pub const LocalName = enum(u128) {
 
     pub fn parse(local_name: []const u8) LocalName {
         const x = ShortString.init(local_name) orelse ShortString.initComptime("unknown");
-        const raw: u128 = @bitCast(x);
+        const raw = meta.transmute(u128, x);
         return @enumFromInt(raw);
     }
 

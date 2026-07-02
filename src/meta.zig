@@ -206,6 +206,7 @@ pub inline fn hasDecl(comptime T: type, comptime name: []const u8) bool {
         else => false,
     };
 }
+
 pub fn fnParams(comptime fun: anytype) []const type {
     const info = @typeInfo(@TypeOf(fun));
     if (info != .@"fn") @compileError("Expected a function, got " ++ @typeName(@TypeOf(fun)));
@@ -214,6 +215,12 @@ pub fn fnParams(comptime fun: anytype) []const type {
     var buf = util.Buf(type).initComptime(params.len);
     for (params) |pt| buf.push(pt.?);
     return buf.finish();
+}
+
+// TODO: avoid using this
+pub inline fn transmute(comptime T: type, val: anytype) T {
+    const tmp: *const T = @ptrCast(@alignCast(&val));
+    return tmp.*;
 }
 
 // TODO: move somewhere else?

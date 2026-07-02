@@ -1,4 +1,5 @@
 const std = @import("std");
+const meta = @import("../meta.zig");
 
 pub const Color = enum(u32) {
     black = 0x000000,
@@ -91,11 +92,15 @@ pub const Theme = extern struct {
     secondary: Color,
     accent: Color,
 
-    pub const nord: Theme = @bitCast([7]u32{ 0xECEFF4, 0x2E3440, 0x3B4252, 0x434C5E, 0x88C0D0, 0x81A1C1, 0xA3BE8C });
-    pub const dracula: Theme = @bitCast([7]u32{ 0xF8F8F2, 0x282A36, 0x343746, 0x424450, 0xBD93F9, 0x6272A4, 0x8BE9FD });
-    pub const ayu_mirage: Theme = @bitCast([7]u32{ 0xCCCAC2, 0x1F2430, 0x232834, 0x2A2F3A, 0x5CCFE6, 0xAAD94C, 0xFFCC66 });
-    pub const catppuccin_mocha: Theme = @bitCast([7]u32{ 0xCDD6F4, 0x1E1E2E, 0x181825, 0x11111B, 0x89B4FA, 0xB4BEFE, 0xF5C2E7 });
-    pub const catppuccin_latte: Theme = @bitCast([7]u32{ 0x4C4F69, 0xEFF1F5, 0xE6E9EF, 0xDCE0E8, 0x1E66F5, 0x7287FD, 0xEA76CB });
+    pub fn theme(colors: [7]u32) Theme {
+        return meta.transmute(Theme, colors);
+    }
+
+    pub const nord: Theme = .theme(.{ 0xECEFF4, 0x2E3440, 0x3B4252, 0x434C5E, 0x88C0D0, 0x81A1C1, 0xA3BE8C });
+    pub const dracula: Theme = .theme(.{ 0xF8F8F2, 0x282A36, 0x343746, 0x424450, 0xBD93F9, 0x6272A4, 0x8BE9FD });
+    pub const ayu_mirage: Theme = .theme(.{ 0xCCCAC2, 0x1F2430, 0x232834, 0x2A2F3A, 0x5CCFE6, 0xAAD94C, 0xFFCC66 });
+    pub const catppuccin_mocha: Theme = .theme(.{ 0xCDD6F4, 0x1E1E2E, 0x181825, 0x11111B, 0x89B4FA, 0xB4BEFE, 0xF5C2E7 });
+    pub const catppuccin_latte: Theme = .theme(.{ 0x4C4F69, 0xEFF1F5, 0xE6E9EF, 0xDCE0E8, 0x1E66F5, 0x7287FD, 0xEA76CB });
 };
 
 test {

@@ -104,7 +104,7 @@ pub fn serialize(writer: anytype, value: anytype) Error!void {
             .slice => serializeSlice(writer, value),
             else => @compileError("unsupported type: " ++ @typeName(T)),
         },
-        .type, .noreturn, .undefined, .@"fn", .@"opaque", .frame, .@"anyframe", .vector => @compileError("unsupported type: " ++ @typeName(T)),
+        .type, .noreturn, .undefined, .@"fn", .@"opaque", .frame, .@"anyframe", .vector, .spirv => @compileError("unsupported type: " ++ @typeName(T)),
     };
 }
 
