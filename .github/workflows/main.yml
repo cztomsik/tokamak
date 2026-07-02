@@ -12,7 +12,7 @@ jobs:
       - uses: mlugg/setup-zig@v2.2.1
         with:
           mirror: 'https://pkg.hexops.org/zig'
-          version: '0.17.0-dev.657+2faf8debf'
+          version: '0.17.0-dev.1158+1d1193aa7'
 
       - run: zig build test --summary all
   
@@ -24,7 +24,7 @@ jobs:
       - uses: mlugg/setup-zig@v2.2.1
         with:          
           mirror: 'https://pkg.hexops.org/zig'
-          version: '0.17.0-dev.657+2faf8debf'
+          version: '0.17.0-dev.1158+1d1193aa7'
 
       - name: Check examples
         run: |
