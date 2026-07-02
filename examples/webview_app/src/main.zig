@@ -9,10 +9,26 @@ const App = struct {
     routes: []const tk.Route = &.{
         .get("/*", tk.static.dir("public", .{})),
         .get("/api/hello", hello),
+        .get("/api/sse", sse),
     },
 
     fn hello() ![]const u8 {
         return "Hello, world!";
+    }
+
+    fn sse(io: std.Io) tk.EventStream(Ticker) {
+        return .{ .impl = .{ .io = io } };
+    }
+};
+
+const Ticker = struct {
+    io: std.Io,
+    count: u64 = 0,
+
+    pub fn next(self: *Ticker) !?u64 {
+        try std.Io.sleep(self.io, .fromMilliseconds(100), .awake);
+        self.count += 1;
+        return self.count;
     }
 };
 

@@ -189,48 +189,48 @@ pub const Context = struct {
 /// meta.dupe() and then run in a newly created thread. Every next() result
 /// will be JSON stringified and sent as SSE event.
 pub fn EventStream(comptime T: type) type {
-    const Cx = struct { *std.heap.ArenaAllocator, T };
+    const Cx = struct { std.Io, *std.heap.ArenaAllocator, T };
 
     return struct {
         impl: T,
 
-        pub const jsonSchema: Schema = Schema.forType(meta.Result(T.next));
+        pub const jsonSchema: Schema = .schema(meta.Result(T.next));
 
         pub fn sendResponse(self: @This(), ctx: *Context) !void {
-            const allocator = ctx.server.allocator;
+            const gpa = ctx.server.gpa;
 
-            const arena = try allocator.create(std.heap.ArenaAllocator);
-            errdefer allocator.destroy(arena);
+            const arena = try gpa.create(std.heap.ArenaAllocator);
+            errdefer gpa.destroy(arena);
 
-            arena.* = .init(allocator);
+            arena.* = .init(gpa);
             errdefer arena.deinit();
 
             const clone = try meta.dupe(arena.allocator(), self.impl);
-            try ctx.res.startEventStream(Cx{ arena, clone }, run);
+            try ctx.res.startEventStream(Cx{ ctx.server.http.io, arena, clone }, run);
         }
 
-        fn run(cx: Cx, stream: std.net.Stream) void {
-            const arena, var impl = cx;
+        fn run(cx: Cx, stream: std.Io.net.Stream) void {
+            const io, const arena, var impl = cx;
 
             defer {
                 if (comptime std.meta.hasMethod(T, "deinit")) {
                     impl.deinit();
                 }
 
-                stream.close();
+                stream.close(io);
                 arena.deinit();
                 arena.child_allocator.destroy(arena);
             }
 
             while (impl.next()) |ev| {
-                sendEvent(stream, ev orelse break) catch break;
+                sendEvent(io, stream, ev orelse break) catch break;
             } else |e| {
-                sendEvent(stream, .{ .@"error" = @errorName(e) }) catch {};
+                sendEvent(io, stream, .{ .@"error" = @errorName(e) }) catch {};
             }
         }
 
-        fn sendEvent(stream: std.net.Stream, event: anytype) !void {
-            var sw = stream.writer(&.{});
+        fn sendEvent(io: std.Io, stream: std.Io.net.Stream, event: anytype) !void {
+            var sw = stream.writer(io, &.{});
             const writer = &sw.interface;
 
             try writer.writeAll("data: ");
