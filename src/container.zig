@@ -5,11 +5,11 @@
 // - [x] introduce one `M.configure(*tk.Bundle)` which can be used for everything (called in **comptime**)
 // - [x] check that deps are unique, make mods mostly order-independent (except mock/override)
 // - [x] introduce init/deinit runtime hooks (in **addition to** providers)
-// - [x] introduce comptime hooks (postprocessing, validation, scanning, ...)
 // - [x] decide if we want fallback/lazy (we don't)
 // - [x] interfaces (intrusive)
 // - [x] split to several meaningful commits (meta, impl, examples, readme, ...)
 // - [x] include this list in the PR description & merge it
+// - [x] remove comptime hooks; honor `T.provider`
 
 const builtin = @import("builtin");
 const std = @import("std");
@@ -227,7 +227,6 @@ const Op = union(enum) {
 pub const Bundle = struct {
     deps: Buf(Dep),
     index: [256]DepId = @splat(.empty),
-    compile_hooks: Buf(meta.ComptimeVal), // before the compilation
     runtime_hooks: Buf(Hook), // when the deps are ready / before they are gone
     n_inst: usize = 0,
     n_data: usize = 0,
@@ -320,14 +319,6 @@ pub const Bundle = struct {
         self.provide(*@FieldType(T, field), .{ .fref = .{ T, field } });
     }
 
-    /// Registers a function to be called during comptime, when all the modules
-    /// are added and configured but before any dependency resolution. Can be
-    /// used for validation and post-processing, i.e., for walking the
-    /// `[]const Route` tree and checking if we have all the deps available.
-    pub fn addCompileHook(self: *Bundle, comptime fun: anytype) void {
-        self.compile_hooks.push(.wrap(fun));
-    }
-
     /// Registers a function to be called during container initialization, as
     /// soon as all its deps are ready.
     pub fn addInitHook(self: *Bundle, comptime fun: anytype) void {
@@ -344,18 +335,12 @@ pub const Bundle = struct {
     fn compile(comptime mods: []const type) type {
         var bundle = Bundle{
             .deps = .initComptime(255),
-            .compile_hooks = .initComptime(64),
             .runtime_hooks = .initComptime(64),
         };
 
         // Build the initial graph using provided modules
         for (mods) |M| {
             bundle.addModule(M);
-        }
-
-        // Allow for some post-processing
-        for (bundle.compile_hooks.items()) |hook| {
-            hook.unwrap()(&bundle);
         }
 
         for (bundle.deps.items()) |*dep| {
@@ -374,6 +359,10 @@ pub const Bundle = struct {
         // if (dep.state == .override) {
         //     @compileError("Unused override for " ++ @typeName(dep.type));
         // }
+
+        if (dep.provider == .auto and @hasDecl(meta.Deref(dep.type), "provider")) {
+            dep.provider = meta.Deref(dep.type).provider;
+        }
 
         if (dep.provider == .auto or dep.provider == .init) {
             if (std.meta.hasFn(meta.Deref(dep.type), "init")) {

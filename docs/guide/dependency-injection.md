@@ -137,11 +137,39 @@ const AppModule = struct {
 
 Initialization strategies:
 
-- `.auto` - Automatic initialization
+- `.auto` - Automatic initialization (see resolution chain below)
 - `.init` - Use `T.init()` method
 - `.autowire` - Inject all struct fields
-- `.factory(fn)` - Custom factory function
+- `.factory(fn)` - Custom factory function (returns `T`)
+- `.initializer(fn)` - Custom initializer function (receives `*T`, returns `void`)
+- `.call(fn)` - Auto-detects factory vs initializer based on return type
 - `.value(v)` - Compile-time value
+
+### Resolution Chain for `.auto`
+
+When a dependency is registered with `.auto`, the container resolves it in this order:
+
+1. **`T.provider`** — if the type declares `pub const provider: How`, it takes precedence
+2. **`T.init()`** — falls back to the `init()` method if present
+3. **`autowire`** — injects all struct fields by type
+
+This means you can override the **default** behavior for any type by adding a `provider` declaration:
+
+```zig
+const MyService = struct {
+    name: []const u8 = "default",
+
+    // Use a custom factory instead of autowiring
+    pub const provider: tk.How = .factory(createService);
+
+    fn createService() @This() {
+        return .{ .name = "custom" };
+    }
+};
+```
+
+Note that you can still `.override()` programatically in `M.configure()` if you
+need to avoid `T.provider` for any reason (ie. mocking).
 
 ## Testing with Mocks
 

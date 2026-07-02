@@ -1,6 +1,7 @@
 const std = @import("std");
 const httpz = @import("httpz");
 const Injector = @import("injector.zig").Injector;
+const How = @import("container.zig").How;
 const Context = @import("context.zig").Context;
 const Route = @import("route.zig").Route;
 
@@ -25,14 +26,16 @@ pub const ListenOptions = struct {
 
 /// A simple HTTP server with dependency injection.
 pub const Server = struct {
-    allocator: std.mem.Allocator,
+    gpa: std.mem.Allocator,
     routes: []const Route,
     injector: ?*Injector,
     http: httpz.Server(Adapter),
 
+    pub const provider: How = .factory(initWithinApp);
+
     /// Initialize a new server.
-    pub fn init(io: std.Io, allocator: std.mem.Allocator, routes: []const Route, options: InitOptions) !Server {
-        const http = try httpz.Server(Adapter).init(io, allocator, .{
+    pub fn init(io: std.Io, gpa: std.mem.Allocator, routes: []const Route, options: InitOptions) !Server {
+        const http = try httpz.Server(Adapter).init(io, gpa, .{
             .address = .{ .ip = .{ .ip4 = try .parse(options.listen.hostname, options.listen.port) } },
             .workers = options.workers,
             .request = options.request,
@@ -44,11 +47,18 @@ pub const Server = struct {
         errdefer http.deinit();
 
         return .{
-            .allocator = allocator,
+            .gpa = gpa,
             .routes = routes,
             .injector = options.injector,
             .http = http,
         };
+    }
+
+    pub fn initWithinApp(io: std.Io, gpa: std.mem.Allocator, routes: []const Route, inj: *Injector) !Server {
+        var opts: InitOptions = inj.find(InitOptions) orelse .{};
+        opts.injector = inj;
+
+        return init(io, gpa, routes, opts);
     }
 
     /// Deinitialize the server.
