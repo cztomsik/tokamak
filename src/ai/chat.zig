@@ -41,7 +41,8 @@ pub const Request = struct {
     response_format: ?struct {
         type: []const u8,
     } = null,
-    max_completion_tokens: u32 = 256,
+    reasoning_effort: ?enum { none, minimal, low, medium, high, xhigh } = null,
+    max_completion_tokens: u32 = 4096,
     temperature: ?f32 = null,
     top_p: ?f32 = null,
 };
@@ -182,7 +183,7 @@ test "serde" {
         \\      "content": "Hello"
         \\    }
         \\  ],
-        \\  "max_completion_tokens": 256
+        \\  "max_completion_tokens": 4096
         \\}
     );
 
@@ -254,7 +255,7 @@ test "serde" {
         \\      }
         \\    }
         \\  ],
-        \\  "max_completion_tokens": 256,
+        \\  "max_completion_tokens": 4096,
         \\  "temperature": 0
         \\}
     );
