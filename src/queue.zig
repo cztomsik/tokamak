@@ -115,9 +115,9 @@ pub const ShmQueue = struct {
     const Slot = struct {
         id: std.atomic.Value(JobId),
         scheduled_at: i64,
-        name_end: u8,
-        key_end: u8,
-        data_end: u8,
+        name_end: u16,
+        key_end: u16,
+        data_end: u16,
         state: JobState,
         buf: [BUF_LEN]u8,
     };
@@ -125,14 +125,14 @@ pub const ShmQueue = struct {
     comptime {
         // Check sizes
         std.debug.assert(@sizeOf(Header) == 64);
-        std.debug.assert(@sizeOf(Slot) == 256);
+        std.debug.assert(@sizeOf(Slot) == 512);
 
         // Ensure Slot array is properly aligned when placed after Header
         std.debug.assert(@sizeOf(Header) % @alignOf(Slot) == 0);
     }
 
-    const VERSION: u32 = 3;
-    const BUF_LEN = 236;
+    const VERSION: u32 = 5;
+    const BUF_LEN = 489;
     const FREE: JobId = 0;
 
     /// Initialize the queue in place. The caller must ensure `self` is at a
