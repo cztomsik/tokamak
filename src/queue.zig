@@ -20,28 +20,16 @@ pub const JobInfo = struct {
     state: JobState = .pending,
 };
 
-pub const Stats = struct {
-    submitted: u64 = 0,
-    claimed: u64 = 0,
-    finished: u64 = 0,
-};
-
 pub const Queue = struct {
     vtable: *const VTable,
 
     pub const VTable = struct {
         submit: *const fn (*Queue, JobInfo) anyerror!?JobId,
         claim: *const fn (*Queue, std.mem.Allocator) anyerror!?JobInfo,
-        finish: *const fn (*Queue, JobId) anyerror!bool,
+        remove: *const fn (*Queue, JobId) anyerror!bool,
         clear: *const fn (*Queue) anyerror!void,
-        len: *const fn (*Queue) anyerror!usize,
-        stats: *const fn (*Queue) anyerror!Stats,
         list: *const fn (*Queue, std.mem.Allocator) anyerror![]JobInfo,
     };
-
-    pub fn len(self: *Queue) !usize {
-        return self.vtable.len(self);
-    }
 
     pub fn submit(self: *Queue, job: JobInfo) !?JobId {
         return self.vtable.submit(self, job);
@@ -51,8 +39,8 @@ pub const Queue = struct {
         return self.vtable.claim(self, arena);
     }
 
-    pub fn finish(self: *Queue, id: JobId) !bool {
-        return self.vtable.finish(self, id);
+    pub fn remove(self: *Queue, id: JobId) !bool {
+        return self.vtable.remove(self, id);
     }
 
     pub fn clear(self: *Queue) !void {
@@ -61,10 +49,6 @@ pub const Queue = struct {
 
     pub fn list(self: *Queue, arena: std.mem.Allocator) ![]JobInfo {
         return self.vtable.list(self, arena);
-    }
-
-    pub fn stats(self: *Queue) !Stats {
-        return self.vtable.stats(self);
     }
 };
 
@@ -104,12 +88,7 @@ pub const ShmQueue = struct {
         version: u32 = VERSION,
         next_id: std.atomic.Value(JobId) = .init(1),
         capacity: u32,
-        stats: extern struct {
-            submitted: std.atomic.Value(u64) = .init(0),
-            claimed: std.atomic.Value(u64) = .init(0),
-            finished: std.atomic.Value(u64) = .init(0),
-        } = .{},
-        _: [16]u8 = undefined,
+        _: [44]u8 = undefined,
     };
 
     const Slot = struct {
@@ -143,13 +122,11 @@ pub const ShmQueue = struct {
         self.job_timeout = config.job_timeout;
         self.interface = .{
             .vtable = &.{
-                .len = len,
                 .submit = submit,
                 .claim = claim,
-                .finish = finish,
+                .remove = remove,
                 .clear = clear,
                 .list = list,
-                .stats = stats,
             },
         };
 
@@ -186,18 +163,6 @@ pub const ShmQueue = struct {
         self.shm.deinit(self.io);
     }
 
-    fn len(queue: *Queue) !usize {
-        const self: *ShmQueue = @fieldParentPtr("interface", queue);
-        self.mutex.lock(self.io);
-        defer self.mutex.unlock(self.io);
-
-        var n: usize = 0;
-        for (self.slots) |*s| {
-            if (s.id.load(.acquire) != FREE) n += 1;
-        }
-        return n;
-    }
-
     fn submit(queue: *Queue, job: JobInfo) !?JobId {
         const self: *ShmQueue = @fieldParentPtr("interface", queue);
         self.mutex.lock(self.io);
@@ -229,7 +194,6 @@ pub const ShmQueue = struct {
 
                 const id = self.header.next_id.fetchAdd(1, .seq_cst);
                 s.id.store(id, .release);
-                _ = self.header.stats.submitted.fetchAdd(1, .release);
 
                 return id;
             }
@@ -282,7 +246,6 @@ pub const ShmQueue = struct {
             // Mark as running
             s.state = .running;
             s.scheduled_at = now;
-            _ = self.header.stats.claimed.fetchAdd(1, .release);
 
             return copy;
         }
@@ -290,7 +253,7 @@ pub const ShmQueue = struct {
         return null;
     }
 
-    fn finish(queue: *Queue, id: JobId) !bool {
+    fn remove(queue: *Queue, id: JobId) !bool {
         const self: *ShmQueue = @fieldParentPtr("interface", queue);
         self.mutex.lock(self.io);
         defer self.mutex.unlock(self.io);
@@ -298,7 +261,6 @@ pub const ShmQueue = struct {
         for (self.slots) |*s| {
             if (s.id.load(.acquire) == id) {
                 s.id.store(FREE, .release);
-                _ = self.header.stats.finished.fetchAdd(1, .release);
                 return true;
             }
         }
@@ -340,18 +302,6 @@ pub const ShmQueue = struct {
         }
 
         return jobs.items;
-    }
-
-    fn stats(queue: *Queue) !Stats {
-        const self: *ShmQueue = @fieldParentPtr("interface", queue);
-        self.mutex.lock(self.io);
-        defer self.mutex.unlock(self.io);
-
-        return .{
-            .submitted = self.header.stats.submitted.load(.acquire),
-            .claimed = self.header.stats.claimed.load(.acquire),
-            .finished = self.header.stats.finished.load(.acquire),
-        };
     }
 };
 
@@ -409,8 +359,8 @@ test Queue {
         \\| job4 | 0            | pending |
     );
 
-    // Finish job1, claim job2
-    try std.testing.expect(try queue.finish(id1));
+    // Remove job1, claim job2
+    try std.testing.expect(try queue.remove(id1));
     const next2 = (try queue.claim(arena.allocator())).?;
     try std.testing.expectEqual(id2, next2.id);
 
@@ -429,9 +379,9 @@ test Queue {
     const next3 = (try queue.claim(arena.allocator())).?;
     try std.testing.expectEqual(id4, next3.id);
 
-    // Finish both
-    try std.testing.expect(try queue.finish(id2));
-    try std.testing.expect(try queue.finish(id4));
+    // Remove both
+    try std.testing.expect(try queue.remove(id2));
+    try std.testing.expect(try queue.remove(id4));
 
     try expectJobs(queue,
         \\| name | scheduled_at | state   |
@@ -448,12 +398,12 @@ test Queue {
     // Claim job3
     const next4 = (try queue.claim(arena.allocator())).?;
     try std.testing.expectEqual(id3, next4.id);
-    try std.testing.expect(try queue.finish(id3));
+    try std.testing.expect(try queue.remove(id3));
 
     // No more jobs available
     try std.testing.expectEqual(null, try queue.claim(arena.allocator()));
 
-    // Timeout: claim but don't finish
+    // Timeout: claim but don't remove
     const id5 = try queue.submit(.{ .name = "timeout" }) orelse unreachable;
     const next5 = (try queue.claim(arena.allocator())).?;
     try std.testing.expectEqual(id5, next5.id);
@@ -477,11 +427,5 @@ test Queue {
         \\| test  | 1    |
         \\| test  | 2    |
         \\| other | 3    |
-    );
-
-    // Print stats
-    std.debug.print(
-        "queue.len = {}, queue.stats = {any}\n",
-        .{ try queue.len(), try queue.stats() },
     );
 }
