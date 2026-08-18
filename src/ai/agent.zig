@@ -98,13 +98,13 @@ pub const Agent = struct {
 
     pub fn undo(self: *Agent) ?chat.Message {
         // Remove trailing assistant/tool messages
-        while (self.messages.getLast()) |msg| {
+        while (self.messages.last()) |msg| {
             if (msg.role != .assistant and msg.role != .tool) break;
             _ = self.messages.pop();
         }
 
         // Remove the preceding user message to allow re-prompting
-        if (self.messages.getLast()) |msg| {
+        if (self.messages.last()) |msg| {
             if (msg.role == .user) {
                 return self.messages.pop();
             }
