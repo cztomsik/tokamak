@@ -5,7 +5,7 @@ const mime = @import("../mime.zig").mime;
 const Route = @import("../route.zig").Route;
 const Context = @import("../context.zig").Context;
 
-const E: std.StaticStringMap([]const u8) = if (builtin.mode == .Debug) .{} else .initComptime(kvs: {
+const E: std.StaticStringMap([]const u8) = if (builtin.mode == .debug) .{} else .initComptime(kvs: {
     var res: [embed.files.len]struct { []const u8, []const u8 } = undefined;
     for (embed.files, embed.contents, 0..) |f, c, i| res[i] = .{ f, c };
     break :kvs &res;
