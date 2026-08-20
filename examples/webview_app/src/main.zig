@@ -42,7 +42,7 @@ pub fn webviewMain(server: *tk.Server, gpa: std.mem.Allocator) !void {
     const thread = try server.http.listenInNewThread();
     defer thread.join();
 
-    const w = c.webview_create(if (builtin.mode == .Debug) 1 else 0, null);
+    const w = c.webview_create(if (builtin.mode == .debug) 1 else 0, null);
     defer _ = c.webview_destroy(w);
 
     _ = c.webview_set_title(w, "Example");
