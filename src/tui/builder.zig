@@ -81,7 +81,6 @@ pub const Builder = struct {
     pub const select = widgets.select;
     pub const slider = widgets.slider;
 
-    pub const alert = widgets.alert;
     pub const spinner = widgets.spinner;
     pub const progress = widgets.progress;
 

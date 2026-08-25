@@ -159,7 +159,7 @@ pub const Frame = struct {
         const w = self.rect[2];
         const h = self.rect[3];
 
-        // Draw corners
+        // Draw corners (tl, tr, br, bl)
         if (p[0].len > 0) self.draw(0, 0, p[0]);
         if (p[2].len > 0) self.draw(w - 1, 0, p[2]);
         if (p[4].len > 0) self.draw(w - 1, h - 1, p[4]);
@@ -169,9 +169,9 @@ pub const Frame = struct {
         if (p[1].len > 0) self.hline(1, 0, w - 2);
         if (p[5].len > 0) self.hline(1, h - 1, w - 2);
 
-        // And also for left/right
-        if (p[3].len > 0) self.vline(0, 1, h - 2);
-        if (p[7].len > 0) self.vline(w - 1, 1, h - 2);
+        // And also for right/left
+        if (p[3].len > 0) self.vline(w - 1, 1, h - 2);
+        if (p[7].len > 0) self.vline(0, 1, h - 2);
     }
 
     /// Draw a drop shadow (1-cell offset, bottom and right).
