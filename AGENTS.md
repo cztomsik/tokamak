@@ -16,7 +16,7 @@
 - **Version:** 2.0.0
 - **Dependency:** `httpz` (git hash `00014146eaf9e17750b752fa4905f7623fbe30f7`)
 - **Build command:** `zig build`
-- **Test command:** `zig build test` (optionally with `--filter <pattern>`)
+- **Test command:** `zig build test` (optionally with `-Dtest-filter=<pattern>` to skip non-matching tests)
 - **Docs build:** `npm run docs:build` (in `docs/`)
 
 ## Key Concepts
@@ -84,6 +84,6 @@
 - **Route hierarchy**: Routes can nest children, enabling middleware patterns. `ctx.next()` continues the chain. `ctx.nextScoped()` adds request-scoped dependencies.
 - **Serialization**: Values returned from handlers that aren't `[]const u8` are auto-serialized to JSON via `T.serialize()`. Custom hooks override default behavior.
 - **Static files**: Served via `tk.static.file(path)` or `tk.static.dir(path)`. Files can be embedded at compile time via `tokamak.setup(exe, .{.embed = &.{...}})`.
-- **Testing**: `zig build test` runs all tests. Filters supported via `--filter`. The main module test block auto-reflexes all exported structs.
+- **Testing**: `zig build test` runs all tests. Filters supported via `-Dtest-filter=<pattern>` (e.g., `zig build test -Dtest-filter=truncate`); the pattern substring-matches named tests (`test foo {}`) by full test name. Note: on this 0.17.x toolchain, anonymous `test {}` blocks (compiled as `*.test_0`) always run regardless of the filter. The main module test block auto-reflexes all exported structs.
 - **Docs**: Static site generator in `docs/` using Preact + marked. Build with `npm run docs:build`.
 - **Examples**: Located in `examples/` — `hello`, `hello_app`, `hello_cli`, `hello_ssr`, `hello_tui`, `blog`, `todos_orm_sqlite`, `clown-commander`, `webview_app`, `hello_objc`, `src/`.
