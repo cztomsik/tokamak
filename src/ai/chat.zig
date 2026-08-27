@@ -1,13 +1,26 @@
 const std = @import("std");
 const meta = @import("../meta.zig");
 const schema = @import("../schema.zig");
-const serde = @import("../serde.zig");
 const util = @import("../util.zig");
+const testing = @import("../testing.zig");
+
+fn jsonSkipNull(self: anytype, jw: anytype) !void {
+    try jw.beginObject();
+    inline for (comptime std.meta.fieldNames(meta.Deref(@TypeOf(self)))) |f| {
+        if (meta.optional(@field(self, f))) |v| {
+            try jw.objectField(f);
+            try jw.write(v);
+        }
+    }
+    try jw.endObject();
+}
 
 const Content = struct {
     type: enum { text, image_url },
     text: ?[]const u8 = null,
     image_url: ?ImageUrl = null,
+
+    pub const jsonStringify = jsonSkipNull;
 };
 
 const ImageUrl = struct {
@@ -19,9 +32,9 @@ pub const TextOrContents = union(enum) {
     text: []const u8,
     contents: []const Content,
 
-    pub fn serialize(self: *const @This(), writer: anytype) !void {
+    pub fn jsonStringify(self: *const @This(), jw: anytype) !void {
         switch (self.*) {
-            inline else => |v| try serde.serialize(writer, v),
+            inline else => |v| try jw.write(v),
         }
     }
 
@@ -45,6 +58,8 @@ pub const Request = struct {
     max_completion_tokens: u32 = 4096,
     temperature: ?f32 = null,
     top_p: ?f32 = null,
+
+    pub const jsonStringify = jsonSkipNull;
 };
 
 pub const Role = enum {
@@ -60,6 +75,8 @@ pub const Message = struct {
     reasoning_content: ?[]const u8 = null,
     tool_calls: ?[]const ToolCall = null,
     tool_call_id: ?[]const u8 = null,
+
+    pub const jsonStringify = jsonSkipNull;
 };
 
 pub const ToolType = enum { function };
@@ -71,6 +88,8 @@ pub const Tool = struct {
         description: ?[]const u8,
         parameters: schema.Schema,
         strict: bool = true, // structured output / grammar
+
+        pub const jsonStringify = jsonSkipNull;
     },
 
     pub fn tool(name: []const u8, description: ?[]const u8, comptime Args: type) Tool {
@@ -135,7 +154,7 @@ pub const Choice = struct {
     }
 };
 
-test "serde" {
+test "json" {
     const msgs: []const Message = &.{
         .{
             .role = .user,
@@ -171,7 +190,7 @@ test "serde" {
         },
     };
 
-    try serde.json.expectJson(Request{
+    try testing.expectJson(Request{
         .model = "gpt-4",
         .messages = msgs[0..1],
     },
@@ -187,7 +206,7 @@ test "serde" {
         \\}
     );
 
-    try serde.json.expectJson(Request{
+    try testing.expectJson(Request{
         .model = "gpt-4-turbo",
         .messages = msgs[1..],
         .tools = &.{.{

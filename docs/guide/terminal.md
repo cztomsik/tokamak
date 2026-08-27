@@ -40,10 +40,10 @@ Now you can run:
 
 ```bash
 $ myapp version
-1.0.0
+"1.0.0"
 
 $ myapp hello World
-Hello, World!
+"Hello, World!"
 ```
 
 ### Sharing Dependencies with Your Server
@@ -81,21 +81,12 @@ pub fn main() !void {
 
 Now your CLI tool has access to the same database connection, configuration, and services as your server!
 
-### Output Formats
+### Output
 
-CLI commands support multiple output formats. By default, strings are printed as-is and structs are formatted as YAML:
+The value returned by a command handler is serialized to indented JSON and written to stdout. Strings are written as JSON strings, structs and slices as JSON objects and arrays:
 
 ```bash
 $ myapp find-user john@example.com
-id: 123
-name: John Doe
-email: john@example.com
-```
-
-Need JSON instead? Just add the `--json` flag:
-
-```bash
-$ myapp --json find-user john@example.com
 {
   "id": 123,
   "name": "John Doe",

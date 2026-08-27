@@ -14,8 +14,6 @@ sanitization, etc.
 
 > ### Recent changes
 > - WIP **TUI module** for interactive apps in `tk.tui.*`
-> - WIP **serde module** in `tk.serde.*`, if you were using `jsonStringify()`
->   anywhere in your code, you might need to migrate to a new `T.serialize()` hook
 > - renamed few `bundle.addXxx()` methods to `bundle.provide()`,
 >   `bundle.override()`, ...
 > - renamed `inj.call0(fun)` → `inj.call(fun)`, `inj.call(fun, ...args)` →

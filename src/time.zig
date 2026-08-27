@@ -150,12 +150,12 @@ pub const Date = struct {
         return @intCast(@mod(rata_day + 3, 7));
     }
 
-    pub fn serialize(self: Date, writer: anytype) !void {
+    pub fn jsonStringify(self: Date, jw: anytype) !void {
         var buf: [10]u8 = undefined;
-        try writer.write(.string, try std.fmt.bufPrint(&buf, "{f}", .{self}));
+        try jw.write(try std.fmt.bufPrint(&buf, "{f}", .{self}));
     }
 
-    pub fn format(self: Date, writer: anytype) !void {
+    pub fn format(self: Date, writer: *std.Io.Writer) !void {
         try writer.print("{d}-{d:0>2}-{d:0>2}", .{
             @as(u32, @intCast(self.year)),
             self.month,
@@ -282,12 +282,12 @@ pub const Time = struct {
         };
     }
 
-    pub fn serialize(self: Time, writer: anytype) !void {
+    pub fn jsonStringify(self: Time, jw: anytype) !void {
         var buf: [23]u8 = undefined;
-        try writer.write(.string, try std.fmt.bufPrint(&buf, "{f}", .{self}));
+        try jw.write(try std.fmt.bufPrint(&buf, "{f}", .{self}));
     }
 
-    pub fn format(self: Time, writer: anytype) !void {
+    pub fn format(self: Time, writer: *std.Io.Writer) !void {
         try writer.print("{f} {d:0>2}:{d:0>2}:{d:0>2} UTC", .{
             self.date(),
             self.hour(),

@@ -1,6 +1,5 @@
 const std = @import("std");
 const meta = @import("../meta.zig");
-const serde = @import("../serde.zig");
 
 pub const RequestOptions = struct {
     base_url: ?[]const u8 = null,
@@ -24,8 +23,8 @@ pub const RequestBody = struct {
     pub fn json(ptr: anytype) RequestBody {
         const H = struct {
             fn render(ctx: @TypeOf(ptr), writer: *std.Io.Writer) anyerror!void {
-                var jw = serde.json.Writer.init(writer, .{});
-                try serde.serialize(&jw, ctx);
+                var jw: std.json.Stringify = .{ .writer = writer };
+                try jw.write(ctx);
             }
         };
 
@@ -174,7 +173,7 @@ test {
 
     const H = struct {
         fn slow(io: std.Io) !void {
-            return io.sleep(.fromSeconds(10), .awake);
+            return io.sleep(.fromSeconds(2), .awake);
         }
     };
 

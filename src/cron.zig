@@ -231,9 +231,9 @@ pub const Expr = struct {
         }
     }
 
-    pub fn serialize(self: *const Expr, writer: anytype) !void {
+    pub fn jsonStringify(self: *const Expr, jw: anytype) !void {
         var buf: [64]u8 = undefined;
-        try writer.write(.string, try std.fmt.bufPrint(&buf, "{f}", .{self}));
+        try jw.write(.string, try std.fmt.bufPrint(&buf, "{f}", .{self}));
     }
 
     pub fn parse(expr: []const u8) !Expr {

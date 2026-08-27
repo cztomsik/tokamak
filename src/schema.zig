@@ -1,7 +1,6 @@
 const std = @import("std");
 const string = @import("string.zig");
 const meta = @import("meta.zig");
-const serde = @import("serde.zig");
 const testing = @import("testing.zig");
 
 pub const Property = struct {
@@ -68,33 +67,45 @@ pub const Schema = union(enum) {
         };
     }
 
-    pub fn serialize(self: Schema, w: anytype) !void {
+    pub fn jsonStringify(self: Schema, jw: anytype) !void {
         switch (self) {
-            .oneOf => |oneOf| try serde.serialize(w, .{ .oneOf = oneOf }),
-            .array => |items| try serde.serialize(w, .{ .type = .array, .items = items }),
-            .tuple => |items| try serde.serialize(w, .{ .type = .array, .items = items }),
+            .oneOf => |oneOf| try jw.write(.{ .oneOf = oneOf }),
+            .array => |items| try jw.write(.{ .type = .array, .items = items }),
+            .tuple => |items| try jw.write(.{ .type = .array, .items = items }),
             .object => |props| {
-                var st = try w.beginStruct(struct {}, 4);
-                try st.field("type", "object");
-                try st.field("properties", serde.serializer(props, serializeProperties));
-                try st.field("required", serde.serializer(props, serializeRequired));
-                try st.field("additionalProperties", false);
-                try st.end();
+                try jw.beginObject();
+
+                try jw.objectField("type");
+                try jw.write("object");
+
+                try jw.objectField("properties");
+                try serializeProperties(props, jw);
+
+                try jw.objectField("required");
+                try serializeRequired(props, jw);
+
+                try jw.objectField("additionalProperties");
+                try jw.write(false);
+
+                try jw.endObject();
             },
-            inline else => |_, t| try serde.serialize(w, .{ .type = t }),
+            inline else => |_, t| try jw.write(.{ .type = t }),
         }
     }
 
-    fn serializeProperties(props: []const Property, writer: anytype) !void {
-        var st = try writer.beginStruct(void, props.len);
-        for (props) |p| try st.field(p.name, p.schema);
-        try st.end();
+    fn serializeProperties(props: []const Property, jw: anytype) !void {
+        try jw.beginObject();
+        for (props) |p| {
+            try jw.objectField(p.name);
+            try jw.write(p.schema);
+        }
+        try jw.endObject();
     }
 
-    fn serializeRequired(props: []const Property, writer: anytype) !void {
-        var seq = try writer.beginSeq(props.len);
-        for (props) |p| if (p.required) try seq.element(p.name);
-        try seq.end();
+    fn serializeRequired(props: []const Property, jw: anytype) !void {
+        try jw.beginArray();
+        for (props) |p| if (p.required) try jw.write(p.name);
+        try jw.endArray();
     }
 };
 
@@ -114,10 +125,10 @@ test "Schema.schema()" {
 }
 
 fn expectJsonSchema(comptime T: type, expected: []const u8) !void {
-    try serde.json.expectJson(Schema.schema(T), expected);
+    try testing.expectJson(Schema.schema(T), expected);
 }
 
-test "schema.serialize()" {
+test "schema json" {
     try expectJsonSchema(?[]const u8,
         \\{
         \\  "oneOf": [

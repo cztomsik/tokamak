@@ -16,12 +16,8 @@
 
 const std = @import("std");
 const meta = @import("meta.zig");
-const serde = @import("serde.zig");
 const Injector = @import("injector.zig").Injector;
 const parseValue = @import("parse.zig").parseValue;
-
-/// Controls how command output is formatted (--json, --yaml, or auto-detect).
-pub const OutputFormat = enum { auto, yaml, json };
 
 /// Runtime context for CLI commands. Most handlers won't need this directly
 /// since dependencies and arguments are injected into the handler function.
@@ -34,55 +30,26 @@ pub const Context = struct {
     out: *std.Io.Writer,
     err: *std.Io.Writer,
     injector: *Injector,
-    format: OutputFormat = .auto,
 
     /// Parse a string value into the requested type.
     pub fn parse(self: *Context, comptime T: type, s: []const u8) !T {
         return parseValue(T, s, self.arena);
     }
 
-    /// Write a result to the output stream in the configured format.
+    /// Write a result to the output stream.
     pub fn output(self: *Context, res: anytype) !void {
         const T = @TypeOf(res);
 
         switch (@typeInfo(T)) {
-            // std.json can't stringify void
+            // std.json can't stringify these
             .void => return,
-            // so that --json <cmd1> would still output { "error": MissingArg }
-            // and we get error: MissingArg for free from yaml
             .error_set => return self.output(.{ .@"error" = res }),
-            // none of the formats can stringify error unions
-            .error_union => {
-                if (res) |r| {
-                    return self.output(r);
-                } else |e| {
-                    return self.output(e);
-                }
-            },
+            .error_union => return if (res) |r| self.output(r) else |e| self.output(e),
             else => {},
         }
 
-        fmt: switch (self.format) {
-            .auto => {
-                if (meta.isString(T)) {
-                    // workaround for https://github.com/ziglang/zig/issues/24323
-                    var x = true;
-                    _ = &x;
-                    if (x) return self.out.print("{s}\n", .{res});
-                }
-
-                continue :fmt .yaml;
-            },
-            .json => {
-                var jw = serde.json.Writer.init(self.out, .{ .whitespace = .indent_2 });
-                try serde.serialize(&jw, res);
-            },
-            .yaml => {
-                var yw = serde.yaml.Writer.init(self.out, .{});
-                try serde.serialize(&yw, res);
-                try self.out.writeByte('\n');
-            },
-        }
+        var jw: std.json.Stringify = .{ .writer = self.out, .options = .{ .whitespace = .indent_2 } };
+        try jw.write(res);
     }
 };
 
@@ -165,11 +132,7 @@ pub const Command = struct {
 
 /// Print usage information and available commands.
 pub fn printUsage(ctx: *Context, cmds: []const Command) !void {
-    try ctx.out.print("Usage: {s} [--json|--yaml] <command> [args...]\n\n", .{ctx.bin});
-
-    try ctx.out.writeAll("Options:\n");
-    try ctx.out.writeAll("  --json               Output in JSON format\n");
-    try ctx.out.writeAll("  --yaml               Output in YAML format\n\n");
+    try ctx.out.print("Usage: {s} <command> [args...]\n\n", .{ctx.bin});
 
     try ctx.out.writeAll("Commands:\n");
     for (cmds) |cmd| {
@@ -199,18 +162,7 @@ pub fn run(inj: *Injector, io: std.Io, gpa: std.mem.Allocator, argz: std.process
     const args = try argz.toSlice(arena.allocator());
     for (args) |arg| if (!std.unicode.utf8ValidateSlice(arg)) return error.InvalidArg;
 
-    var format: OutputFormat = .auto;
     var cmd_args = args[1..];
-
-    if (cmd_args.len > 0) {
-        if (std.mem.eql(u8, cmd_args[0], "--json")) {
-            format = .json;
-            cmd_args = cmd_args[1..];
-        } else if (std.mem.eql(u8, cmd_args[0], "--yaml")) {
-            format = .yaml;
-            cmd_args = cmd_args[1..];
-        }
-    }
 
     // TODO: --version
     // TODO: --help
@@ -233,7 +185,6 @@ pub fn run(inj: *Injector, io: std.Io, gpa: std.mem.Allocator, argz: std.process
         .out = &out.interface,
         .err = &err.interface,
         .injector = &child_inj,
-        .format = format,
     };
 
     cmd.handler(&cx) catch |e| {

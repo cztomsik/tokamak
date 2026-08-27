@@ -1,7 +1,7 @@
 const builtin = @import("builtin");
 const std = @import("std");
 const meta = @import("meta.zig");
-const serde = @import("serde.zig");
+const testing = @import("testing.zig");
 
 /// A simple string type with SSO optimization. Strings up to 15 bytes are
 /// stored inline, longer strings are stored as a pointer+length pair.
@@ -73,8 +73,8 @@ pub const String = extern union {
         return initShort(s) orelse initLong(s);
     }
 
-    pub fn serialize(self: *const String, writer: anytype) !void {
-        try writer.write(.string, self.str());
+    pub fn jsonStringify(self: *const String, jw: anytype) !void {
+        try jw.write(self.str());
     }
 
     pub fn eq(a: String, b: String) bool {
@@ -128,8 +128,8 @@ pub const ShortString = extern struct {
         return init(s) orelse error.Overflow;
     }
 
-    pub fn serialize(self: *const ShortString, writer: anytype) !void {
-        try writer.write(.string, self.str());
+    pub fn jsonStringify(self: *const ShortString, jw: anytype) !void {
+        try jw.write(self.str());
     }
 
     pub fn eq(a: ShortString, b: ShortString) bool {
@@ -214,7 +214,7 @@ test "format" {
 
 test "json" {
     const s: String = .initComptime("foo");
-    try serde.json.expectJson(s, "\"foo\"");
+    try testing.expectJson(s, "\"foo\"");
 
     const p = try std.json.parseFromSlice(String, std.testing.allocator, "\"foo\"", .{});
     defer p.deinit();
