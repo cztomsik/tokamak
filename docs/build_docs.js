@@ -19,11 +19,11 @@ const cx = {
   SECTIONS: {
     guide: {
       title: 'Guide',
-      order: ['getting-started', 'server', 'routing', 'dependency-injection', 'middlewares', 'examples', 'terminal', 'time'],
+      order: ['getting-started', 'server', 'routing', 'dependency-injection', 'middlewares', 'examples', 'time'],
     },
     examples: {
       title: 'Examples',
-      order: ['hello', 'hello_app', 'hello_cli', 'blog', 'todos_orm_sqlite', 'webview_app', 'clown-commander'],
+      order: ['hello', 'hello_app', 'hello_cli', 'blog', 'todos_orm_sqlite', 'webview_app'],
     },
   },
   pages: [],

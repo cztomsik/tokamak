@@ -13,7 +13,6 @@ front of it, like Nginx or Cloudfront, which will handle SSL, caching,
 sanitization, etc.
 
 > ### Recent changes
-> - WIP **TUI module** for interactive apps in `tk.tui.*`
 > - renamed few `bundle.addXxx()` methods to `bundle.provide()`,
 >   `bundle.override()`, ...
 > - renamed `inj.call0(fun)` → `inj.call(fun)`, `inj.call(fun, ...args)` →
@@ -354,10 +353,8 @@ All examples are located in the [`examples/`](examples/) directory. Each example
 | [`hello`](examples/hello/) | Minimal server with a single route — the simplest way to get started |
 | [`hello_app`](examples/hello_app/) | Multi-module app pattern using `tk.app.run()` |
 | [`hello_cli`](examples/hello_cli/) | CLI application with commands for web scraping, regex, and more |
-| [`hello_tui`](examples/hello_tui/) | Terminal UI demo with panels, grids, modals, tree navigation, inputs, and themes |
 | [`blog`](examples/blog/) | RESTful blog API with an in-memory service layer, Swagger/OpenAPI docs, and static file serving |
 | [`todos_orm_sqlite`](examples/todos_orm_sqlite/) | CRUD todo app with SQLite ORM ([fridge](https://github.com/urholaukkarinen/fridge)), connection pooling, and route-scoped DB sessions |
-| [`clown-commander`](examples/clown-commander/) | Terminal file manager with dual-panel browsing, file copy/delete, and mkdir support |
 | [`webview_app`](examples/webview_app/) | Desktop app that embeds a web server in a webview window (requires macOS) |
 
 ## Advanced Dependency Injection

@@ -24,7 +24,6 @@
 - **Dependency Injection** — Handler functions receive injected parameters (allocator, `*Request`, `*Response`, custom types). The `Container`/`Bundle` system resolves dependencies across modules at runtime.
 - **Routing** — Express-inspired router with path params (`:name`), wildcards (`*`), nested routes, and middleware via `ctx.next()`.
 - **Multi-Module System** — Structs with fields become modules; fields are auto-resolved as dependencies. Supports `configure(bundle)` hooks, overrides, mocks, and lifecycle hooks.
-- **TUI Module** — WIP terminal UI framework in `tk.tui.*`.
 - **AI Module** — WIP LLM client/agent framework in `tk.ai.*`.
 
 ## Source Structure
@@ -41,7 +40,6 @@
 | `src/schema.zig` | `Schema` — request validation schema builder. |
 | `src/middleware/` | Built-in middlewares: `cors.zig`, `logger.zig`, `static.zig`, `swagger.zig`. |
 | `src/dom/` | DOM implementation — `document.zig`, `element.zig`, `node.zig`, `parser.zig`, `text.zig`, `local_name.zig`. |
-| `src/tui/` | WIP Terminal UI — `builder.zig`, `color.zig`, `context.zig`, `control.zig`, `frame.zig`, `input.zig`, `screen.zig`, `widgets.zig`. |
 | `src/ai/` | WIP AI/LLM module — `agent.zig`, `chat.zig`, `client.zig`, `embedding.zig`, `fmt.zig`, `models.zig`. |
 | `src/http/` | HTTP client wrapper around httpz — `client.zig`. |
 | `src/tpl.zig` | Template engine. |
@@ -76,4 +74,4 @@
 - **Static files**: Served via `tk.static.file(path)` or `tk.static.dir(path)`. Files can be embedded at compile time via `tokamak.setup(exe, .{.embed = &.{...}})`.
 - **Testing**: `zig build test` runs all tests. Filters supported via `-Dtest-filter=<pattern>` (e.g., `zig build test -Dtest-filter=truncate`); the pattern substring-matches named tests (`test foo {}`) by full test name. Note: on this 0.17.x toolchain, anonymous `test {}` blocks (compiled as `*.test_0`) always run regardless of the filter. The main module test block auto-reflexes all exported structs.
 - **Docs**: Static site generator in `docs/` using Preact + marked. Build with `npm run docs:build`.
-- **Examples**: Located in `examples/` — `hello`, `hello_app`, `hello_cli`, `hello_tui`, `blog`, `todos_orm_sqlite`, `clown-commander`, `webview_app`, `hello_objc`, `src/`.
+- **Examples**: Located in `examples/` — `hello`, `hello_app`, `hello_cli`, `blog`, `todos_orm_sqlite`, `webview_app`, `hello_objc`, `src/`.

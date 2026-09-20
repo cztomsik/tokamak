@@ -19,18 +19,12 @@ A complete REST API using SQLite database with ORM integration.
 ### [webview_app](../examples/webview_app.md)
 A desktop application combining a web-based UI with native functionality.
 
-## CLI and TUI Examples
+## CLI Examples
 
 ### [hello_cli](../examples/hello_cli.md)
 A comprehensive CLI application demonstrating various commands and integrations.
 
-### [clown-commander](../examples/clown-commander.md)
-A terminal-based file manager inspired by Norton Commander / Midnight Commander.
-
 ## Other Examples
-
-### hello_tui
-A simple terminal UI application demonstrating the TUI framework.
 
 ### hello_objc
 Demonstrates Objective-C interop on macOS.

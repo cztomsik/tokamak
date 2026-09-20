@@ -71,6 +71,3 @@ cd examples/hello_cli
 zig build run -- <command> [args...]
 ```
 
-## Next Steps
-
-- See [clown-commander](./clown-commander.md) for a TUI application
