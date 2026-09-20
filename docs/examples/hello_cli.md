@@ -54,7 +54,7 @@ zig build run -- substr "Hello World" 0 5
 The CLI uses a shared `App` struct for services (HTTP client, API clients) and a `Cli` struct for command definitions:
 
 ```zig
-@include examples/hello_cli/src/main.zig#L5-L26
+@include examples/hello_cli/src/main.zig#L5-L17
 ```
 
 ## Command Handler Patterns

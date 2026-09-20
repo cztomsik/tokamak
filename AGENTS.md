@@ -50,9 +50,7 @@
 | `src/config.zig` | JSON config file reader/writer. |
 | `src/crypto.zig` | Cryptographic utilities. |
 | `src/entities.zig` | HTML entity encoding/decoding. |
-| `src/event.zig` | Event system. |
 | `src/html2md.zig` | HTML-to-Markdown converter. |
-| `src/iter.zig` | Iterator utilities. |
 | `src/meta.zig` | Meta utilities (introspection helpers). |
 | `src/mime.zig` | MIME type mappings. |
 | `src/parse.zig` | General parsing utilities. |
@@ -74,4 +72,4 @@
 - **Static files**: Served via `tk.static.file(path)` or `tk.static.dir(path)`. Files can be embedded at compile time via `tokamak.setup(exe, .{.embed = &.{...}})`.
 - **Testing**: `zig build test` runs all tests. Filters supported via `-Dtest-filter=<pattern>` (e.g., `zig build test -Dtest-filter=truncate`); the pattern substring-matches named tests (`test foo {}`) by full test name. Note: on this 0.17.x toolchain, anonymous `test {}` blocks (compiled as `*.test_0`) always run regardless of the filter. The main module test block auto-reflexes all exported structs.
 - **Docs**: Static site generator in `docs/` using Preact + marked. Build with `npm run docs:build`.
-- **Examples**: Located in `examples/` — `hello`, `hello_app`, `hello_cli`, `blog`, `todos_orm_sqlite`, `webview_app`, `hello_objc`, `src/`.
+- **Examples**: Located in `examples/` — `hello`, `hello_app`, `hello_cli`, `blog`, `todos_orm_sqlite`, `webview_app`.

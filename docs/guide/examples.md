@@ -24,11 +24,6 @@ A desktop application combining a web-based UI with native functionality.
 ### [hello_cli](../examples/hello_cli.md)
 A comprehensive CLI application demonstrating various commands and integrations.
 
-## Other Examples
-
-### hello_objc
-Demonstrates Objective-C interop on macOS.
-
 ## Building Examples
 
 All examples use Zig's build system. To build and run any example:
