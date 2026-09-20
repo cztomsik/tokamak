@@ -20,7 +20,6 @@ pub const queue = @import("queue.zig");
 pub const regex = @import("regex.zig");
 pub const sax = @import("sax.zig");
 pub const selector = @import("selector.zig");
-pub const sendmail = @import("sendmail.zig");
 pub const testing = @import("testing.zig");
 pub const time = @import("time.zig");
 pub const tpl = @import("tpl.zig");

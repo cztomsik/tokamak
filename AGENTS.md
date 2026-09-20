@@ -62,7 +62,6 @@
 | `src/regex.zig` | Regex utilities. |
 | `src/sax.zig` | SAX-style XML/HTML parser. |
 | `src/selector.zig` | CSS-like selector engine for DOM. |
-| `src/sendmail.zig` | Email sending. |
 | `src/string.zig` | `String` and `ShortString` types. |
 | `src/testing.zig` | Testing utilities. |
 | `src/time.zig` | Time/date utilities. |
