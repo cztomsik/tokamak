@@ -32,9 +32,6 @@ A terminal-based file manager inspired by Norton Commander / Midnight Commander.
 ### hello_tui
 A simple terminal UI application demonstrating the TUI framework.
 
-### hello_ssr
-Demonstrates server-side rendering capabilities.
-
 ### hello_objc
 Demonstrates Objective-C interop on macOS.
 

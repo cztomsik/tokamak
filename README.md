@@ -355,7 +355,6 @@ All examples are located in the [`examples/`](examples/) directory. Each example
 | [`hello_app`](examples/hello_app/) | Multi-module app pattern using `tk.app.run()` |
 | [`hello_cli`](examples/hello_cli/) | CLI application with commands for Hacker News, GitHub, web scraping, regex, and more |
 | [`hello_tui`](examples/hello_tui/) | Terminal UI demo with panels, grids, modals, tree navigation, inputs, and themes |
-| [`hello_ssr`](examples/hello_ssr/) | Server-side rendering with custom components (Badge, Card, UserRow, Counter) and template engine |
 | [`blog`](examples/blog/) | RESTful blog API with an in-memory service layer, Swagger/OpenAPI docs, and static file serving |
 | [`todos_orm_sqlite`](examples/todos_orm_sqlite/) | CRUD todo app with SQLite ORM ([fridge](https://github.com/urholaukkarinen/fridge)), connection pooling, and route-scoped DB sessions |
 | [`clown-commander`](examples/clown-commander/) | Terminal file manager with dual-panel browsing, file copy/delete, and mkdir support |

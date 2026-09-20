@@ -14,22 +14,18 @@ pub const entities = @import("entities.zig");
 pub const ext = @import("ext.zig");
 pub const html2md = @import("html2md.zig");
 pub const http = @import("http.zig");
-pub const js = @import("js.zig");
 pub const meta = @import("meta.zig");
 pub const monitor = @import("monitor.zig").monitor;
 pub const queue = @import("queue.zig");
 pub const regex = @import("regex.zig");
-pub const resource = @import("resource.zig");
 pub const sax = @import("sax.zig");
 pub const selector = @import("selector.zig");
 pub const sendmail = @import("sendmail.zig");
-pub const ssr = @import("ssr.zig");
 pub const testing = @import("testing.zig");
 pub const time = @import("time.zig");
 pub const tpl = @import("tpl.zig");
 pub const tui = @import("tui.zig");
 pub const util = @import("util.zig");
-pub const vm = @import("vm.zig");
 
 // Core types (general-purpose)
 pub const String = @import("string.zig").String;

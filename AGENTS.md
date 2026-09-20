@@ -45,9 +45,6 @@
 | `src/ai/` | WIP AI/LLM module — `agent.zig`, `chat.zig`, `client.zig`, `embedding.zig`, `fmt.zig`, `models.zig`. |
 | `src/http/` | HTTP client wrapper around httpz — `client.zig`. |
 | `src/tpl.zig` | Template engine. |
-| `src/ssr.zig` | Server-side rendering utilities. |
-| `src/js.zig` | JavaScript interop / utilities. |
-| `src/vm.zig` | Virtual machine / sandbox utilities. |
 | `src/cron.zig` | Cron scheduler. |
 | `src/queue.zig` | Job queue system. |
 | `src/monitor.zig` | Process monitor — runs multiple processes with auto-restart. |
@@ -63,7 +60,6 @@
 | `src/mime.zig` | MIME type mappings. |
 | `src/parse.zig` | General parsing utilities. |
 | `src/regex.zig` | Regex utilities. |
-| `src/resource.zig` | Resource management. |
 | `src/sax.zig` | SAX-style XML/HTML parser. |
 | `src/selector.zig` | CSS-like selector engine for DOM. |
 | `src/sendmail.zig` | Email sending. |
@@ -82,4 +78,4 @@
 - **Static files**: Served via `tk.static.file(path)` or `tk.static.dir(path)`. Files can be embedded at compile time via `tokamak.setup(exe, .{.embed = &.{...}})`.
 - **Testing**: `zig build test` runs all tests. Filters supported via `-Dtest-filter=<pattern>` (e.g., `zig build test -Dtest-filter=truncate`); the pattern substring-matches named tests (`test foo {}`) by full test name. Note: on this 0.17.x toolchain, anonymous `test {}` blocks (compiled as `*.test_0`) always run regardless of the filter. The main module test block auto-reflexes all exported structs.
 - **Docs**: Static site generator in `docs/` using Preact + marked. Build with `npm run docs:build`.
-- **Examples**: Located in `examples/` — `hello`, `hello_app`, `hello_cli`, `hello_ssr`, `hello_tui`, `blog`, `todos_orm_sqlite`, `clown-commander`, `webview_app`, `hello_objc`, `src/`.
+- **Examples**: Located in `examples/` — `hello`, `hello_app`, `hello_cli`, `hello_tui`, `blog`, `todos_orm_sqlite`, `clown-commander`, `webview_app`, `hello_objc`, `src/`.
