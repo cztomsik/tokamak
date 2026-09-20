@@ -17,7 +17,6 @@ pub const http = @import("http.zig");
 pub const js = @import("js.zig");
 pub const meta = @import("meta.zig");
 pub const monitor = @import("monitor.zig").monitor;
-pub const pdf = @import("pdf.zig");
 pub const queue = @import("queue.zig");
 pub const regex = @import("regex.zig");
 pub const resource = @import("resource.zig");

@@ -16,7 +16,6 @@ A comprehensive CLI application demonstrating various commands and third-party i
 - HTTP client integration
 - HTML to Markdown conversion
 - DOM parsing and querying
-- PDF generation
 - Regular expressions and grep functionality
 - GitHub API integration
 - Hacker News API integration
@@ -64,13 +63,6 @@ Get substring with bounds checking.
 
 ```sh
 zig build run -- substr "Hello World" 0 5
-```
-
-### `pdf <filename> <title>`
-Generate a sample PDF with various shapes and text.
-
-```sh
-zig build run -- pdf output.pdf "My Document"
 ```
 
 ## Architecture

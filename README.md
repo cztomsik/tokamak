@@ -353,7 +353,7 @@ All examples are located in the [`examples/`](examples/) directory. Each example
 |---------|-------------|
 | [`hello`](examples/hello/) | Minimal server with a single route — the simplest way to get started |
 | [`hello_app`](examples/hello_app/) | Multi-module app pattern using `tk.app.run()` |
-| [`hello_cli`](examples/hello_cli/) | CLI application with commands for Hacker News, GitHub, web scraping, regex, PDF generation, and more |
+| [`hello_cli`](examples/hello_cli/) | CLI application with commands for Hacker News, GitHub, web scraping, regex, and more |
 | [`hello_tui`](examples/hello_tui/) | Terminal UI demo with panels, grids, modals, tree navigation, inputs, and themes |
 | [`hello_ssr`](examples/hello_ssr/) | Server-side rendering with custom components (Badge, Card, UserRow, Counter) and template engine |
 | [`blog`](examples/blog/) | RESTful blog API with an in-memory service layer, Swagger/OpenAPI docs, and static file serving |

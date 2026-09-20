@@ -62,7 +62,6 @@
 | `src/meta.zig` | Meta utilities (introspection helpers). |
 | `src/mime.zig` | MIME type mappings. |
 | `src/parse.zig` | General parsing utilities. |
-| `src/pdf.zig` | PDF generation utilities. |
 | `src/regex.zig` | Regex utilities. |
 | `src/resource.zig` | Resource management. |
 | `src/sax.zig` | SAX-style XML/HTML parser. |

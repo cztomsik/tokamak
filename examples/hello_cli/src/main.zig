@@ -18,7 +18,6 @@ const Cli = struct {
         .cmd2("scrape", "Scrape a URL with optional CSS selector", scrape),
         .cmd2("grep", "Search for pattern in file", grep),
         .cmd3("substr", "Get substring with bounds checking", substr),
-        .cmd2("pdf", "Generate a sample PDF", writePdf),
     },
 
     fn hello() []const u8 {
@@ -51,40 +50,6 @@ const Cli = struct {
     fn substr(str: []const u8, start: ?usize, end: ?usize) ![]const u8 {
         if ((start orelse 0) > str.len or (end orelse str.len) > str.len) return error.OutOfBounds;
         return str[start orelse 0 .. end orelse str.len];
-    }
-
-    fn writePdf(io: std.Io, arena: std.mem.Allocator, filename: []const u8, title: []const u8) !void {
-        var doc = try tk.pdf.Document.init(arena);
-        defer doc.deinit();
-
-        var page = try doc.addPage(612, 792);
-
-        try page.addText(50, 750, title, .{ .size = 24, .bold = true });
-        try page.addText(50, 730, try std.fmt.allocPrint(arena, "Generated on: {f}", .{
-            tk.time.Date.today(),
-        }), .{ .size = 10 });
-        try page.addLine(50, 710, 550, 710);
-
-        try page.addRect(50, 600, 100, 50);
-        try page.addText(160, 620, "Rectangle", .{ .bold = true });
-
-        try page.moveTo(50, 500);
-        try page.lineTo(100, 550);
-        try page.lineTo(150, 500);
-        try page.closePath();
-        try page.stroke();
-        try page.addText(160, 520, "Triangle", .{ .bold = true });
-
-        try page.moveTo(50, 450);
-        try page.curveTo(75, 400, 125, 400, 150, 450);
-        try page.stroke();
-        try page.addText(160, 420, "Curve", .{ .bold = true });
-
-        const file = try std.Io.Dir.cwd().createFile(io, filename, .{});
-        defer file.close(io);
-        try file.writeStreamingAll(io, try doc.render(arena));
-
-        std.debug.print("PDF '{s}' generated successfully", .{filename});
     }
 
     fn grep(io: std.Io, arena: std.mem.Allocator, file_path: []const u8, pattern: []const u8) !void {
