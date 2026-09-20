@@ -17,8 +17,6 @@ A comprehensive CLI application demonstrating various commands and third-party i
 - HTML to Markdown conversion
 - DOM parsing and querying
 - Regular expressions and grep functionality
-- GitHub API integration
-- Hacker News API integration
 
 ## Available Commands
 
@@ -27,20 +25,6 @@ Print a greeting message.
 
 ```sh
 zig build run -- hello
-```
-
-### `hn <limit>`
-Show top Hacker News stories.
-
-```sh
-zig build run -- hn 5
-```
-
-### `gh <owner>`
-List GitHub repositories for a user.
-
-```sh
-zig build run -- gh cztomsik
 ```
 
 ### `scrape <url> [selector]`

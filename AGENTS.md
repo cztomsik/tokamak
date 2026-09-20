@@ -53,7 +53,6 @@
 | `src/crypto.zig` | Cryptographic utilities. |
 | `src/entities.zig` | HTML entity encoding/decoding. |
 | `src/event.zig` | Event system. |
-| `src/ext/` | External API integrations: `github.zig`, `hackernews.zig`, `reddit.zig`. |
 | `src/html2md.zig` | HTML-to-Markdown converter. |
 | `src/iter.zig` | Iterator utilities. |
 | `src/meta.zig` | Meta utilities (introspection helpers). |

@@ -11,7 +11,6 @@ pub const cron = @import("cron.zig");
 pub const crypto = @import("crypto.zig");
 pub const dom = @import("dom.zig");
 pub const entities = @import("entities.zig");
-pub const ext = @import("ext.zig");
 pub const html2md = @import("html2md.zig");
 pub const http = @import("http.zig");
 pub const meta = @import("meta.zig");
