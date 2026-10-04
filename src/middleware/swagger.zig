@@ -34,7 +34,7 @@ pub fn ui(comptime options: UiOptions) Route {
                 \\</html>
             ;
 
-            ctx.res.content_type = .HTML;
+            ctx.res.content_type = .html;
             ctx.res.body = try std.fmt.allocPrint(ctx.allocator, "{s}\nconst config = {f}\n{s}", .{ header, std.json.fmt(options, .{}), footer });
             ctx.responded = true;
         }

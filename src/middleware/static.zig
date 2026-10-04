@@ -23,9 +23,9 @@ pub fn dir(comptime path: []const u8, comptime options: DirOptions) Route {
     const H = struct {
         pub fn handleDir(ctx: *Context) anyerror!void {
             // We only support GET for now
-            if (ctx.req.method != .GET) return;
+            if (ctx.req.method != .get) return;
 
-            var target = ctx.req.url.path;
+            var target = ctx.req.url;
 
             // Strip the prefix if we are inside of Route.get("/xxx/*")
             if (ctx.current.path) |p| {
@@ -78,8 +78,8 @@ pub fn file(comptime path: []const u8) Route {
 fn sendFile(ctx: *Context, target: []const u8) !void {
     const body = if (E.get(target)) |e| e else try std.Io.Dir.cwd().readFileAlloc(ctx.server.http.io, target, ctx.allocator, std.Io.Limit.unlimited);
 
-    ctx.res.header("content-type", try content_type(ctx.allocator, target));
-    ctx.res.header("cache-control", "no-cache, no-store, must-revalidate");
+    try ctx.res.header("content-type", try content_type(ctx.allocator, target));
+    try ctx.res.header("cache-control", "no-cache, no-store, must-revalidate");
 
     ctx.res.body = body;
     ctx.responded = true;

@@ -2,7 +2,7 @@
 
 Welcome to Tokamak! This guide will help you build your first web application with Zig.
 
-Tokamak is a server-side framework built around [http.zig](https://github.com/karlseguin/http.zig) and a simple but powerful dependency injection container. It's designed to make building web applications in Zig straightforward and enjoyable.
+Tokamak is a server-side framework built around [dusty](https://github.com/EuroZig/dusty) and a simple but powerful dependency injection container. It's designed to make building web applications in Zig straightforward and enjoyable.
 
 > **Warning:** Production Deployment
 >

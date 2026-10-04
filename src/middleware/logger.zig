@@ -11,7 +11,7 @@ pub fn logger(options: struct { scope: @TypeOf(.EnumLiteral) = .server }, childr
             const start = std.Io.Timestamp.now(ctx.server.http.io, .awake);
             defer if (ctx.responded) log.debug("{s} {s} {} [{}ms]", .{
                 @tagName(ctx.req.method),
-                ctx.req.url.path,
+                ctx.req.url,
                 ctx.res.status,
                 start.untilNow(ctx.server.http.io, .awake).toMilliseconds(),
             });

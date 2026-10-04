@@ -1,21 +1,19 @@
 const std = @import("std");
-const httpz = @import("httpz");
+const dusty = @import("dusty");
 const Injector = @import("injector.zig").Injector;
 const Provider = @import("container.zig").Provider;
 const Context = @import("context.zig").Context;
 const Route = @import("route.zig").Route;
 
-/// Configuration for `Server.init()`. Most options are passed through to httpz.
+/// Configuration for `Server.init()`.
 pub const InitOptions = struct {
     listen: ListenOptions = .{},
     /// Parent injector for dependency resolution. Set automatically by `tk.app.run()`.
     injector: ?*Injector = null,
-    workers: httpz.Config.Worker = .{},
-    request: httpz.Config.Request = .{},
-    response: httpz.Config.Response = .{},
-    timeout: httpz.Config.Timeout = .{},
-    thread_pool: httpz.Config.ThreadPool = .{},
-    websocket: httpz.Config.Websocket = .{},
+    request: dusty.ServerConfig.Request = .{},
+    timeout: dusty.ServerConfig.Timeout = .{},
+    max_connections: ?u32 = 10_000,
+    trusted_proxy_hops: usize = 0,
 };
 
 /// Address and port to listen on.
@@ -29,28 +27,29 @@ pub const Server = struct {
     gpa: std.mem.Allocator,
     routes: []const Route,
     injector: ?*Injector,
-    http: httpz.Server(Adapter),
+    http: dusty.Server(Adapter),
+    listener: dusty.Listener,
+    adapter: Adapter = undefined,
+    running: ?std.Io.Future(@typeInfo(@TypeOf(start)).@"fn".return_type.?) = null,
 
     pub const provider: Provider = .factory(initWithinApp);
 
     /// Initialize a new server.
     pub fn init(io: std.Io, gpa: std.mem.Allocator, routes: []const Route, options: InitOptions) !Server {
-        const http = try httpz.Server(Adapter).init(io, gpa, .{
-            .address = .{ .ip = .{ .ip4 = try .parse(options.listen.hostname, options.listen.port) } },
-            .workers = options.workers,
-            .request = options.request,
-            .response = options.response,
-            .timeout = options.timeout,
-            .thread_pool = options.thread_pool,
-            .websocket = options.websocket,
-        }, .{});
-        errdefer http.deinit();
-
+        const listener: dusty.Listener = .{
+            .address = .{ .ip = try std.Io.net.IpAddress.parse(options.listen.hostname, options.listen.port) },
+        };
         return .{
             .gpa = gpa,
             .routes = routes,
             .injector = options.injector,
-            .http = http,
+            .http = dusty.Server(Adapter).init(gpa, io, .{
+                .request = options.request,
+                .timeout = options.timeout,
+                .max_connections = options.max_connections,
+                .trusted_proxy_hops = options.trusted_proxy_hops,
+            }, undefined),
+            .listener = listener,
         };
     }
 
@@ -63,24 +62,55 @@ pub const Server = struct {
 
     /// Deinitialize the server.
     pub fn deinit(self: *Server) void {
+        self.stop();
         self.http.deinit();
     }
 
     /// Start listening for incoming connections.
     pub fn start(self: *Server) !void {
-        try self.http.listen();
+        self.adapter = .{ .server = self };
+        self.http.ctx = &self.adapter;
+        self.http.config.listen = &.{self.listener};
+        self.http.router.any("/", Adapter.handle);
+        self.http.router.any("/*", Adapter.handle);
+        return self.http.run();
+    }
+
+    /// Start listening in a concurrent task and wait until the socket is ready.
+    pub fn startInBackground(self: *Server) !void {
+        self.running = try self.http.io.concurrent(Server.start, .{self});
+        errdefer self.stop();
+        try self.http.ready.wait(self.http.io);
     }
 
     /// Stop the server.
     pub fn stop(self: *Server) void {
-        self.http.stop();
+        if (self.running) |*future| {
+            _ = future.cancel(self.http.io) catch |err| if (err != error.Canceled) {
+                std.log.err("Server stopped: {}", .{err});
+            };
+            self.running = null;
+        }
     }
 };
 
 const Adapter = struct {
-    pub fn handle(self: *Adapter, req: *httpz.Request, res: *httpz.Response) void {
-        const http: *httpz.Server(Adapter) = @alignCast(@fieldParentPtr("handler", self));
-        const server: *Server = @alignCast(@fieldParentPtr("http", http));
+    server: *Server,
+
+    pub fn handle(self: *Adapter, req: *dusty.Request, res: *dusty.Response) anyerror!void {
+        const server = self.server;
+
+        if (std.mem.indexOfScalar(u8, req.url, '?')) |index| {
+            var pairs = std.mem.splitScalar(u8, req.url[index + 1 ..], '&');
+            while (pairs.next()) |pair| {
+                if (pair.len == 0) continue;
+                if (req.query.count() >= req.config.max_query_count) return error.TooManyQueryParams;
+                const separator = std.mem.indexOfScalar(u8, pair, '=') orelse pair.len;
+                const key = try dusty.Request.urlUnescape(req.arena, pair[0..separator]);
+                const value = if (separator < pair.len) try dusty.Request.urlUnescape(req.arena, pair[separator + 1 ..]) else "";
+                try req.query.map.put(req.arena, key, value);
+            }
+        }
 
         var ctx: Context = undefined;
 
@@ -109,7 +139,7 @@ const Adapter = struct {
         };
 
         if (!ctx.responded) {
-            ctx.res.status = 404;
+            ctx.res.status = .not_found;
             ctx.send(error.NotFound) catch {};
         }
     }

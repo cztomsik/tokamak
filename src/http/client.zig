@@ -175,20 +175,24 @@ test {
         fn slow(io: std.Io) !void {
             return io.sleep(.fromSeconds(2), .awake);
         }
+
+        fn query(input: struct { name: []const u8 }) struct { greeting: []const u8 } {
+            return .{ .greeting = input.name };
+        }
     };
 
     const routes: []const tk.Route = &.{
         .get("/ping", tk.send("pong")),
+        .get("/query?", H.query),
         .get("/slow", H.slow),
         // .post("/echo", tk.meta.dupe),
     };
 
-    var server = try tk.Server.init(std.testing.io, std.testing.allocator, routes, .{ .listen = .{ .port = 8081 } });
+    var server = try tk.Server.init(std.testing.io, std.testing.allocator, routes, .{ .listen = .{ .port = 0 } });
     defer server.deinit();
 
-    var thread = try std.Thread.spawn(.{}, tk.Server.start, .{&server});
-    defer thread.join();
-    defer server.stop();
+    try server.startInBackground();
+    const port = server.http.address.ip.getPort();
 
     var std_client = try StdClient.init(std.testing.io, std.testing.allocator);
     defer std_client.deinit();
@@ -198,13 +202,19 @@ test {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
 
-    const res1 = try client.request(arena.allocator(), .{ .url = "http://localhost:8081/ping" });
+    const ping_url = try std.fmt.allocPrint(arena.allocator(), "http://127.0.0.1:{d}/ping", .{port});
+    const res1 = try client.request(arena.allocator(), .{ .url = ping_url });
     try std.testing.expectEqual(.ok, res1.status);
     try std.testing.expectEqualStrings("pong", res1.body);
 
+    const query_url = try std.fmt.allocPrint(arena.allocator(), "http://127.0.0.1:{d}/query?name=dusty", .{port});
+    const query_res = try client.request(arena.allocator(), .{ .url = query_url });
+    try std.testing.expectEqual(.ok, query_res.status);
+    try std.testing.expectEqualStrings("{\"greeting\":\"dusty\"}", query_res.body);
+
     // 1-second timeout against a 10-second handler -> should timeout.
     const err = client.request(arena.allocator(), .{
-        .url = "http://localhost:8081/slow",
+        .url = try std.fmt.allocPrint(arena.allocator(), "http://127.0.0.1:{d}/slow", .{port}),
         .timeout = 1,
     });
     try std.testing.expectError(error.RequestTimeout, err);

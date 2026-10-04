@@ -1,5 +1,5 @@
 const std = @import("std");
-const httpz = @import("httpz");
+const dusty = @import("dusty");
 
 // Stand-alone namespaces
 pub const ai = @import("ai.zig");
@@ -44,8 +44,8 @@ pub const Handler = @import("context.zig").Handler;
 pub const ErrorHandler = @import("context.zig").ErrorHandler;
 pub const EventStream = @import("context.zig").EventStream;
 pub const Schema = @import("schema.zig").Schema;
-pub const Request = httpz.Request;
-pub const Response = httpz.Response;
+pub const Request = dusty.Request;
+pub const Response = dusty.Response;
 
 // Middlewares
 pub const cors = @import("middleware/cors.zig").cors;

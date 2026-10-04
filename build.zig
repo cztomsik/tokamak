@@ -34,8 +34,8 @@ pub fn build(b: *std.Build) !void {
     });
     root.addImport("c", translate_c.createModule());
 
-    const httpz = b.dependency("httpz", .{ .target = target, .optimize = optimize });
-    root.addImport("httpz", httpz.module("httpz"));
+    const dusty = b.dependency("dusty", .{ .target = target, .optimize = optimize, .use_tls = false, .use_zlib = false });
+    root.addImport("dusty", dusty.module("dusty"));
 
     try embedFiles(b, root, embed);
 
@@ -44,7 +44,7 @@ pub fn build(b: *std.Build) !void {
     const test_mod = b.createModule(.{ .root_source_file = b.path("src/main.zig"), .target = target, .optimize = optimize });
     test_mod.addImport("c", translate_c.createModule());
     const tests = b.addTest(.{ .root_module = test_mod, .filters = test_filter });
-    tests.root_module.addImport("httpz", httpz.module("httpz"));
+    tests.root_module.addImport("dusty", dusty.module("dusty"));
     // TODO: Something is broken since zig16 but running the binary directly seems to work...
     const run_tests = std.Build.Step.Run.create(b, "run_test");
     run_tests.stdio = .inherit;

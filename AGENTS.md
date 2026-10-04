@@ -11,10 +11,10 @@
 
 ## Project Overview
 
-**Tokamak** is a web application framework for Zig (v0.17.x), built around [http.zig](https://github.com/karlseguin/http.zig) and a dependency injection container. It is designed to run behind a reverse proxy (Nginx, CloudFront) for SSL, caching, and sanitization.
+**Tokamak** is a web application framework for Zig (v0.17.x), built around [dusty](https://github.com/EuroZig/dusty) and a dependency injection container. It is designed to run behind a reverse proxy (Nginx, CloudFront) for SSL, caching, and sanitization.
 
 - **Version:** 2.0.0
-- **Dependency:** `httpz` (git hash `00014146eaf9e17750b752fa4905f7623fbe30f7`)
+- **Dependency:** `dusty` (EuroZig fork, pinned in `build.zig.zon`)
 - **Build command:** `zig build`
 - **Test command:** `zig build test` (optionally with `-Dtest-filter=<pattern>` to skip non-matching tests)
 - **Docs build:** `npm run docs:build` (in `docs/`)
@@ -31,7 +31,7 @@
 | File / Directory | Purpose |
 |---|---|
 | `src/main.zig` | Root module — re-exports all public namespaces, core types (`Injector`, `Container`, `Bundle`, `Server`, `Route`, `Context`, `Schema`), and middlewares. |
-| `src/server.zig` | `Server` — HTTP server wrapper around httpz, handles initialization and lifecycle. |
+| `src/server.zig` | `Server` — HTTP server wrapper around dusty, handles initialization and lifecycle. |
 | `src/route.zig` | `Route` — hierarchical route definitions with `get`, `post`, `group`, `send`, `redirect`, `router(T)`. |
 | `src/context.zig` | `Context` — request context with `next()`, `nextScoped()`, event streaming, middleware chain. |
 | `src/injector.zig` | `Injector` — core DI container, resolves and calls functions with injected parameters. |
@@ -41,7 +41,7 @@
 | `src/middleware/` | Built-in middlewares: `cors.zig`, `logger.zig`, `static.zig`, `swagger.zig`. |
 | `src/dom/` | DOM implementation — `document.zig`, `element.zig`, `node.zig`, `parser.zig`, `text.zig`, `local_name.zig`. |
 | `src/ai/` | WIP AI/LLM module — `agent.zig`, `chat.zig`, `client.zig`, `embedding.zig`, `fmt.zig`, `models.zig`. |
-| `src/http/` | HTTP client wrapper around httpz — `client.zig`. |
+| `src/http/` | HTTP client wrapper around `std.http.Client` — `client.zig`. |
 | `src/tpl.zig` | Template engine. |
 | `src/cron.zig` | Cron scheduler. |
 | `src/queue.zig` | Job queue system. |
@@ -65,7 +65,7 @@
 
 ## Architecture Notes
 
-- **httpz** is the sole external dependency, imported as `httpz` in the build system. All HTTP handling flows through it.
+- **dusty** is the HTTP server dependency, imported as `dusty` in the build system. The separate `src/http/` client uses `std.http.Client`.
 - **DI flow**: `Container.init(allocator, modules)` → resolves dependencies via `Bundle.configure()` hooks → populates `Injector` → `Server` uses the injector to call handlers.
 - **Route hierarchy**: Routes can nest children, enabling middleware patterns. `ctx.next()` continues the chain. `ctx.nextScoped()` adds request-scoped dependencies.
 - **Serialization**: Values returned from handlers that aren't `[]const u8` are auto-serialized to JSON using `std.json.Stringify`. Custom hooks override default behavior.

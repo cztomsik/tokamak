@@ -1,7 +1,6 @@
 const std = @import("std");
 const tk = @import("tokamak");
 const fr = @import("fridge");
-const Status = std.http.Status;
 
 const Todo = struct {
     pub const sql_table_name = "todos";
@@ -83,7 +82,7 @@ fn readAll(db: *fr.Session) ![]const Todo {
 }
 
 fn create(res: *tk.Response, db: *fr.Session, data: Todo) !Todo {
-    res.status = @intFromEnum(Status.created);
+    res.status = .created;
     return try db.query(Todo).insert(data).returning("*").fetchOne(Todo) orelse error.InternalServerError;
 }
 

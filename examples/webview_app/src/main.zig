@@ -37,10 +37,9 @@ pub fn main(init: std.process.Init) !void {
 }
 
 pub fn webviewMain(server: *tk.Server, gpa: std.mem.Allocator) !void {
-    const address = server.http.config.address;
-
-    const thread = try server.http.listenInNewThread();
-    defer thread.join();
+    try server.startInBackground();
+    defer server.stop();
+    const address = server.http.address;
 
     const w = c.webview_create(if (builtin.mode == .debug) 1 else 0, null);
     defer _ = c.webview_destroy(w);
@@ -53,5 +52,4 @@ pub fn webviewMain(server: *tk.Server, gpa: std.mem.Allocator) !void {
 
     _ = c.webview_navigate(w, url);
     _ = c.webview_run(w);
-    server.stop();
 }
