@@ -1,5 +1,5 @@
 const std = @import("std");
-const dusty = @import("dusty");
+const http = @import("backend/http.zig");
 const meta = @import("meta.zig");
 const util = @import("util.zig");
 const Injector = @import("injector.zig").Injector;
@@ -10,7 +10,7 @@ const Schema = @import("schema.zig").Schema;
 /// Defines an HTTP route with method, path, handler, and optional children.
 /// Use helper methods like `get()`, `post()`, `group()` to build routes.
 pub const Route = struct {
-    method: ?dusty.Method = null,
+    method: ?std.http.Method = null,
     prefix: ?[]const u8 = null,
     path: ?[]const u8 = null,
     handler: ?*const Handler = null,
@@ -26,7 +26,7 @@ pub const Route = struct {
         errors: []const anyerror,
     };
 
-    pub fn match(self: *const Route, req: *const dusty.Request) ?Params {
+    pub fn match(self: *const Route, req: *const http.Request) ?Params {
         const path = req.url[0 .. std.mem.indexOfScalar(u8, req.url, '?') orelse req.url.len];
         if (self.prefix) |prefix| {
             if (!std.mem.startsWith(u8, path, prefix)) return null;
@@ -111,45 +111,45 @@ pub const Route = struct {
 
     /// Creates a GET route with the given path and handler.
     pub fn get(comptime path: []const u8, comptime handler: anytype) Route {
-        return route(.get, path, false, handler);
+        return route(.GET, path, false, handler);
     }
 
     /// Creates a POST route with the given path and handler. The handler will
     /// receive the request body in the last argument.
     pub fn post(comptime path: []const u8, comptime handler: anytype) Route {
-        return route(.post, path, true, handler);
+        return route(.POST, path, true, handler);
     }
 
     /// Creates a POST route with the given path and handler but without a body.
     pub fn post0(comptime path: []const u8, comptime handler: anytype) Route {
-        return route(.post, path, false, handler);
+        return route(.POST, path, false, handler);
     }
 
     /// Creates a PUT route with the given path and handler. The handler will
     /// receive the request body in the last argument.
     pub fn put(comptime path: []const u8, comptime handler: anytype) Route {
-        return route(.put, path, true, handler);
+        return route(.PUT, path, true, handler);
     }
 
     /// Creates a PUT route with the given path and handler but without a body.
     pub fn put0(comptime path: []const u8, comptime handler: anytype) Route {
-        return route(.put, path, false, handler);
+        return route(.PUT, path, false, handler);
     }
 
     /// Creates a PATCH route with the given path and handler. The handler will
     /// receive the request body in the last argument.
     pub fn patch(comptime path: []const u8, comptime handler: anytype) Route {
-        return route(.patch, path, true, handler);
+        return route(.PATCH, path, true, handler);
     }
 
     /// Creates a PATCH route with the given path and handler but without a body.
     pub fn patch0(comptime path: []const u8, comptime handler: anytype) Route {
-        return route(.patch, path, false, handler);
+        return route(.PATCH, path, false, handler);
     }
 
     /// Creates a DELETE route with the given path and handler.
     pub fn delete(comptime path: []const u8, comptime handler: anytype) Route {
-        return route(.delete, path, false, handler);
+        return route(.DELETE, path, false, handler);
     }
 
     /// Creates a group of routes from a struct type. Each pub fn will be equivalent
@@ -178,7 +178,7 @@ pub const Route = struct {
     }
 };
 
-fn route(comptime method: dusty.Method, comptime path: []const u8, comptime has_body: bool, comptime handler: anytype) Route {
+fn route(comptime method: std.http.Method, comptime path: []const u8, comptime has_body: bool, comptime handler: anytype) Route {
     if (comptime path.len == 0 or path[0] != '/') {
         @compileError("Path must start with a slash");
     }

@@ -39,7 +39,8 @@ pub fn main(init: std.process.Init) !void {
 pub fn webviewMain(server: *tk.Server, gpa: std.mem.Allocator) !void {
     try server.startInBackground();
     defer server.stop();
-    const address = server.http.address;
+    const hostname = if (std.mem.eql(u8, server.options.listen.hostname, "0.0.0.0")) "127.0.0.1" else if (std.mem.eql(u8, server.options.listen.hostname, "::")) "::1" else server.options.listen.hostname;
+    const address = try std.Io.net.IpAddress.parse(hostname, server.port());
 
     const w = c.webview_create(if (builtin.mode == .debug) 1 else 0, null);
     defer _ = c.webview_destroy(w);

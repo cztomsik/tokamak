@@ -7,6 +7,12 @@
         .dusty = .{
             .url = "git+https://github.com/EuroZig/dusty.git#1b6abeef60249d07927d4f3ff4ef7b30137c482d",
             .hash = "dusty-0.3.1-Qdw7RmTwIQB7Lquk0rbVpzZ-os3i1d3CFQRlHJTDz4wU",
+            .lazy = true,
+        },
+        .httpz = .{
+            .url = "git+https://github.com/karlseguin/http.zig?ref=dev#a67e9f9aa45c7c38061398e9629658b9a3f059fa",
+            .hash = "httpz-0.0.0-PNVzrEgRCQAMqyHdKN16TRJmvAqAj5a4N0QehE9k-_a9",
+            .lazy = true,
         },
     },
     .paths = .{

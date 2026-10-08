@@ -2,6 +2,7 @@ name: Build
 
 on:
   - push
+  - pull_request
 
 jobs:
   build:
@@ -15,6 +16,7 @@ jobs:
           version: '0.17.0'
 
       - run: zig build test --summary all
+      - run: zig build test -Dbackend=httpz --summary all
   
   examples:
     runs-on: ubuntu-latest

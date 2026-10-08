@@ -1,5 +1,5 @@
 const std = @import("std");
-const dusty = @import("dusty");
+const http = @import("backend/http.zig");
 const meta = @import("meta.zig");
 const Injector = @import("injector.zig").Injector;
 const Server = @import("server.zig").Server;
@@ -21,8 +21,8 @@ pub const ErrorHandler = fn (*Context, err: anyerror) anyerror!void;
 pub const Context = struct {
     server: *Server,
     allocator: std.mem.Allocator,
-    req: *dusty.Request,
-    res: *dusty.Response,
+    req: *http.Request,
+    res: *http.Response,
     current: Route,
     params: Params,
     injector: *Injector,
@@ -65,7 +65,7 @@ pub const Context = struct {
 
     /// Returns the value of the given cookie or null if it doesn't exist.
     pub fn getCookie(self: *Context, name: []const u8) ?[]const u8 {
-        var it = std.mem.splitSequence(u8, self.req.headers.get("cookie") orelse "", "; ");
+        var it = std.mem.splitSequence(u8, self.req.header("cookie") orelse "", "; ");
 
         while (it.next()) |part| {
             const i = std.mem.indexOfScalar(u8, part, '=') orelse continue;
@@ -106,12 +106,12 @@ pub const Context = struct {
         switch (@TypeOf(res)) {
             void => {
                 // NOTE: redirect() sets 302 and such handlers are often void so we need to be explicit
-                if (self.res.status == .ok and self.res.body.len == 0) {
-                    self.res.status = .no_content;
+                if (self.res.status == 200 and self.res.body.len == 0 and !self.res.streaming) {
+                    self.res.status = 204;
                 }
             },
             std.http.Status => {
-                self.res.status = @fromBackingInt(@intCast(@backingInt(res)));
+                self.res.status = @backingInt(res);
             },
             []const u8 => {
                 if (self.res.content_type == null) self.res.content_type = .text;
@@ -128,7 +128,7 @@ pub const Context = struct {
                         if (self.error_handler) |handler| {
                             try handler(self, res);
                         } else {
-                            self.res.status = @fromBackingInt(@intCast(getErrorStatus(res)));
+                            self.res.status = getErrorStatus(res);
                             try self.send(.{ .@"error" = res });
                         }
                     },
@@ -152,7 +152,7 @@ pub const Context = struct {
     /// Redirects the client to a different URL with an optional status code.
     pub fn redirect(self: *Context, url: []const u8, options: struct { status: u16 = 302 }) !void {
         self.responded = true;
-        self.res.status = @fromBackingInt(@intCast(options.status));
+        self.res.status = options.status;
         try self.res.header("location", url);
     }
 
@@ -195,17 +195,16 @@ pub fn EventStream(comptime T: type) type {
             var impl = try meta.dupe(ctx.allocator, self.impl);
             defer if (comptime std.meta.hasMethod(T, "deinit")) impl.deinit();
 
-            var buffer: [4096]u8 = undefined;
-            var stream = try ctx.res.startEventStream(&buffer);
-            defer stream.body.end() catch {};
+            var stream = try ctx.res.startEventStream();
+            defer stream.end();
 
             while (impl.next()) |ev| {
                 const value = ev orelse break;
                 const data = try std.json.Stringify.valueAlloc(ctx.allocator, value, .{});
-                try stream.send(data, .{});
+                try stream.send(data);
             } else |e| {
                 const data = try std.json.Stringify.valueAlloc(ctx.allocator, .{ .@"error" = @errorName(e) }, .{});
-                try stream.send(data, .{});
+                try stream.send(data);
             }
         }
     };

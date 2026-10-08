@@ -3,13 +3,17 @@ const log = std.log.scoped(.tokamak);
 
 pub const SetupOptions = struct {
     embed: []const []const u8 = &.{},
+    backend: Backend = .dusty,
 };
+
+pub const Backend = enum { dusty, httpz };
 
 pub fn setup(step: *std.Build.Step.Compile, opts: SetupOptions) void {
     const tokamak = step.step.owner.dependencyFromBuildZig(@This(), .{
         .target = step.root_module.resolved_target,
         .optimize = step.root_module.optimize,
         .embed = opts.embed,
+        .backend = opts.backend,
     });
 
     step.root_module.addImport("tokamak", tokamak.module("tokamak"));
@@ -19,6 +23,7 @@ pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
     const embed = b.option([]const []const u8, "embed", "Files to embed in the binary") orelse &.{};
+    const backend = b.option(Backend, "backend", "HTTP backend (dusty or httpz)") orelse .dusty;
 
     const root = b.addModule("tokamak", .{
         .root_source_file = b.path("src/main.zig"),
@@ -34,8 +39,7 @@ pub fn build(b: *std.Build) !void {
     });
     root.addImport("c", translate_c.createModule());
 
-    const dusty = b.dependency("dusty", .{ .target = target, .optimize = optimize, .use_tls = false, .use_zlib = false });
-    root.addImport("dusty", dusty.module("dusty"));
+    addBackend(b, root, backend, target, optimize);
 
     try embedFiles(b, root, embed);
 
@@ -44,12 +48,29 @@ pub fn build(b: *std.Build) !void {
     const test_mod = b.createModule(.{ .root_source_file = b.path("src/main.zig"), .target = target, .optimize = optimize });
     test_mod.addImport("c", translate_c.createModule());
     const tests = b.addTest(.{ .root_module = test_mod, .filters = test_filter });
-    tests.root_module.addImport("dusty", dusty.module("dusty"));
+    addBackend(b, tests.root_module, backend, target, optimize);
     // TODO: Something is broken since zig16 but running the binary directly seems to work...
     const run_tests = std.Build.Step.Run.create(b, "run_test");
     run_tests.stdio = .inherit;
     run_tests.addArtifactArg(tests);
     test_step.dependOn(&run_tests.step);
+}
+
+fn addBackend(b: *std.Build, root: *std.Build.Module, backend: Backend, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) void {
+    const options = b.addOptions();
+    options.addOption(Backend, "backend", backend);
+    root.addOptions("backend_options", options);
+
+    switch (backend) {
+        .dusty => {
+            const dep = b.lazyDependency("dusty", .{ .target = target, .optimize = optimize, .use_tls = false, .use_zlib = false }) orelse return;
+            root.addImport("dusty", dep.module("dusty"));
+        },
+        .httpz => {
+            const dep = b.lazyDependency("httpz", .{ .target = target, .optimize = optimize }) orelse return;
+            root.addImport("httpz", dep.module("httpz"));
+        },
+    }
 }
 
 // TODO: This is simple and it works, it even recompiles if the files change.

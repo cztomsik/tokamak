@@ -82,7 +82,7 @@ fn readAll(db: *fr.Session) ![]const Todo {
 }
 
 fn create(res: *tk.Response, db: *fr.Session, data: Todo) !Todo {
-    res.status = .created;
+    res.status = 201;
     return try db.query(Todo).insert(data).returning("*").fetchOne(Todo) orelse error.InternalServerError;
 }
 

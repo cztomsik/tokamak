@@ -1,146 +1,134 @@
 const std = @import("std");
-const dusty = @import("dusty");
+const http = @import("backend/http.zig");
 const Injector = @import("injector.zig").Injector;
 const Provider = @import("container.zig").Provider;
 const Context = @import("context.zig").Context;
 const Route = @import("route.zig").Route;
+const Backend = switch (@import("backend_options").backend) {
+    .dusty => @import("backend/dusty.zig").Backend,
+    .httpz => @import("backend/httpz.zig").Backend,
+};
 
-/// Configuration for `Server.init()`.
 pub const InitOptions = struct {
     listen: ListenOptions = .{},
-    /// Parent injector for dependency resolution. Set automatically by `tk.app.run()`.
     injector: ?*Injector = null,
-    request: dusty.ServerConfig.Request = .{},
-    timeout: dusty.ServerConfig.Timeout = .{},
+    request: RequestOptions = .{},
+    timeout: TimeoutOptions = .{},
     max_connections: ?u32 = 10_000,
     trusted_proxy_hops: usize = 0,
 };
 
-/// Address and port to listen on.
+pub const RequestOptions = struct {
+    max_body_size: usize = 1_048_576,
+    max_query_count: usize = 32,
+};
+
+pub const TimeoutOptions = struct {
+    request: ?std.Io.Duration = .fromSeconds(30),
+    keepalive: ?std.Io.Duration = .fromSeconds(60),
+};
+
 pub const ListenOptions = struct {
     hostname: []const u8 = "127.0.0.1",
     port: u16 = 8080,
 };
 
-/// A simple HTTP server with dependency injection.
 pub const Server = struct {
+    io: std.Io,
     gpa: std.mem.Allocator,
     routes: []const Route,
     injector: ?*Injector,
-    http: dusty.Server(Adapter),
-    listener: dusty.Listener,
-    adapter: Adapter = undefined,
-    running: ?std.Io.Future(@typeInfo(@TypeOf(start)).@"fn".return_type.?) = null,
+    options: InitOptions,
+    backend: *Backend,
+    initialized: bool = false,
 
     pub const provider: Provider = .factory(initWithinApp);
 
-    /// Initialize a new server.
     pub fn init(io: std.Io, gpa: std.mem.Allocator, routes: []const Route, options: InitOptions) !Server {
-        const listener: dusty.Listener = .{
-            .address = .{ .ip = try std.Io.net.IpAddress.parse(options.listen.hostname, options.listen.port) },
-        };
+        _ = try std.Io.net.IpAddress.parse(options.listen.hostname, options.listen.port);
+        const backend = try gpa.create(Backend);
         return .{
+            .io = io,
             .gpa = gpa,
             .routes = routes,
             .injector = options.injector,
-            .http = dusty.Server(Adapter).init(gpa, io, .{
-                .request = options.request,
-                .timeout = options.timeout,
-                .max_connections = options.max_connections,
-                .trusted_proxy_hops = options.trusted_proxy_hops,
-            }, undefined),
-            .listener = listener,
+            .options = options,
+            .backend = backend,
         };
     }
 
     pub fn initWithinApp(io: std.Io, gpa: std.mem.Allocator, routes: []const Route, inj: *Injector) !Server {
         var opts: InitOptions = inj.find(InitOptions) orelse .{};
         opts.injector = inj;
-
         return init(io, gpa, routes, opts);
     }
 
-    /// Deinitialize the server.
+    fn prepare(self: *Server) !void {
+        if (self.initialized) return error.AlreadyRunning;
+        self.backend.* = try Backend.init(self);
+        self.initialized = true;
+    }
+
     pub fn deinit(self: *Server) void {
-        self.stop();
-        self.http.deinit();
+        if (self.initialized) self.backend.deinit();
+        self.gpa.destroy(self.backend);
     }
 
-    /// Start listening for incoming connections.
     pub fn start(self: *Server) !void {
-        self.adapter = .{ .server = self };
-        self.http.ctx = &self.adapter;
-        self.http.config.listen = &.{self.listener};
-        self.http.router.any("/", Adapter.handle);
-        self.http.router.any("/*", Adapter.handle);
-        return self.http.run();
+        try self.prepare();
+        errdefer {
+            self.backend.deinit();
+            self.initialized = false;
+        }
+        try self.backend.start();
     }
 
-    /// Start listening in a concurrent task and wait until the socket is ready.
     pub fn startInBackground(self: *Server) !void {
-        self.running = try self.http.io.concurrent(Server.start, .{self});
-        errdefer self.stop();
-        try self.http.ready.wait(self.http.io);
+        try self.prepare();
+        errdefer {
+            self.backend.deinit();
+            self.initialized = false;
+        }
+        try self.backend.startInBackground();
     }
 
-    /// Stop the server.
     pub fn stop(self: *Server) void {
-        if (self.running) |*future| {
-            _ = future.cancel(self.http.io) catch |err| if (err != error.Canceled) {
-                std.log.err("Server stopped: {}", .{err});
-            };
-            self.running = null;
+        if (self.initialized) {
+            self.backend.deinit();
+            self.initialized = false;
         }
     }
-};
 
-const Adapter = struct {
-    server: *Server,
+    pub fn port(self: *const Server) u16 {
+        return if (self.initialized) self.backend.port() else self.options.listen.port;
+    }
 
-    pub fn handle(self: *Adapter, req: *dusty.Request, res: *dusty.Response) anyerror!void {
-        const server = self.server;
-
-        if (std.mem.indexOfScalar(u8, req.url, '?')) |index| {
-            var pairs = std.mem.splitScalar(u8, req.url[index + 1 ..], '&');
-            while (pairs.next()) |pair| {
-                if (pair.len == 0) continue;
-                if (req.query.count() >= req.config.max_query_count) return error.TooManyQueryParams;
-                const separator = std.mem.indexOfScalar(u8, pair, '=') orelse pair.len;
-                const key = try dusty.Request.urlUnescape(req.arena, pair[0..separator]);
-                const value = if (separator < pair.len) try dusty.Request.urlUnescape(req.arena, pair[separator + 1 ..]) else "";
-                try req.query.map.put(req.arena, key, value);
-            }
-        }
-
+    pub fn dispatch(self: *Server, req: *http.Request, res: *http.Response) !void {
         var ctx: Context = undefined;
-
         var inj: Injector = .init(&.{
             .ref(&ctx),
-            .ref(server),
-            .ref(&server.http.io),
+            .ref(self),
+            .ref(&self.io),
             .ref(&req.arena),
             .ref(req),
             .ref(res),
-        }, server.injector);
-
+        }, self.injector);
         ctx = .{
-            .server = server,
-            .allocator = res.arena,
+            .server = self,
+            .allocator = req.arena,
             .req = req,
             .res = res,
-            .current = .{ .children = server.routes },
+            .current = .{ .children = self.routes },
             .params = .{},
             .injector = &inj,
         };
-
-        ctx.next() catch |e| {
-            ctx.send(e) catch {};
+        ctx.next() catch |err| {
+            try ctx.send(err);
             return;
         };
-
         if (!ctx.responded) {
-            ctx.res.status = .not_found;
-            ctx.send(error.NotFound) catch {};
+            res.status = 404;
+            try ctx.send(error.NotFound);
         }
     }
 };

@@ -15,7 +15,7 @@ pub fn build(b: *std.Build) void {
     });
 
     // Add tokamak
-    tokamak.setup(exe, .{});
+    tokamak.setup(exe, .{ .backend = .httpz });
 
     b.installArtifact(exe);
 

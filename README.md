@@ -50,6 +50,10 @@ pub fn build(b: *std.Build) void {
 }
 ```
 
+The default backend is dusty (`examples/hello`). To use http.zig instead, set
+`tokamak.setup(exe, .{ .backend = .httpz })` (`examples/hello_app`). Both
+backend packages are lazy dependencies: only the selected backend is fetched.
+
 ## Getting Started
 
 Simple things should be easy to do.
@@ -107,15 +111,15 @@ fn hello() !HelloRes {
 }
 ```
 
-If you need a more fine-grained control over the response, you can inject a
-`*tk.Response` and use its methods directly.
-
-> But this will of course make your code tightly coupled to respective types
-> and it should be avoided if possible.
+If you need more fine-grained control over the response, inject `*tk.Context`
+and use `send`, `redirect`, or its `res` field. The shared `tk.Request` and
+`tk.Response` types are backend-independent; code using dusty-specific methods
+must migrate to the shared API. The dusty-only `max_connections` and
+`trusted_proxy_hops` server options are not supported by httpz.
 
 ```zig
-fn hello(res: *tk.Response) !void {
-    try res.json(.{ .message = "Hello" }, .{});
+fn hello(ctx: *tk.Context) !void {
+    try ctx.send(.{ .message = "Hello" });
 }
 ```
 

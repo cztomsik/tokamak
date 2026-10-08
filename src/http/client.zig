@@ -150,7 +150,7 @@ pub const StdClient = struct {
         var headers: std.StringHashMapUnmanaged([]const u8) = .{};
         var it = res.head.iterateHeaders();
         while (it.next()) |h| {
-            try headers.put(arena, h.name, h.value);
+            try headers.put(arena, try arena.dupe(u8, h.name), try arena.dupe(u8, h.value));
         }
 
         var decompress: std.http.Decompress = undefined;
@@ -179,11 +179,35 @@ test {
         fn query(input: struct { name: []const u8 }) struct { greeting: []const u8 } {
             return .{ .greeting = input.name };
         }
+
+        fn greeting(data: struct { name: []const u8 }) struct { greeting: []const u8 } {
+            return .{ .greeting = data.name };
+        }
+
+        fn headers(req: *tk.Request, ctx: *tk.Context) ![]const u8 {
+            try ctx.res.header("x-request-origin", req.header("Origin") orelse "missing");
+            return "ok";
+        }
+
+        fn redirect(ctx: *tk.Context) !void {
+            try ctx.redirect("/ping", .{});
+        }
+
+        fn invalidHeader(ctx: *tk.Context) !void {
+            try ctx.res.header("x-test", "safe\r\nx-injected: yes");
+        }
     };
 
     const routes: []const tk.Route = &.{
+        tk.cors(),
         .get("/ping", tk.send("pong")),
         .get("/query?", H.query),
+        .post("/greeting", H.greeting),
+        .get("/headers", H.headers),
+        .get("/redirect", H.redirect),
+        .get("/invalid-header", H.invalidHeader),
+        .get("/static", tk.static.file("README.md")),
+        .get("/openapi.json", tk.swagger.json(.{ .info = .{ .title = "Test" } })),
         .get("/slow", H.slow),
         // .post("/echo", tk.meta.dupe),
     };
@@ -192,7 +216,7 @@ test {
     defer server.deinit();
 
     try server.startInBackground();
-    const port = server.http.address.ip.getPort();
+    const port = server.port();
 
     var std_client = try StdClient.init(std.testing.io, std.testing.allocator);
     defer std_client.deinit();
@@ -207,15 +231,73 @@ test {
     try std.testing.expectEqual(.ok, res1.status);
     try std.testing.expectEqualStrings("pong", res1.body);
 
-    const query_url = try std.fmt.allocPrint(arena.allocator(), "http://127.0.0.1:{d}/query?name=dusty", .{port});
+    const query_url = try std.fmt.allocPrint(arena.allocator(), "http://127.0.0.1:{d}/query?name=tokamak", .{port});
     const query_res = try client.request(arena.allocator(), .{ .url = query_url });
     try std.testing.expectEqual(.ok, query_res.status);
-    try std.testing.expectEqualStrings("{\"greeting\":\"dusty\"}", query_res.body);
+    try std.testing.expectEqualStrings("{\"greeting\":\"tokamak\"}", query_res.body);
 
-    // 1-second timeout against a 10-second handler -> should timeout.
+    const greeting_url = try std.fmt.allocPrint(arena.allocator(), "http://127.0.0.1:{d}/greeting", .{port});
+    const greeting = .{ .name = "zig" };
+    const post_res = try client.request(arena.allocator(), .{
+        .method = .POST,
+        .url = greeting_url,
+        .body = RequestBody.json(&greeting),
+    });
+    try std.testing.expectEqual(.ok, post_res.status);
+    try std.testing.expectEqualStrings("{\"greeting\":\"zig\"}", post_res.body);
+
+    const headers_url = try std.fmt.allocPrint(arena.allocator(), "http://127.0.0.1:{d}/headers", .{port});
+    const headers_res = try client.request(arena.allocator(), .{
+        .url = headers_url,
+        .headers = &.{.{ .name = "Origin", .value = "https://example.test" }},
+    });
+    try std.testing.expectEqual(.ok, headers_res.status);
+    try std.testing.expectEqualStrings("https://example.test", headers_res.headers.get("x-request-origin").?);
+    try std.testing.expectEqualStrings("https://example.test", headers_res.headers.get("access-control-allow-origin").?);
+
+    const preflight = try client.request(arena.allocator(), .{
+        .method = .OPTIONS,
+        .url = ping_url,
+        .headers = &.{.{ .name = "Access-Control-Request-Method", .value = "POST" }},
+    });
+    try std.testing.expectEqual(.no_content, preflight.status);
+    try std.testing.expectEqualStrings("GET, POST, PUT, DELETE, OPTIONS", preflight.headers.get("access-control-allow-methods").?);
+
+    const redirect_url = try std.fmt.allocPrint(arena.allocator(), "http://127.0.0.1:{d}/redirect", .{port});
+    const redirect_res = try client.request(arena.allocator(), .{ .url = redirect_url });
+    try std.testing.expectEqual(.ok, redirect_res.status);
+    try std.testing.expectEqualStrings("pong", redirect_res.body);
+
+    const invalid_url = try std.fmt.allocPrint(arena.allocator(), "http://127.0.0.1:{d}/invalid-header", .{port});
+    const invalid_res = try client.request(arena.allocator(), .{ .url = invalid_url });
+    try std.testing.expectEqual(.internal_server_error, invalid_res.status);
+    try std.testing.expect(invalid_res.headers.get("x-injected") == null);
+
+    const static_url = try std.fmt.allocPrint(arena.allocator(), "http://127.0.0.1:{d}/static", .{port});
+    const static_res = try client.request(arena.allocator(), .{ .url = static_url });
+    try std.testing.expectEqual(.ok, static_res.status);
+    try std.testing.expect(std.mem.startsWith(u8, static_res.body, "# Tokamak"));
+    try std.testing.expectEqualStrings("text/markdown; charset=utf-8", static_res.headers.get("content-type").?);
+
+    const schema_url = try std.fmt.allocPrint(arena.allocator(), "http://127.0.0.1:{d}/openapi.json", .{port});
+    const schema_res = try client.request(arena.allocator(), .{ .url = schema_url });
+    try std.testing.expectEqual(.ok, schema_res.status);
+    try std.testing.expect(std.mem.indexOf(u8, schema_res.body, "\"openapi\":\"3.0.0\"") != null);
+
+    // 1-second timeout against a 2-second handler -> should timeout.
     const err = client.request(arena.allocator(), .{
         .url = try std.fmt.allocPrint(arena.allocator(), "http://127.0.0.1:{d}/slow", .{port}),
         .timeout = 1,
     });
     try std.testing.expectError(error.RequestTimeout, err);
+
+    if (@import("backend_options").backend == .httpz) {
+        var conflicting = try tk.Server.init(std.testing.io, std.testing.allocator, routes, .{ .listen = .{ .port = port } });
+        defer conflicting.deinit();
+        try std.testing.expectError(error.ListenFailed, conflicting.startInBackground());
+    }
+
+    server.stop();
+    try server.startInBackground();
+    try std.testing.expect(server.port() != 0);
 }
