@@ -1,12 +1,10 @@
 # Server
 
-The `tk.Server` handles HTTP requests and manages the application lifecycle. It uses dusty by default or httpz when selected in `build.zig`.
+The `tk.Server` handles HTTP requests and manages the application lifecycle independently of the selected HTTP backend.
 
 ## Backend Selection
 
-The build selects one HTTP backend for the application.
-
-For dusty (the default):
+Choose a backend in `build.zig`. The default setup uses dusty:
 
 ```zig
 tokamak.setup(exe, .{});
@@ -18,11 +16,11 @@ For httpz (http.zig), use this instead:
 tokamak.setup(exe, .{ .backend = .httpz });
 ```
 
-Only the selected backend is fetched. Both expose the same `tk.Request`,
-`tk.Response`, routing, and middleware APIs. `examples/hello` uses dusty;
-`examples/hello_app` uses httpz. To run the framework tests against both
-backends, use `zig build test` and `zig build test -Dbackend=httpz` from the
-repository root.
+Only the selected backend is fetched. Routing, middleware, and the shared
+`tk.Request` and `tk.Response` APIs are independent of the backend choice.
+`examples/hello` and `examples/hello_app` demonstrate the two configurations.
+Run `zig build test` for the default backend or `zig build test -Dbackend=httpz`
+for httpz.
 
 ## Basic Setup
 
@@ -52,9 +50,9 @@ defer server.deinit();
 ```
 
 `listen`, `request`, `timeout`, and `injector` apply to both backends. The
-`max_connections` and `trusted_proxy_hops` options apply only to dusty; httpz
-ignores them. `server.port()` returns the bound port after startup, including
-when the configured port is `0`.
+`max_connections` and `trusted_proxy_hops` options are backend-specific: only
+dusty applies them; httpz ignores them. `server.port()` returns the bound port
+after startup, including when the configured port is `0`.
 
 ## Custom Dependencies
 

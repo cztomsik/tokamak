@@ -11,10 +11,10 @@
 
 ## Project Overview
 
-**Tokamak** is a web application framework for Zig (v0.17.x) with a dependency injection container and selectable HTTP backends: dusty (default) and httpz (http.zig). It is designed to run behind a reverse proxy (Nginx, CloudFront) for SSL, caching, and sanitization.
+**Tokamak** is a web application framework for Zig (v0.17.x) with a dependency injection container and selectable HTTP backends. It is designed to run behind a reverse proxy (Nginx, CloudFront) for SSL, caching, and sanitization.
 
 - **Version:** 2.0.0
-- **HTTP dependencies:** `dusty` and `httpz` (pinned, lazy dependencies in `build.zig.zon`); select with `tokamak.setup(exe, .{ .backend = .httpz })` or use the default dusty backend
+- **HTTP dependencies:** `dusty` (default) and `httpz` (http.zig), pinned as lazy dependencies in `build.zig.zon`; select with `tokamak.setup(exe, .{ .backend = .httpz })`
 - **Build command:** `zig build`
 - **Test command:** `zig build test` for dusty or `zig build test -Dbackend=httpz` for httpz (optionally with `-Dtest-filter=<pattern>` to skip non-matching tests)
 - **Docs build:** `npm run docs:build` (in `docs/`)
@@ -66,7 +66,7 @@
 
 ## Architecture Notes
 
-- **HTTP backends**: dusty is the default; httpz is selected in `build.zig` with `.backend = .httpz`. Both adapt to the shared `tk.Request`/`tk.Response` API. The separate `src/http/` client uses `std.http.Client`.
+- **HTTP backends**: The build chooses one backend (dusty by default, or httpz with `.backend = .httpz`). Both adapt to the shared `tk.Request`/`tk.Response` API. The separate `src/http/` client uses `std.http.Client`.
 - **DI flow**: `Container.init(allocator, modules)` → resolves dependencies via `Bundle.configure()` hooks → populates `Injector` → `Server` uses the injector to call handlers.
 - **Route hierarchy**: Routes can nest children, enabling middleware patterns. `ctx.next()` continues the chain. `ctx.nextScoped()` adds request-scoped dependencies.
 - **Serialization**: Values returned from handlers that aren't `[]const u8` are auto-serialized to JSON using `std.json.Stringify`. Custom hooks override default behavior.

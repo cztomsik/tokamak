@@ -2,7 +2,7 @@
 
 Welcome to Tokamak! This guide will help you build your first web application with Zig.
 
-Tokamak is a server-side framework with a dependency injection container and two selectable HTTP backends: dusty (the default) and httpz (http.zig). It's designed to make building web applications in Zig straightforward and enjoyable.
+Tokamak is a server-side framework with a dependency injection container and selectable HTTP backends. It's designed to make building web applications in Zig straightforward and enjoyable.
 
 > **Warning:** Production Deployment
 >
@@ -30,10 +30,9 @@ pub fn build(b: *std.Build) void {
 }
 ```
 
-This uses dusty. To select httpz instead, use
-`tokamak.setup(exe, .{ .backend = .httpz });`. The backend is chosen at build
-time; only the selected backend package is fetched. The framework's
-`tk.Request` and `tk.Response` APIs are the same for both backends.
+The setup call selects the default HTTP backend. To choose another backend,
+see [Backend Selection](./server.md#backend-selection). The framework's
+`tk.Request` and `tk.Response` APIs do not depend on the selected backend.
 
 ## Your First Server
 

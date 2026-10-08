@@ -60,8 +60,8 @@ fn hello(ctx: *tk.Context) !void {
 Both backends use the same `tk.Request` and `tk.Response` types. Inject
 `*tk.Request` to access `req.method`, `req.url` (a path slice), `req.header(name)`,
 `req.queryGet(name)`, and `try req.body()`. `tk.Response` exposes `status`
-(as a `u16`), `body`, `content_type`, and `header(name, value)`. Dusty-specific
-request and response methods are not available through these shared types.
+(as a `u16`), `body`, `content_type`, and `header(name, value)`. Native-backend
+methods are not available through these shared types.
 
 > **Tip:** Prefer returning values directly when manual response control is unnecessary.
 

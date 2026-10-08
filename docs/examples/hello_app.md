@@ -1,6 +1,6 @@
 # hello_app
 
-A more streamlined version of the hello example using the application framework with dependency injection. Unlike `hello`, which selects dusty, this example selects httpz (http.zig) in `examples/hello_app/build.zig`.
+A more streamlined version of the hello example using the application framework with dependency injection. Its build selects the httpz HTTP backend; the app framework works with either backend.
 
 ## Source Code
 
@@ -17,7 +17,7 @@ A more streamlined version of the hello example using the application framework 
 - Declarative server configuration
 - Automatic memory management
 - Clean, minimal boilerplate
-- Optional httpz backend via `tokamak.setup(exe, .{ .backend = .httpz })`
+- Build-time HTTP backend selection via `tokamak.setup(exe, .{ .backend = .httpz })`
 
 ## How It Works
 
@@ -38,7 +38,10 @@ Visit http://localhost:8080/ to see the greeting.
 
 ## Comparison with `hello`
 
-Both examples serve the same greeting using the same routing and handler API; `hello` uses dusty and `hello_app` uses httpz. The app framework also:
+Both examples serve the same greeting using the shared routing and handler
+API. Their build files select different HTTP backends; either backend works
+with either application style. Compared with manual server setup, the app
+framework:
 - Eliminates manual allocator setup
 - Automatically manages the server lifecycle
 - Provides a cleaner, more declarative API

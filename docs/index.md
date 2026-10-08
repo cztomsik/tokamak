@@ -18,8 +18,8 @@
     <p class="m-0 text-gray-500 dark:text-gray-400 text-sm">Powerful routing with path parameters, wildcards, and nested routes</p>
   </div>
   <div class="p-6 border border-gray-200 dark:border-gray-700 rounded-lg">
-    <h3 class="mt-0 mb-2">High Performance</h3>
-    <p class="m-0 text-gray-500 dark:text-gray-400 text-sm">Dusty by default, with an optional httpz backend - designed to work behind a reverse proxy</p>
+    <h3 class="mt-0 mb-2">Selectable HTTP Backends</h3>
+    <p class="m-0 text-gray-500 dark:text-gray-400 text-sm">Choose an HTTP backend at build time while using the same routing and handler APIs</p>
   </div>
   <div class="p-6 border border-gray-200 dark:border-gray-700 rounded-lg">
     <h3 class="mt-0 mb-2">Type-safe</h3>

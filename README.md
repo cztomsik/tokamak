@@ -3,8 +3,7 @@
 📚 **[Documentation](https://tomsik.cz/tokamak)**
 
 Tokamak is a web application framework for Zig with a dependency injection
-container and a choice of HTTP server backend: dusty (default) or httpz
-(http.zig).
+container and selectable HTTP server backends.
 
 > **Note:** The main branch requires **Zig 0.17.0** or newer.
 
@@ -24,7 +23,6 @@ sanitization, etc.
 > - new [cli module](https://github.com/cztomsik/tokamak/tree/master/src/cli.zig)
 > - injecting `tk.Injector` is deprecated, use `*tk.Injector`
 > - multi-module support (cross-module initializers, providers, overrides)
-> - Added a selectable httpz backend alongside the default dusty backend.
 > - Implemented hierarchical and introspectable routes.
 > - Added basic Swagger support.
 > - Added `tk.static.dir()` for serving entire directories.
@@ -50,10 +48,10 @@ pub fn build(b: *std.Build) void {
 }
 ```
 
-The default backend is dusty (`examples/hello`). To use http.zig (httpz), set
-`tokamak.setup(exe, .{ .backend = .httpz })` (`examples/hello_app`). You can
-also select the backend for framework tests with `zig build test -Dbackend=httpz`.
-Both backend packages are lazy dependencies: only the selected backend is fetched.
+The default backend is dusty. To use httpz (http.zig), set
+`tokamak.setup(exe, .{ .backend = .httpz })`. Only the selected backend is
+fetched. Both use the same Tokamak routing and request/response APIs. See the
+[server guide](docs/guide/server.md) for configuration and testing.
 
 ## Getting Started
 
@@ -113,16 +111,17 @@ fn hello() !HelloRes {
 ```
 
 If you need more fine-grained control over the response, inject `*tk.Context`
-and use `send`, `redirect`, or its `res` field. The shared `tk.Request` and
-`tk.Response` types are backend-independent; code using dusty-specific methods
-must migrate to the shared API. The dusty-only `max_connections` and
-`trusted_proxy_hops` server options are not supported by httpz.
+and use `send`, `redirect`, or its `res` field. `tk.Request` and `tk.Response`
+are backend-independent; native-backend methods are not part of this shared API.
 
 ```zig
 fn hello(ctx: *tk.Context) !void {
     try ctx.send(.{ .message = "Hello" });
 }
 ```
+
+Backend-specific server options, including `max_connections` and
+`trusted_proxy_hops`, are covered in the [server guide](docs/guide/server.md).
 
 ## Custom Dependencies
 
