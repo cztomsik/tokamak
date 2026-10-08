@@ -47,22 +47,30 @@ fn hello() !HelloRes {
 
 ### Manual Response Control
 
-For fine-grained control, inject `*tk.Response`:
+For fine-grained control, inject `*tk.Context` to set headers, change the
+status, or send a response:
 
 ```zig
-fn hello(res: *tk.Response) !void {
-    try res.json(.{ .message = "Hello" }, .{});
+fn hello(ctx: *tk.Context) !void {
+    try ctx.res.header("cache-control", "no-store");
+    try ctx.send(.{ .message = "Hello" });
 }
 ```
 
-> **Tip:** Avoid tight coupling to `*tk.Response` when possible. Prefer returning values directly.
+Both backends use the same `tk.Request` and `tk.Response` types. Inject
+`*tk.Request` to access `req.method`, `req.url` (a path slice), `req.header(name)`,
+`req.queryGet(name)`, and `try req.body()`. `tk.Response` exposes `status`
+(as a `u16`), `body`, `content_type`, and `header(name, value)`. Dusty-specific
+request and response methods are not available through these shared types.
+
+> **Tip:** Prefer returning values directly when manual response control is unnecessary.
 
 ## Custom Dependencies
 
 Provide your own global dependencies via a custom injector:
 
 ```zig
-pub fn main() !void {
+pub fn main(init: std.process.Init) !void {
     var db = try sqlite.open("my.db");
     var cache = try Cache.init();
 
@@ -71,9 +79,10 @@ pub fn main() !void {
         .ref(&cache),
     }, null);
 
-    var server = try tk.Server.init(allocator, routes, .{
+    var server = try tk.Server.init(init.io, init.gpa, routes, .{
         .injector = &inj,
     });
+    defer server.deinit();
 
     try server.start();
 }
@@ -105,8 +114,8 @@ const WebModule = struct {
     routes: []const tk.Route = &.{ /* ... */ },
 };
 
-pub fn main() !void {
-    try tk.app.run(tk.Server.start, &.{
+pub fn main(init: std.process.Init) !void {
+    try tk.app.run(init, tk.Server.start, &.{
         SharedModule,
         WebModule,
     });

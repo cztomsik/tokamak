@@ -12,7 +12,7 @@ fn logger(children: []const tk.Route) tk.Route {
         fn handleLogger(ctx: *tk.Context) anyerror!void {
             log.debug("{s} {s}", .{
                 @tagName(ctx.req.method),
-                ctx.req.url.path,
+                ctx.req.url,
             });
 
             return ctx.next();
@@ -100,8 +100,8 @@ const routes: []const tk.Route = &.{
 
 ```zig
 fn cors(ctx: *tk.Context) anyerror!void {
-    ctx.res.header("access-control-allow-origin", "*");
-    ctx.res.header("access-control-allow-methods", "GET, POST, PUT, DELETE");
+    try ctx.res.header("access-control-allow-origin", "*");
+    try ctx.res.header("access-control-allow-methods", "GET, POST, PUT, DELETE");
 
     if (ctx.req.method == .OPTIONS and ctx.req.header("access-control-request-method") != null) {
         return ctx.send({});

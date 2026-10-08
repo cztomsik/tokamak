@@ -19,7 +19,7 @@
   </div>
   <div class="p-6 border border-gray-200 dark:border-gray-700 rounded-lg">
     <h3 class="mt-0 mb-2">High Performance</h3>
-    <p class="m-0 text-gray-500 dark:text-gray-400 text-sm">Built on dusty for efficient HTTP handling - designed to work behind a reverse proxy</p>
+    <p class="m-0 text-gray-500 dark:text-gray-400 text-sm">Dusty by default, with an optional httpz backend - designed to work behind a reverse proxy</p>
   </div>
   <div class="p-6 border border-gray-200 dark:border-gray-700 rounded-lg">
     <h3 class="mt-0 mb-2">Type-safe</h3>

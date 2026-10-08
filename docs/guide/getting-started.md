@@ -2,7 +2,7 @@
 
 Welcome to Tokamak! This guide will help you build your first web application with Zig.
 
-Tokamak is a server-side framework built around [dusty](https://github.com/EuroZig/dusty) and a simple but powerful dependency injection container. It's designed to make building web applications in Zig straightforward and enjoyable.
+Tokamak is a server-side framework with a dependency injection container and two selectable HTTP backends: dusty (the default) and httpz (http.zig). It's designed to make building web applications in Zig straightforward and enjoyable.
 
 > **Warning:** Production Deployment
 >
@@ -26,10 +26,14 @@ pub fn build(b: *std.Build) void {
     const exe = b.addExecutable(.{ /* ... */ });
     // ...
 
-    // Add tokamak
     tokamak.setup(exe, .{});
 }
 ```
+
+This uses dusty. To select httpz instead, use
+`tokamak.setup(exe, .{ .backend = .httpz });`. The backend is chosen at build
+time; only the selected backend package is fetched. The framework's
+`tk.Request` and `tk.Response` APIs are the same for both backends.
 
 ## Your First Server
 
@@ -47,13 +51,9 @@ fn hello() ![]const u8 {
     return "Hello";
 }
 
-pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-    defer _ = gpa.deinit();
-
-    var server = try tk.Server.init(allocator, routes, .{
-        .listen = .{ .port = 8080 }
+pub fn main(init: std.process.Init) !void {
+    var server = try tk.Server.init(init.io, init.gpa, routes, .{
+        .listen = .{ .port = 8080 },
     });
     defer server.deinit();
 

@@ -11,12 +11,12 @@
 
 ## Project Overview
 
-**Tokamak** is a web application framework for Zig (v0.17.x), built around [dusty](https://github.com/EuroZig/dusty) and a dependency injection container. It is designed to run behind a reverse proxy (Nginx, CloudFront) for SSL, caching, and sanitization.
+**Tokamak** is a web application framework for Zig (v0.17.x) with a dependency injection container and selectable HTTP backends: dusty (default) and httpz (http.zig). It is designed to run behind a reverse proxy (Nginx, CloudFront) for SSL, caching, and sanitization.
 
 - **Version:** 2.0.0
-- **Dependency:** `dusty` (EuroZig fork, pinned in `build.zig.zon`)
+- **HTTP dependencies:** `dusty` and `httpz` (pinned, lazy dependencies in `build.zig.zon`); select with `tokamak.setup(exe, .{ .backend = .httpz })` or use the default dusty backend
 - **Build command:** `zig build`
-- **Test command:** `zig build test` (optionally with `-Dtest-filter=<pattern>` to skip non-matching tests)
+- **Test command:** `zig build test` for dusty or `zig build test -Dbackend=httpz` for httpz (optionally with `-Dtest-filter=<pattern>` to skip non-matching tests)
 - **Docs build:** `npm run docs:build` (in `docs/`)
 
 ## Key Concepts
@@ -31,7 +31,8 @@
 | File / Directory | Purpose |
 |---|---|
 | `src/main.zig` | Root module — re-exports all public namespaces, core types (`Injector`, `Container`, `Bundle`, `Server`, `Route`, `Context`, `Schema`), and middlewares. |
-| `src/server.zig` | `Server` — HTTP server wrapper around dusty, handles initialization and lifecycle. |
+| `src/server.zig` | `Server` — selects the HTTP backend and manages initialization and lifecycle. |
+| `src/backend/` | Shared request/response API and adapters for dusty and httpz. |
 | `src/route.zig` | `Route` — hierarchical route definitions with `get`, `post`, `group`, `send`, `redirect`, `router(T)`. |
 | `src/context.zig` | `Context` — request context with `next()`, `nextScoped()`, event streaming, middleware chain. |
 | `src/injector.zig` | `Injector` — core DI container, resolves and calls functions with injected parameters. |
@@ -65,11 +66,11 @@
 
 ## Architecture Notes
 
-- **dusty** is the HTTP server dependency, imported as `dusty` in the build system. The separate `src/http/` client uses `std.http.Client`.
+- **HTTP backends**: dusty is the default; httpz is selected in `build.zig` with `.backend = .httpz`. Both adapt to the shared `tk.Request`/`tk.Response` API. The separate `src/http/` client uses `std.http.Client`.
 - **DI flow**: `Container.init(allocator, modules)` → resolves dependencies via `Bundle.configure()` hooks → populates `Injector` → `Server` uses the injector to call handlers.
 - **Route hierarchy**: Routes can nest children, enabling middleware patterns. `ctx.next()` continues the chain. `ctx.nextScoped()` adds request-scoped dependencies.
 - **Serialization**: Values returned from handlers that aren't `[]const u8` are auto-serialized to JSON using `std.json.Stringify`. Custom hooks override default behavior.
 - **Static files**: Served via `tk.static.file(path)` or `tk.static.dir(path)`. Files can be embedded at compile time via `tokamak.setup(exe, .{.embed = &.{...}})`.
-- **Testing**: `zig build test` runs all tests. Filters supported via `-Dtest-filter=<pattern>` (e.g., `zig build test -Dtest-filter=truncate`); the pattern substring-matches named tests (`test foo {}`) by full test name. Note: on this 0.17.x toolchain, anonymous `test {}` blocks (compiled as `*.test_0`) always run regardless of the filter. The main module test block auto-reflexes all exported structs.
+- **Testing**: `zig build test` runs all tests against dusty; `zig build test -Dbackend=httpz` runs them against httpz. Filters supported via `-Dtest-filter=<pattern>` (e.g., `zig build test -Dtest-filter=truncate`); the pattern substring-matches named tests (`test foo {}`) by full test name. Note: on this 0.17.x toolchain, anonymous `test {}` blocks (compiled as `*.test_0`) always run regardless of the filter. The main module test block auto-reflexes all exported structs.
 - **Docs**: Static site generator in `docs/` using Preact + marked. Build with `npm run docs:build`.
 - **Examples**: Located in `examples/` — `hello`, `hello_app`, `hello_cli`, `blog`, `todos_orm_sqlite`, `webview_app`.

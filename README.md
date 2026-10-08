@@ -2,9 +2,9 @@
 
 📚 **[Documentation](https://tomsik.cz/tokamak)**
 
-Tokamak is a web application framework for Zig, built around
-[dusty](https://github.com/EuroZig/dusty) and a simple dependency
-injection container.
+Tokamak is a web application framework for Zig with a dependency injection
+container and a choice of HTTP server backend: dusty (default) or httpz
+(http.zig).
 
 > **Note:** The main branch requires **Zig 0.17.0** or newer.
 
@@ -24,7 +24,7 @@ sanitization, etc.
 > - new [cli module](https://github.com/cztomsik/tokamak/tree/master/src/cli.zig)
 > - injecting `tk.Injector` is deprecated, use `*tk.Injector`
 > - multi-module support (cross-module initializers, providers, overrides)
-> - Switched the HTTP server backend to [dusty](https://github.com/EuroZig/dusty).
+> - Added a selectable httpz backend alongside the default dusty backend.
 > - Implemented hierarchical and introspectable routes.
 > - Added basic Swagger support.
 > - Added `tk.static.dir()` for serving entire directories.
@@ -50,9 +50,10 @@ pub fn build(b: *std.Build) void {
 }
 ```
 
-The default backend is dusty (`examples/hello`). To use http.zig instead, set
-`tokamak.setup(exe, .{ .backend = .httpz })` (`examples/hello_app`). Both
-backend packages are lazy dependencies: only the selected backend is fetched.
+The default backend is dusty (`examples/hello`). To use http.zig (httpz), set
+`tokamak.setup(exe, .{ .backend = .httpz })` (`examples/hello_app`). You can
+also select the backend for framework tests with `zig build test -Dbackend=httpz`.
+Both backend packages are lazy dependencies: only the selected backend is fetched.
 
 ## Getting Started
 
@@ -87,8 +88,8 @@ framework will try to provide them for you.
 Notable types you can inject are:
 
 - `std.mem.Allocator` (request-scoped arena allocator)
-- `*tk.Request` (current request, including headers, body reader, etc.)
-- `*tk.Response` (current response, with methods to send data, set headers, etc.)
+- `*tk.Request` (current request: method, URL path, headers, query, and body)
+- `*tk.Response` (current response: status, body, content type, and headers)
 - `*tk.Injector` (the injector itself, see below)
 - and everything you provide yourself
 
@@ -158,7 +159,7 @@ Here's how to create a simple logging middleware:
 fn logger(children: []const tk.Route) tk.Route {
     const H = struct {
         fn handleLogger(ctx: *tk.Context) anyerror!void {
-            std.log.debug("{s} {s}", .{ @tagName(ctx.req.method), ctx.req.url.path });
+            std.log.debug("{s} {s}", .{ @tagName(ctx.req.method), ctx.req.url });
 
             return ctx.next();
         }

@@ -132,9 +132,8 @@ const routes: []const tk.Route = &.{
     .post0("/webhook", handleWebhook),
 };
 
-fn handleWebhook(req: *tk.Request) !void {
-    // Manually read the body
-    const body = try req.readAll();
+fn handleWebhook(req: *tk.Request) ![]const u8 {
+    return try req.body() orelse return error.BadRequest;
 }
 ```
 
