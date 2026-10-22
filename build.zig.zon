@@ -2,7 +2,7 @@
     .name = .tokamak,
     .fingerprint = 0xf718fab679d2b915,
     .version = "2.0.0",
-    // .minimum_zig_version = "0.17.0",
+    .minimum_zig_version = "0.17.0",
     .dependencies = .{
         .httpz = .{
             .url = "git+https://github.com/karlseguin/http.zig?ref=dev#a67e9f9aa45c7c38061398e9629658b9a3f059fa",
