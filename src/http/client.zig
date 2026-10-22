@@ -6,6 +6,7 @@ pub const RequestOptions = struct {
     method: std.http.Method = .GET,
     url: []const u8 = "",
     headers: []const std.http.Header = &.{},
+    user_agent: ?[]const u8 = null,
     body: ?RequestBody = null,
     max_len: usize = 1024 * 1024,
     timeout: i64 = 60, // seconds
@@ -129,6 +130,7 @@ pub const StdClient = struct {
         var req = try self.std_client.request(options.method, url, .{
             .headers = .{
                 .content_type = if (options.body) |b| .{ .override = b.content_type } else .default,
+                .user_agent = if (options.user_agent) |ua| .{ .override = ua } else .default,
             },
             .extra_headers = options.headers,
             // TODO: fix this later, it looks like there's some std.http.Client pooling but we don't handle it properly
