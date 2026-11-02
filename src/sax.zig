@@ -121,10 +121,10 @@ const Scanner = struct {
 
         @"<a", // wait for space, `/`, or `>`
         @"<a ", // wait for alpha, `/`, or `>`
-        @"<a a", // wait for `=`, space, `/`, or `/`
-        @"<a a=", // wait for quote
+        @"<a a", // wait for `=`, space, `/`, or `>`
+        @"<a a=": usize, // wait for quote
         @"<a /", // wait for `>`
-        @"a=x": struct { len: usize, q: u8 }, // wait for closing quote
+        @"a=x": struct { len: usize, vs: usize, q: u8 }, // wait for closing quote
     } = .init,
 
     const State = @FieldType(@This(), "state");
@@ -215,10 +215,16 @@ const Scanner = struct {
                 .@"<a a" => {
                     const state: State = switch (ws(ch)) {
                         '=' => {
-                            self.state = .@"<a a=";
+                            self.state = .{ .@"<a a=" = self.pos - self.spos };
                             continue;
                         },
-                        ' ' => .@"<a ",
+                        // TODO: streaming: if the buffer ends exactly after the
+                        // space in `attr = "..."`, the lookahead below can't
+                        // decide and the name is cut off prematurely.
+                        ' ' => if (self.pos + 1 < self.input.len and self.input[self.pos + 1] == '=') {
+                            self.state = .{ .@"<a a=" = self.pos - self.spos };
+                            continue;
+                        } else .@"<a ",
                         '/' => .@"<a /",
                         '>' => .any,
                         else => continue,
@@ -228,15 +234,17 @@ const Scanner = struct {
                     return .{ .attr = .{ .name = self.input[self.spos..self.pos], .value = "" } };
                 },
 
-                .@"<a a=" => switch (ch) {
-                    '"', '\'' => self.state = .{ .@"a=x" = .{ .len = self.pos - self.spos - 1, .q = ch } },
+                .@"<a a=" => |len| switch (ch) {
+                    // vs is an offset from spos (not an absolute index) so it
+                    // stays valid across buffer rebases in streaming mode.
+                    '"', '\'' => self.state = .{ .@"a=x" = .{ .len = len, .vs = self.pos + 1 - self.spos, .q = ch } },
                     '>' => self.startNext(.any),
                     else => continue,
                 },
 
                 .@"a=x" => |att| if (ch == att.q and self.input[self.pos - 1] != '\\') {
                     const name = self.input[self.spos .. self.spos + att.len];
-                    const value = self.input[self.spos + att.len + 2 .. self.pos];
+                    const value = self.input[self.spos + att.vs .. self.pos];
 
                     defer self.startNext(.@"<a ");
                     return .{ .attr = .{ .name = name, .value = value } };
@@ -325,7 +333,7 @@ fn expectEvents(input: []const u8, events: []const Event) !void {
     for (&parsers) |*parser| {
         for (events, 0..) |tag, i| {
             const ev = try parser.next() orelse return error.Eof;
-            errdefer std.debug.print("#{} event({s}): {any}\n", .{ i, @tagName(ev), ev });
+            errdefer std.debug.print("#{} event({s}): {f}\n{any}\n", .{ i, @tagName(ev), ev, ev });
 
             try std.testing.expectEqualDeep(tag, ev);
         }
@@ -458,6 +466,19 @@ test "skip xml header" {
             .{ .close = "root" },
         },
     );
+}
+
+test "spaces around equals" {
+    try expectEvents("<div id= \"xxx\">", &.{
+        .{ .open = "div" },
+        .{ .attr = .{ .name = "id", .value = "xxx" } },
+    });
+
+    try expectEvents("<div id = \"xxx\" class=\"yyy\">", &.{
+        .{ .open = "div" },
+        .{ .attr = .{ .name = "id", .value = "xxx" } },
+        .{ .attr = .{ .name = "class", .value = "yyy" } },
+    });
 }
 
 test "forgiving" {
